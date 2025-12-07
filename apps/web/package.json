@@ -6,7 +6,9 @@
 		"dev": "next dev --turbopack --experimental-https",
 		"build": "next build",
 		"start": "next start",
-		"lint": "next lint"
+		"lint": "next lint",
+		"update-types": "pnpx supabase gen types typescript --project-id \"egzejziajjmjmdjplmii\" --schema public > ./types/database.types.ts",
+		"update-schemas": "pnpm supazod -i ./types/database.types.ts -o ./lib/validations/database.schemas.ts -t ./lib/validations/db.schemas.d.ts -s public"
 	},
 	"dependencies": {
 		"@radix-ui/react-avatar": "^1.1.10",
@@ -21,6 +23,8 @@
 		"@supabase/supabase-js": "^2.74.0",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"input-otp": "^1.4.2",
+		"jose": "^6.1.3",
 		"js-yaml": "^4.1.0",
 		"jszip": "^3.10.1",
 		"lucide-react": "^0.539.0",

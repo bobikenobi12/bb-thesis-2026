@@ -27,6 +27,10 @@ out/
 build
 dist
 
+# Go CLI
+/apps/cli/cli
+/apps/cli/tmp/
+
 
 # Debug
 npm-debug.log*

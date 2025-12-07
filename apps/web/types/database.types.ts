@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      cli_logins: {
+        Row: {
+          created_at: string | null
+          device_code: string
+          expires_at: string | null
+          profile_id: string | null
+          refresh_token: string | null
+          verification_code: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_code: string
+          expires_at?: string | null
+          profile_id?: string | null
+          refresh_token?: string | null
+          verification_code?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_code?: string
+          expires_at?: string | null
+          profile_id?: string | null
+          refresh_token?: string | null
+          verification_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cli_logins_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       configurations: {
         Row: {
           aws_account_id: string
