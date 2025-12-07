@@ -1,102 +1,243 @@
-import Image, { type ImageProps } from "next/image";
-import { Button } from "@repo/ui/button";
-import styles from "./page.module.css";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+	Card,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
+import {
+	ArrowRight,
+	Cloud,
+	Database,
+	GitBranch,
+	Settings,
+	Shield,
+	Zap,
+} from "lucide-react";
+import Link from "next/link";
 
-type Props = Omit<ImageProps, "src"> & {
-  srcLight: string;
-  srcDark: string;
-};
+export default function HomePage() {
+	return (
+		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+			{/* Header */}
+			<header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
+				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
+					<div className="flex items-center space-x-2">
+						<div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg flex items-center justify-center">
+							<span className="text-white font-bold text-sm">
+								IG
+							</span>
+						</div>
+						<span className="font-sans font-semibold text-xl">
+							ItGix Platform
+						</span>
+					</div>
+					<Link href="/auth/signin">
+						<Button
+							variant="outline"
+							className="font-sans bg-transparent"
+						>
+							Sign In
+							<ArrowRight className="ml-2 h-4 w-4" />
+						</Button>
+					</Link>
+				</div>
+			</header>
 
-const ThemeImage = (props: Props) => {
-  const { srcLight, srcDark, ...rest } = props;
+			{/* Hero Section */}
+			<section className="container mx-auto px-4 py-20">
+				<div className="max-w-4xl mx-auto text-center">
+					<Badge variant="secondary" className="mb-6 font-sans">
+						Enterprise Application Development Platform
+					</Badge>
+					<h1 className="font-sans font-bold text-5xl md:text-6xl text-foreground mb-6 leading-tight">
+						Deploy AWS Infrastructure
+						<span className="bg-gradient-to-r from-cyan-500 to-purple-600 bg-clip-text text-transparent block">
+							In Minutes, Not Hours
+						</span>
+					</h1>
+					<p className="text-muted-foreground text-xl mb-8 max-w-2xl mx-auto leading-relaxed">
+						Streamline your cloud deployment workflow with our
+						intelligent configuration platform. Generate
+						production-ready Terraform, Kubernetes, and ArgoCD
+						configurations with enterprise-grade security.
+					</p>
+					<div className="flex flex-col sm:flex-row gap-4 justify-center">
+						<Link href="/signin">
+							<Button
+								size="lg"
+								className="font-sans text-lg px-8 py-6"
+							>
+								Get Started Free
+								<ArrowRight className="ml-2 h-5 w-5" />
+							</Button>
+						</Link>
+						<Link href="/installation">
+							<Button
+								variant="outline"
+								size="lg"
+								className="font-sans text-lg px-8 py-6 bg-transparent"
+							>
+								View Documentation
+							</Button>
+						</Link>
+					</div>
+				</div>
+			</section>
 
-  return (
-    <>
-      <Image {...rest} src={srcLight} className="imgLight" />
-      <Image {...rest} src={srcDark} className="imgDark" />
-    </>
-  );
-};
+			{/* Features Grid */}
+			<section className="container mx-auto px-4 py-20">
+				<div className="text-center mb-16">
+					<h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground mb-4">
+						Everything You Need for Cloud Deployment
+					</h2>
+					<p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+						From infrastructure provisioning to application
+						deployment, our platform handles the complexity so you
+						can focus on building great products.
+					</p>
+				</div>
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <ThemeImage
-          className={styles.logo}
-          srcLight="turborepo-dark.svg"
-          srcDark="turborepo-light.svg"
-          alt="Turborepo logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>apps/web/app/page.tsx</code>
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+				<div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center mb-4">
+								<Cloud className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								AWS Infrastructure
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Automated VPC, EKS, RDS, and CloudFront
+								configuration with best practices built-in.
+							</CardDescription>
+						</CardHeader>
+					</Card>
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new/clone?demo-description=Learn+to+implement+a+monorepo+with+a+two+Next.js+sites+that+has+installed+three+local+packages.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F4K8ZISWAzJ8X1504ca0zmC%2F0b21a1c6246add355e55816278ef54bc%2FBasic.png&demo-title=Monorepo+with+Turborepo&demo-url=https%3A%2F%2Fexamples-basic-web.vercel.sh%2F&from=templates&project-name=Monorepo+with+Turborepo&repository-name=monorepo-turborepo&repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fturborepo%2Ftree%2Fmain%2Fexamples%2Fbasic&root-directory=apps%2Fdocs&skippable-integrations=1&teamSlug=vercel&utm_source=create-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://turborepo.com/docs?utm_source"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-        <Button appName="web" className={styles.secondary}>
-          Open alert
-        </Button>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com/templates?search=turborepo&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://turborepo.com?utm_source=create-turbo"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to turborepo.com →
-        </a>
-      </footer>
-    </div>
-  );
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center mb-4">
+								<GitBranch className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								GitOps Integration
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Seamless ArgoCD setup with automated repository
+								management and deployment pipelines.
+							</CardDescription>
+						</CardHeader>
+					</Card>
+
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center mb-4">
+								<Settings className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								Smart Configuration
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Intelligent form-based configuration that
+								generates production-ready Terraform code.
+							</CardDescription>
+						</CardHeader>
+					</Card>
+
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center mb-4">
+								<Shield className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								Enterprise Security
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Built-in security best practices, IAM policies,
+								and compliance-ready configurations.
+							</CardDescription>
+						</CardHeader>
+					</Card>
+
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
+								<Database className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								Database Management
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Automated RDS setup with scaling, backups, and
+								monitoring configurations.
+							</CardDescription>
+						</CardHeader>
+					</Card>
+
+					<Card className="border-0 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-all duration-300">
+						<CardHeader>
+							<div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center mb-4">
+								<Zap className="h-6 w-6 text-white" />
+							</div>
+							<CardTitle className="font-sans text-xl">
+								Auto-Scaling
+							</CardTitle>
+							<CardDescription className="font-sans">
+								Karpenter integration for intelligent Kubernetes
+								node scaling and cost optimization.
+							</CardDescription>
+						</CardHeader>
+					</Card>
+				</div>
+			</section>
+
+			{/* CTA Section */}
+			<section className="container mx-auto px-4 py-20">
+				<div className="max-w-4xl mx-auto text-center">
+					<div className="bg-gradient-to-r from-cyan-500/10 to-purple-600/10 rounded-2xl p-12 border border-cyan-500/20">
+						<h2 className="font-sans font-bold text-3xl md:text-4xl text-foreground mb-4">
+							Ready to Transform Your Deployment Process?
+						</h2>
+						<p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">
+							Join enterprise teams who have reduced their
+							infrastructure deployment time by 90% with our
+							intelligent configuration platform.
+						</p>
+						<Link href="/signin">
+							<Button
+								size="lg"
+								className="font-sans text-lg px-8 py-6"
+							>
+								Start Building Now
+								<ArrowRight className="ml-2 h-5 w-5" />
+							</Button>
+						</Link>
+					</div>
+				</div>
+			</section>
+
+			{/* Footer */}
+			<footer className="border-t bg-muted/30">
+				<div className="container mx-auto px-4 py-8">
+					<div className="flex flex-col md:flex-row items-center justify-between">
+						<div className="flex items-center space-x-2 mb-4 md:mb-0">
+							<div className="w-6 h-6 bg-gradient-to-br from-cyan-500 to-purple-600 rounded flex items-center justify-center">
+								<span className="text-white font-bold text-xs">
+									IG
+								</span>
+							</div>
+							<span className="font-sans font-semibold">
+								ItGix Platform
+							</span>
+						</div>
+						<p className="text-muted-foreground text-sm font-sans">
+							© 2024 ItGix. Enterprise Application Development
+							Platform.
+						</p>
+					</div>
+				</div>
+			</footer>
+		</div>
+	);
 }
