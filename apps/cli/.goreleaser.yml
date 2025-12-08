@@ -54,18 +54,20 @@ brews:
   - name: grape
     # The name of the GitHub repository for your Homebrew Tap.
     # Convention is 'homebrew-<project-name>'
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
     repository:
       owner: "bobikenobi12"
       name: "bb-thesis-2026"
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
     directory: "apps/grape"
       # You can create a token with just 'public_repo' scope and set it here.
       # Or you can simply use GITHUB_TOKEN.
-    token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
     commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
+      name: bobikenobi12
+      email: contact@borislav.me
 
     # The project's homepage.
     homepage: "https://github.com/bobikenobi12/bb-thesis-2026"
