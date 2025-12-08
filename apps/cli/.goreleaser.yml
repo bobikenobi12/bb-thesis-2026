@@ -1,6 +1,6 @@
 # .goreleaser.yml
 # Make sure to check the documentation at https://goreleaser.com
-version: 1
+version: 2
 
 # Project name for the binary
 project_name: grape
@@ -43,7 +43,6 @@ snapshot:
 changelog:
   sort: asc
   filters:
-    first_parent: true
     exclude:
       - '^docs:'
       - '^test:'
@@ -55,13 +54,13 @@ brews:
   - name: grape
     # The name of the GitHub repository for your Homebrew Tap.
     # Convention is 'homebrew-<project-name>'
-    tap:
+    repository:
       owner: "bobikenobi12"
-      name: "homebrew-grape"
+      name: "bb-thesis-2026"
       directory: "apps/grape"
       # You can create a token with just 'public_repo' scope and set it here.
       # Or you can simply use GITHUB_TOKEN.
-      # token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
     commit_author:
       name: goreleaserbot
