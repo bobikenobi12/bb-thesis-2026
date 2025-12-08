@@ -57,10 +57,11 @@ brews:
     repository:
       owner: "bobikenobi12"
       name: "bb-thesis-2026"
-      directory: "apps/grape"
+
+    directory: "apps/grape"
       # You can create a token with just 'public_repo' scope and set it here.
       # Or you can simply use GITHUB_TOKEN.
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
 
     commit_author:
       name: goreleaserbot
