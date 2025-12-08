@@ -78,7 +78,6 @@ export type Database = {
           gitops_repository: string | null
           id: string
           last_downloaded_at: string | null
-          name: string
           project_name: string
           redis_allowed_cidr_blocks: string | null
           ses_queues_topics: string | null
@@ -116,7 +115,6 @@ export type Database = {
           gitops_repository?: string | null
           id?: string
           last_downloaded_at?: string | null
-          name: string
           project_name: string
           redis_allowed_cidr_blocks?: string | null
           ses_queues_topics?: string | null
@@ -154,7 +152,6 @@ export type Database = {
           gitops_repository?: string | null
           id?: string
           last_downloaded_at?: string | null
-          name?: string
           project_name?: string
           redis_allowed_cidr_blocks?: string | null
           ses_queues_topics?: string | null

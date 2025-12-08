@@ -15,7 +15,7 @@ import { AlertCircle, Boxes, GitBranch, Github, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 interface RepositorySelectorProps {
-	value: string;
+	value: string | undefined;
 	onChange: (value: string) => void;
 	label: string;
 	placeholder?: string;

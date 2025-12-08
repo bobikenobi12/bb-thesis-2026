@@ -1,6 +1,6 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role-client";
-import { NextResponse } from "next/server";
 import * as jose from "jose";
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
 	const { device_code } = await req.json();
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
 	const customJwt = await new jose.SignJWT({
 		sub: loginData.profile_id,
-		email: loginData.profiles.email,
+		email: loginData.profiles?.email,
 	})
 		.setProtectedHeader({ alg })
 		.setIssuedAt()
@@ -65,6 +65,6 @@ export async function POST(req: Request) {
 
 	return NextResponse.json({
 		access_token: customJwt,
-		user_email: loginData.profiles.email,
+		user_email: loginData.profiles?.email,
 	});
 }

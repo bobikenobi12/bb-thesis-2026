@@ -113,13 +113,7 @@ func pollForToken(deviceCode, exchangeURL string) tea.Cmd {
 	}
 }
 
-func getCredentialsPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(configDir, "grape", "credentials.json"), nil
-}
+
 
 func saveTokens(tokens *types.ExchangeResponse) {
 	credsPath, err := getCredentialsPath()
