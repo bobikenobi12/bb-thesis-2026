@@ -1,0 +1,78 @@
+# .goreleaser.yml
+# Make sure to check the documentation at https://goreleaser.com
+version: 1
+
+# Project name for the binary
+project_name: grape
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: grape
+    main: ./
+    binary: grape
+    env:
+      - CGO_ENABLED=0
+      - GRAPE_WEB_ORIGIN=https://beta.idp.itgix.com
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with the results of uname.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    first_parent: true
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - 'merge'
+
+# Modelines, see https://goreleaser.com/customization/modelines/
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+brews:
+  - name: grape
+    # The name of the GitHub repository for your Homebrew Tap.
+    # Convention is 'homebrew-<project-name>'
+    tap:
+      owner: "bobikenobi12"
+      name: "homebrew-grape"
+      directory: "apps/grape"
+      # You can create a token with just 'public_repo' scope and set it here.
+      # Or you can simply use GITHUB_TOKEN.
+      # token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+
+    # The project's homepage.
+    homepage: "https://github.com/bobikenobi12/bb-thesis-2026"
+
+    # A brief description of the project.
+    description: "Grape CLI for managing infrastructure configurations."
+
+    # The install block for the formula.
+    install: |
+      bin.install "grape"
