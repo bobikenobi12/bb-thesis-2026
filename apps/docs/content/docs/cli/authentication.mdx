@@ -1,0 +1,36 @@
+---
+title: Authentication
+description: Authenticating with the Grape CLI.
+---
+
+# Authentication
+
+The Grape CLI uses a Device Authorization Grant flow for authentication.
+
+## Login
+
+To log in:
+
+```bash
+grape login
+```
+
+This command will:
+1.  Print a verification code and a URL.
+2.  Open your browser to the verification URL.
+3.  Wait for you to confirm the code in the browser.
+4.  Store the access token securely.
+
+## Logout
+
+To log out:
+
+```bash
+grape logout
+```
+
+This removes the locally stored credentials.
+
+## API Integration
+
+The CLI communicates with the Grape Web API to verify tokens and fetch configurations. The API ensures that only authorized users can deploy infrastructure.

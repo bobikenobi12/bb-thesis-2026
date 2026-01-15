@@ -1,0 +1,41 @@
+---
+title: Deployment
+description: Deploying infrastructure with Grape CLI.
+---
+
+# Deployment
+
+The `deploy` command is the core functionality of the Grape CLI. It orchestrates the entire deployment process, including repository cloning, infrastructure bootstrapping, Terraform execution, and GitOps setup.
+
+## Usage
+
+```bash
+grape deploy <project_name> [flags]
+```
+
+## Flags
+
+- `--aws-profile`: AWS profile to use (default "default").
+- `--dry-run`: Run in dry-run mode without making actual changes.
+- `--update-infra`: Update (overwrite) infrastructure (terraform) repository.
+- `--update-gitops`: Update (overwrite) GitOps (argocd) repositories.
+- `--update-all`: Update both infrastructure and GitOps repositories.
+- `--create-state-bucket-only`: Only create the state bucket if it does not exist, then exit.
+- `--infracost-token`: Infracost API token for cost estimation.
+
+## Process Overview
+
+1.  **Authentication**: Verifies your session.
+2.  **Configuration Fetching**: Retrieves project configuration from the API.
+3.  **State Bucket Check**: Ensures the S3 state bucket exists.
+4.  **Repository Cloning**: Clones necessary template and client repositories.
+5.  **Infrastructure Bootstrap**: Bootstraps the Terraform repository with templates.
+6.  **Terraform Execution**:
+    *   `init`
+    *   `plan` (with optional Infracost check)
+    *   `apply`
+7.  **State Management**: Saves `infra-facts.yaml` derived from Terraform outputs and configuration.
+8.  **GitOps Bootstrap**: Bootstraps the ArgoCD repository and distributes `infra-facts.yaml` to Helm values.
+9.  **Helm & K8s Deployment**:
+    *   Installs/Upgrades ArgoCD via Helm.
+    *   Applies ArgoCD Application manifests for infrastructure services and applications.

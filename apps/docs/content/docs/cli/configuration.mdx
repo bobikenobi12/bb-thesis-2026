@@ -1,0 +1,38 @@
+---
+title: Configuration
+description: Configuring the Grape CLI.
+---
+
+# Configuration
+
+The Grape CLI uses a configuration file and remote settings stored in Supabase.
+
+## CLI Configuration
+
+The CLI stores its local configuration (like tokens) in `~/.grape/config.json` (or similar, depending on OS).
+
+## Project Configuration
+
+Project configurations are fetched from the API (Supabase) based on the `project_name` provided to the `deploy` command.
+
+Key configuration parameters include:
+
+- `aws_account_id`: The AWS Account ID.
+- `aws_region`: The AWS Region (e.g., `eu-west-1`).
+- `environment_stage`: The environment stage (e.g., `dev`, `stg`, `prod`).
+- `terraform_version`: The Terraform version to use.
+- `dns_domain_name`: The main DNS domain.
+- **Repositories**:
+    - `env_template_repo`: Template for infrastructure.
+    - `env_git_repo`: Destination for infrastructure code.
+    - `gitops_template_repo`: Template for GitOps (ArgoCD).
+    - `gitops_destination_repo`: Destination for GitOps code.
+    - `applications_template_repo`: Template for custom applications (optional).
+    - `applications_destination_repo`: Destination for custom applications (optional).
+
+## Tokens
+
+The following tokens are managed via the API configuration and used by the CLI:
+
+- `gitops_argocd_token`: Token for accessing the ArgoCD repository.
+- `gitops_app_token`: Token for accessing the Application repository.
