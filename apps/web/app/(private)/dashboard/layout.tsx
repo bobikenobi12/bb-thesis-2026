@@ -12,10 +12,13 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { useAwsOnboarding } from "@/hooks/use-aws-onboarding";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { User as IUser } from "@supabase/supabase-js";
 import {
+	AlertTriangle,
+	ArrowRight,
 	Bell,
 	Folder,
 	History,
@@ -42,6 +45,7 @@ export default function DashboardLayout({
 	const router = useRouter();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [user, setUser] = useState<IUser | null>(null);
+	const { showAwsAlert, setShowAwsAlert } = useAwsOnboarding();
 
 	useEffect(() => {
 		const getUser = async () => {
@@ -104,7 +108,7 @@ export default function DashboardLayout({
 								<div className="w-9 h-9 bg-gradient-to-br from-cyan-600 to-purple-600 rounded-xl shadow-lg"></div>
 								<div>
 									<h2 className="font-sans text-lg font-bold text-slate-900">
-										ItGix Platform
+										ItGix Grape
 									</h2>
 									<p className="text-xs text-slate-500">
 										Application Development
@@ -217,7 +221,7 @@ export default function DashboardLayout({
 										className={cn(
 											"w-full justify-start gap-3 h-11",
 											isActive &&
-												"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50 shadow-sm"
+												"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50 shadow-sm",
 										)}
 									>
 										<item.icon className="h-5 w-5" />
@@ -287,7 +291,7 @@ export default function DashboardLayout({
 												className={cn(
 													"w-full justify-start gap-3 h-11",
 													isActive &&
-														"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50"
+														"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50",
 												)}
 											>
 												<item.icon className="h-5 w-5" />
@@ -334,6 +338,40 @@ export default function DashboardLayout({
 
 				{/* Main Content */}
 				<main className="flex-1 p-8 max-w-[1600px] h-[calc(100vh-73px)] overflow-y-scroll">
+					{/* Sophisticated Alert for Missing AWS Connection */}
+					{showAwsAlert && (
+						<div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-4 shadow-sm relative animate-in slide-in-from-top-2">
+							<div className="p-2 bg-orange-100 rounded-lg">
+								<AlertTriangle className="w-6 h-6 text-orange-600" />
+							</div>
+							<div className="flex-1">
+								<h3 className="text-orange-900 font-semibold text-lg">
+									AWS Account Disconnected
+								</h3>
+								<p className="text-orange-700 mt-1 mb-3 text-sm">
+									You haven't connected your AWS account yet.
+									You can still create configurations, but you
+									won't be able to provision any
+									infrastructure until you connect.
+								</p>
+								<Link href="/onboarding/aws">
+									<Button
+										size="sm"
+										className="bg-orange-600 hover:bg-orange-700 text-white border-none"
+									>
+										Connect AWS Account
+										<ArrowRight className="w-4 h-4 ml-2" />
+									</Button>
+								</Link>
+							</div>
+							<button
+								onClick={() => setShowAwsAlert(false)}
+								className="text-orange-400 hover:text-orange-600 p-1"
+							>
+								<X className="w-5 h-5" />
+							</button>
+						</div>
+					)}
 					<Suspense fallback={<div>Loading...</div>}>
 						{children}
 					</Suspense>

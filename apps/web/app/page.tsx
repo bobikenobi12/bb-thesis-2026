@@ -1,3 +1,5 @@
+"use client";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,6 +9,17 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { createClient } from "@/lib/supabase/client";
+import { User as IUser } from "@supabase/supabase-js";
+import {
 	ArrowRight,
 	Cloud,
 	Database,
@@ -14,34 +27,131 @@ import {
 	Settings,
 	Shield,
 	Zap,
+	User,
+	LogOut,
+	LayoutDashboard,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function HomePage() {
+	const [user, setUser] = useState<IUser | null>(null);
+	const router = useRouter();
+
+	useEffect(() => {
+		const getUser = async () => {
+			const supabase = await createClient();
+			const {
+				data: { user },
+			} = await supabase.auth.getUser();
+			setUser(user);
+		};
+		getUser();
+	}, []);
+
+	const handleLogout = async () => {
+		const supabase = await createClient();
+		await supabase.auth.signOut();
+		setUser(null);
+		router.refresh();
+	};
+
+	const getUserInitials = () => {
+		if (!user?.email) return "U";
+		return user.email.substring(0, 2).toUpperCase();
+	};
+
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
 			{/* Header */}
 			<header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
 					<div className="flex items-center space-x-2">
-						<div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg flex items-center justify-center">
+						{/* <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-lg flex items-center justify-center">
 							<span className="text-white font-bold text-sm">
 								IG
 							</span>
-						</div>
+						</div> */}
+						<img
+							src="/itgix-favicon-32x32.png"
+							alt="ItGix Logo"
+							className="w-8 h-8"
+						/>
 						<span className="font-sans font-semibold text-xl">
-							ItGix Platform
+							ItGix Grape
 						</span>
 					</div>
-					<Link href="/auth/signin">
-						<Button
-							variant="outline"
-							className="font-sans bg-transparent"
-						>
-							Sign In
-							<ArrowRight className="ml-2 h-4 w-4" />
-						</Button>
-					</Link>
+					
+					{user ? (
+						<div className="flex items-center gap-4">
+							<Link href="/dashboard/configurations">
+								<Button variant="outline" className="font-sans">
+									Go to Configurations
+									<ArrowRight className="ml-2 h-4 w-4" />
+								</Button>
+							</Link>
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										variant="ghost"
+										className="relative h-10 w-10 rounded-full"
+									>
+										<Avatar className="h-10 w-10 border-2 border-cyan-200">
+											<AvatarImage
+												src="/generic-user-avatar.png"
+												alt="User"
+											/>
+											<AvatarFallback className="bg-gradient-to-br from-cyan-600 to-purple-600 text-white">
+												{getUserInitials()}
+											</AvatarFallback>
+										</Avatar>
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent className="w-56" align="end">
+									<DropdownMenuLabel>
+										<div className="flex flex-col space-y-1">
+											<p className="text-sm font-medium">My Account</p>
+											<p className="text-xs text-muted-foreground truncate">
+												{user.email}
+											</p>
+										</div>
+									</DropdownMenuLabel>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem asChild>
+										<Link href="/dashboard" className="cursor-pointer">
+											<LayoutDashboard className="mr-2 h-4 w-4" />
+											Dashboard
+										</Link>
+									</DropdownMenuItem>
+									<DropdownMenuItem asChild>
+										<Link href="/dashboard/profile" className="cursor-pointer">
+											<User className="mr-2 h-4 w-4" />
+											Profile Settings
+										</Link>
+									</DropdownMenuItem>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem
+										onClick={handleLogout}
+										className="cursor-pointer text-red-600"
+									>
+										<LogOut className="mr-2 h-4 w-4" />
+										Sign out
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						</div>
+					) : (
+						<Link href="/auth/signin">
+							<Button
+								variant="outline"
+								className="font-sans bg-transparent"
+							>
+								Sign In
+								<ArrowRight className="ml-2 h-4 w-4" />
+							</Button>
+						</Link>
+					)}
 				</div>
 			</header>
 
@@ -64,12 +174,12 @@ export default function HomePage() {
 						configurations with enterprise-grade security.
 					</p>
 					<div className="flex flex-col sm:flex-row gap-4 justify-center">
-						<Link href="/signin">
+						<Link href={user ? "/dashboard" : "/auth/signin"}>
 							<Button
 								size="lg"
 								className="font-sans text-lg px-8 py-6"
 							>
-								Get Started Free
+								{user ? "Go to Dashboard" : "Get Started Free"}
 								<ArrowRight className="ml-2 h-5 w-5" />
 							</Button>
 						</Link>
@@ -204,7 +314,7 @@ export default function HomePage() {
 							infrastructure deployment time by 90% with our
 							intelligent configuration platform.
 						</p>
-						<Link href="/signin">
+						<Link href="/auth/signin">
 							<Button
 								size="lg"
 								className="font-sans text-lg px-8 py-6"
@@ -222,13 +332,13 @@ export default function HomePage() {
 				<div className="container mx-auto px-4 py-8">
 					<div className="flex flex-col md:flex-row items-center justify-between">
 						<div className="flex items-center space-x-2 mb-4 md:mb-0">
-							<div className="w-6 h-6 bg-gradient-to-br from-cyan-500 to-purple-600 rounded flex items-center justify-center">
-								<span className="text-white font-bold text-xs">
-									IG
-								</span>
-							</div>
+							<img
+								src="/itgix-favicon-32x32.png"
+								alt="ItGix Logo"
+								className="w-6 h-6"
+							/>
 							<span className="font-sans font-semibold">
-								ItGix Platform
+								ItGix Grape
 							</span>
 						</div>
 						<p className="text-muted-foreground text-sm font-sans">

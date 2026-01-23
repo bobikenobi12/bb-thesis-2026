@@ -33,6 +33,17 @@ export async function verifyCliToken(req: Request) {
 			issuer: "urn:example:issuer",
 			audience: "urn:example:audience",
 		});
+
+		if (payload.type !== "access") {
+			return {
+				error: new Response(
+					JSON.stringify({ error: "Unauthorized: Invalid token type" }),
+					{ status: 401 }
+				),
+				payload: null,
+			};
+		}
+
 		return { payload, error: null };
 	} catch (err) {
 		return {

@@ -22,9 +22,13 @@ import {
 	Folder,
 	Settings,
 	TrendingUp,
+    AlertTriangle,
+    X
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { hasCloudIdentity } from "./actions";
 
 export default function DashboardPage() {
 	const [stats, setStats] = useState<ConfigurationStats | null>(null);
@@ -32,10 +36,27 @@ export default function DashboardPage() {
 		[]
 	);
 	const [loading, setLoading] = useState(true);
+    const [showAwsAlert, setShowAwsAlert] = useState(false);
+    const router = useRouter();
 
 	useEffect(() => {
 		const fetchData = async () => {
 			try {
+                // Check AWS Identity status
+                const hasIdentity = await hasCloudIdentity();
+                
+                if (!hasIdentity) {
+                    const skipped = localStorage.getItem("aws_onboarding_skipped");
+                    if (!skipped) {
+                        // Redirect to onboarding if not skipped
+                        router.push("/onboarding/aws");
+                        return; // Stop loading data
+                    } else {
+                        // Show sophisticated alert if skipped
+                        setShowAwsAlert(true);
+                    }
+                }
+
 				// Fetch stats
 				const statsRes = await fetch("/api/configurations/stats");
 				if (statsRes.ok) {
@@ -57,7 +78,7 @@ export default function DashboardPage() {
 		};
 
 		fetchData();
-	}, []);
+	}, [router]);
 
 	const formatDate = (dateString: string) => {
 		return new Date(dateString).toLocaleDateString("en-US", {
@@ -68,7 +89,7 @@ export default function DashboardPage() {
 	};
 
 	return (
-		<div className="space-y-8">
+		<div className="space-y-8 animate-in fade-in duration-500">
 			{/* Welcome Section */}
 			<div>
 				<h1 className="font-sans text-4xl font-bold text-slate-900 mb-2">
@@ -78,6 +99,33 @@ export default function DashboardPage() {
 					Manage your infrastructure configurations and deployments.
 				</p>
 			</div>
+
+            {/* Sophisticated Alert for Missing AWS Connection */}
+            {showAwsAlert && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-4 shadow-sm relative animate-in slide-in-from-top-2">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                        <AlertTriangle className="w-6 h-6 text-orange-600" />
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="text-orange-900 font-semibold text-lg">AWS Account Disconnected</h3>
+                        <p className="text-orange-700 mt-1 mb-3 text-sm">
+                            You haven't connected your AWS account yet. You can still create configurations, but you won't be able to provision any infrastructure until you connect.
+                        </p>
+                        <Link href="/onboarding/aws">
+                            <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white border-none">
+                                Connect AWS Account
+                                <ArrowRight className="w-4 h-4 ml-2" />
+                            </Button>
+                        </Link>
+                    </div>
+                    <button 
+                        onClick={() => setShowAwsAlert(false)}
+                        className="text-orange-400 hover:text-orange-600 p-1"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+            )}
 
 			{/* Stats Cards */}
 			<div className="grid md:grid-cols-4 gap-6">

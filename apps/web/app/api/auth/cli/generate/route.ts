@@ -28,6 +28,7 @@ export async function POST(req: Request) {
 	const { error } = await supabaseServiceRole.from("cli_logins").upsert({
 		device_code,
 		profile_id: session.user.id,
+		verification_code: session.provider_token, // Temporarily store provider token here
 	});
 
 	if (error) {

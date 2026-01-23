@@ -18,7 +18,7 @@ export function DashboardHeader() {
             <div className="w-8 h-8 bg-gradient-to-br from-cyan-600 to-purple-600 rounded-lg"></div>
             <h2 className="font-serif text-xl font-bold">
               <a href="/dashboard" className="hover:text-cyan-600 transition-colors">
-                ItGix Platform
+                ItGix Grape
               </a>
             </h2>
           </div>

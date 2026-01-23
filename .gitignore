@@ -29,7 +29,7 @@ dist
 
 # Go CLI
 /apps/cli/cli
-/apps/cli/tmp/
+/apps/cli/tmp
 
 
 # Debug

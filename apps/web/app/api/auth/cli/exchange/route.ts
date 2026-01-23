@@ -52,19 +52,34 @@ export async function POST(req: Request) {
 	const secret = new TextEncoder().encode(jwtSecret);
 	const alg = "HS256";
 
-	const customJwt = await new jose.SignJWT({
+	const accessToken = await new jose.SignJWT({
 		sub: loginData.profile_id,
 		email: loginData.profiles?.email,
+		type: "access",
 	})
 		.setProtectedHeader({ alg })
 		.setIssuedAt()
-		.setIssuer("urn:example:issuer") // Should be your app's identifier
-		.setAudience("urn:example:audience") // Should describe the CLI
-		.setExpirationTime("30d") // The CLI token is valid for 30 days
+		.setIssuer("urn:example:issuer")
+		.setAudience("urn:example:audience")
+		.setExpirationTime("1h")
+		.sign(secret);
+
+	const refreshToken = await new jose.SignJWT({
+		sub: loginData.profile_id,
+		email: loginData.profiles?.email,
+		type: "refresh",
+	})
+		.setProtectedHeader({ alg })
+		.setIssuedAt()
+		.setIssuer("urn:example:issuer")
+		.setAudience("urn:example:audience")
+		.setExpirationTime("90d")
 		.sign(secret);
 
 	return NextResponse.json({
-		access_token: customJwt,
+		access_token: accessToken,
+		refresh_token: refreshToken,
+		provider_token: loginData.verification_code,
 		user_email: loginData.profiles?.email,
 	});
 }
