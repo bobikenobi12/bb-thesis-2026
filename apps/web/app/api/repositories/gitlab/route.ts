@@ -74,3 +74,80 @@ export async function GET() {
 		);
 	}
 }
+
+export async function POST(req: Request) {
+	try {
+		const supabase = await createClient();
+		const {
+			data: { session },
+		} = await supabase.auth.getSession();
+
+		if (!session) {
+			return NextResponse.json(
+				{ error: "Unauthorized" },
+				{ status: 401 }
+			);
+		}
+
+		const provider_token = session.provider_token;
+		if (!provider_token) {
+			return NextResponse.json(
+				{
+					error: "No GitLab token found. Please link your GitLab account.",
+				},
+				{ status: 400 }
+			);
+		}
+
+		const { name } = await req.json();
+		if (!name) {
+			return NextResponse.json(
+				{ error: "Repository name is required." },
+				{ status: 400 }
+			);
+		}
+
+		const response = await fetch("https://gitlab.itgix.com/api/v4/projects", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${provider_token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				name,
+				visibility: "public",
+			}),
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json();
+			return NextResponse.json(
+				{
+					error: `Failed to create GitLab repository: ${
+						errorData.message.name?.[0] || errorData.message
+					}`,
+				},
+				{ status: response.status }
+			);
+		}
+
+		const newRepo = await response.json();
+		const repository: Repository = {
+			id: newRepo.id.toString(),
+			name: newRepo.name,
+			full_name: newRepo.path_with_namespace,
+			url: newRepo.web_url,
+			private: newRepo.visibility !== "public",
+			default_branch: newRepo.default_branch || "main",
+			provider: "gitlab" as const,
+		};
+
+		return NextResponse.json({ repository }, { status: 201 });
+	} catch (error) {
+		console.error("[v0] Error creating GitLab repository:", error);
+		return NextResponse.json(
+			{ error: "Failed to create repository" },
+			{ status: 500 }
+		);
+	}
+}

@@ -38,6 +38,18 @@ type Configuration struct {
 	GitopsArgocdToken       *string   `json:"gitops_argocd_token"`
 	GitopsDestinationsRepo  *string   `json:"gitops_destinations_repo"`
 	GitopsRepository        *string   `json:"gitops_repository"`
+	
+	// Repository fields expected by deploy command
+	EnvTemplateRepo                 string `json:"env_template_repo"`
+	EnvTemplateRepoBranch           string `json:"env_template_repo_branch"`
+	EnvGitRepo                      string `json:"env_git_repo"`
+	GitopsTemplateRepo              string `json:"gitops_template_repo"`
+	GitopsTemplateRepoBranch        string `json:"gitops_template_repo_branch"`
+	GitopsDestinationRepo           string `json:"gitops_destination_repo"`
+	ApplicationsTemplateRepo        string `json:"applications_template_repo"`
+	ApplicationsTemplateRepoBranch  string `json:"applications_template_repo_branch"`
+	ApplicationsDestinationRepo     string `json:"applications_destination_repo"`
+
 	ID                      string    `json:"id"`
 	LastDownloadedAt        *string   `json:"last_downloaded_at"`
 	// Name                    string    `json:"name"`

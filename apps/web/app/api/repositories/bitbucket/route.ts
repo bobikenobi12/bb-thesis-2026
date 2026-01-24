@@ -76,3 +76,82 @@ export async function GET() {
 		);
 	}
 }
+
+export async function POST(req: Request) {
+	try {
+		const supabase = await createClient();
+		const {
+			data: { session },
+		} = await supabase.auth.getSession();
+
+		if (!session) {
+			return NextResponse.json(
+				{ error: "Unauthorized" },
+				{ status: 401 }
+			);
+		}
+
+		const provider_token = session.provider_token;
+		if (!provider_token) {
+			return NextResponse.json(
+				{
+					error: "No Bitbucket token found. Please link your Bitbucket account.",
+				},
+				{ status: 400 }
+			);
+		}
+
+		const { name, workspace, projectKey } = await req.json();
+		if (!name || !workspace || !projectKey) {
+			return NextResponse.json(
+				{ error: "Repository name, workspace, and project key are required." },
+				{ status: 400 }
+			);
+		}
+
+		const response = await fetch(
+			`https://api.bitbucket.org/2.0/repositories/${workspace}/${name}`,
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${provider_token}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					scm: "git",
+					project: { key: projectKey },
+					is_private: false,
+				}),
+			}
+		);
+
+		if (!response.ok) {
+			const errorData = await response.json();
+			return NextResponse.json(
+				{
+					error: `Failed to create Bitbucket repository: ${errorData.error.message}`,
+				},
+				{ status: response.status }
+			);
+		}
+
+		const newRepo = await response.json();
+		const repository: Repository = {
+			id: newRepo.uuid,
+			name: newRepo.name,
+			full_name: newRepo.full_name,
+			url: newRepo.links.html.href,
+			private: newRepo.is_private,
+			default_branch: newRepo.mainbranch?.name || "main",
+			provider: "bitbucket" as const,
+		};
+
+		return NextResponse.json({ repository }, { status: 201 });
+	} catch (error) {
+		console.error("[v0] Error creating Bitbucket repository:", error);
+		return NextResponse.json(
+			{ error: "Failed to create repository" },
+			{ status: 500 }
+		);
+	}
+}

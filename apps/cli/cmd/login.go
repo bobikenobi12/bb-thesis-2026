@@ -144,20 +144,24 @@ func saveTokens(tokens *types.ExchangeResponse) {
 
 // --- Cobra Command ---
 
+var forceLogin bool
+
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with the platform",
 	Run: func(cmd *cobra.Command, args []string) {
-		// 1. Check if already authenticated
-		credsPath, err := getCredentialsPath()
-		if err == nil {
-			if _, err := os.Stat(credsPath); err == nil {
+		// 1. Check if already authenticated (unless forced)
+		if !forceLogin {
+			if _, err := getAuthToken(); err == nil {
+				// We need to fetch the email for display purposes since getAuthToken returns only the token
+				credsPath, _ := getCredentialsPath()
 				file, _ := os.ReadFile(credsPath)
 				var creds types.ExchangeResponse
-				if json.Unmarshal(file, &creds) == nil && creds.UserEmail != "" {
-					fmt.Printf("You are already logged in as: %s\n", creds.UserEmail)
-					return
-				}
+				json.Unmarshal(file, &creds)
+				
+				fmt.Printf("You are already logged in as: %s\n", creds.UserEmail)
+				fmt.Println("Use --force to log in again.")
+				return
 			}
 		}
 
@@ -167,7 +171,7 @@ var loginCmd = &cobra.Command{
 		if webOrigin == "" {
 			webOrigin = "https://localhost:3000"
 		}
-		loginURL := fmt.Sprintf("%s/dashboard/cli/login?device_code=%s", webOrigin, deviceCode)
+		loginURL := fmt.Sprintf("%s/cli/login?device_code=%s", webOrigin, deviceCode)
 		exchangeURL := fmt.Sprintf("%s/api/auth/cli/exchange", webOrigin)
 
 		fmt.Println("Please open the following URL in your browser to log in:")
@@ -193,4 +197,5 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(loginCmd)
+	loginCmd.Flags().BoolVarP(&forceLogin, "force", "f", false, "Force re-authentication")
 }
