@@ -1,14 +1,13 @@
 import type { NextConfig } from "next";
 
+const DOCS_URL = process.env.DOCS_URL || "http://localhost:3001";
+
 const nextConfig: NextConfig = {
 	async rewrites() {
 		return [
 			{
 				source: "/api-reference/:path*",
-				destination:
-					process.env.NODE_ENV === "development"
-						? "https://localhost:3001/api-reference/:path*"
-						: `${process.env.DOCS_URL}/api-reference/:path*`,
+				destination: `${DOCS_URL}/api-reference/:path*`,
 			},
 			// Fumadocs often needs to fetch internal chunks/assets
 			{
@@ -20,8 +19,7 @@ const nextConfig: NextConfig = {
 						value: ".*api-reference.*",
 					},
 				],
-				destination:
-					"https://localhost:3001/_next/static/chunks/:path*",
+				destination: `${DOCS_URL}/_next/static/chunks/:path*`,
 			},
 		];
 	},
