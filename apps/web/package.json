@@ -3,13 +3,13 @@
 	"version": "0.1.0",
 	"private": true,
 	"scripts": {
-		"dev": "next dev --turbopack --experimental-https",
+		"dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --turbopack --experimental-https",
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
 		"check-types": "tsc --noEmit",
 		"update-types": "pnpx supabase gen types typescript --project-id \"egzejziajjmjmdjplmii\" --schema public > ./types/database.types.ts",
-		"update-schemas": "pnpm supazod -i ./types/database.types.ts -o ./lib/validations/database.schemas.ts -t ./lib/validations/database.schemas.d.ts -s public"
+		"update-schemas": "pnpm supazod -i ./types/database.types.ts -o ./lib/validations/database.schemas.ts -t ./lib/validations/db.schemas.d.ts -s public"
 	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.2.2",

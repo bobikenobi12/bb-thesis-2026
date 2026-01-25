@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getProviderToken } from "@/lib/supabase/tokens";
 import type { Repository } from "@/types/configuration";
 import { NextResponse } from "next/server";
 
@@ -16,8 +17,8 @@ export async function GET() {
 			);
 		}
 
-		// Get the GitLab access token from the session
-		const provider_token = session.provider_token;
+		// Get the GitLab access token from the session or database
+		const provider_token = await getProviderToken(supabase, "gitlab");
 
 		if (!provider_token) {
 			return NextResponse.json(
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
 			);
 		}
 
-		const provider_token = session.provider_token;
+		const provider_token = await getProviderToken(supabase, "gitlab");
 		if (!provider_token) {
 			return NextResponse.json(
 				{

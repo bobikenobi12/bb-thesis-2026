@@ -1,13 +1,18 @@
 import type { NextConfig } from "next";
 
-const DOCS_URL = process.env.DOCS_URL || "http://localhost:3001";
+// Docs app runs with --experimental-https, so we must use https
+const DOCS_URL = process.env.DOCS_URL || "https://localhost:3001";
 
 const nextConfig: NextConfig = {
 	async rewrites() {
 		return [
 			{
-				source: "/api-reference/:path*",
-				destination: `${DOCS_URL}/api-reference/:path*`,
+				source: "/docs/:path*",
+				destination: `${DOCS_URL}/:path*`,
+			},
+			{
+				source: "/docs",
+				destination: `${DOCS_URL}`,
 			},
 			// Fumadocs often needs to fetch internal chunks/assets
 			{
@@ -16,7 +21,7 @@ const nextConfig: NextConfig = {
 					{
 						type: "header",
 						key: "referer",
-						value: ".*api-reference.*",
+						value: ".*docs.*",
 					},
 				],
 				destination: `${DOCS_URL}/_next/static/chunks/:path*`,
