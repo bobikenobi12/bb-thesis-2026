@@ -1,5 +1,7 @@
 "use client";
 
+import { GitProviderIcon } from "@/components/git-provider-icon";
+import { PublicGitProvider } from "@/lib/validations/db.schemas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import type { LinkedAccount } from "@/types/configuration";
-import { Boxes, GitBranch, Github, LinkIcon, Unlink } from "lucide-react";
+import { LinkIcon, Unlink } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export function LinkedAccounts() {
@@ -26,33 +28,41 @@ export function LinkedAccounts() {
 		try {
 			const supabase = await createClient();
 			const {
-				data: { session },
-			} = await supabase.auth.getSession();
+				data: { user },
+			} = await supabase.auth.getUser();
 
-			if (!session) return;
+			if (!user) return;
 
-			const provider = session.user.app_metadata.provider as string;
-			const accounts: LinkedAccount[] = [];
-
-			// Add the primary authentication provider
-			if (
-				provider === "github" ||
-				provider === "gitlab" ||
-				provider === "bitbucket"
-			) {
-				accounts.push({
-					provider: provider as "github" | "gitlab" | "bitbucket",
+			const identities = user.identities || [];
+			const accounts: LinkedAccount[] = identities
+				.filter((identity) =>
+					["github", "gitlab", "bitbucket"].includes(identity.provider)
+				)
+				.map((identity) => ({
+					provider: identity.provider as PublicGitProvider,
 					username:
-						session.user.user_metadata.user_name ||
-						session.user.user_metadata.preferred_username ||
+						identity.identity_data?.user_name ||
+						identity.identity_data?.preferred_username ||
+						identity.identity_data?.name ||
 						"Unknown",
-					avatar_url: session.user.user_metadata.avatar_url,
-					linked_at: session.user.created_at,
-					has_token: !!session.provider_token,
-				});
-			}
+					avatar_url: identity.identity_data?.avatar_url,
+					linked_at: identity.created_at || "",
+					has_token: true, // Assumed true if linked
+				}));
 
-			setLinkedAccounts(accounts);
+			// Remove duplicates, keep most recent if any
+			const uniqueAccounts = accounts.reduce((acc, current) => {
+				const x = acc.find(
+					(item) => item.provider === current.provider
+				);
+				if (!x) {
+					return acc.concat([current]);
+				} else {
+					return acc;
+				}
+			}, [] as LinkedAccount[]);
+
+			setLinkedAccounts(uniqueAccounts);
 		} catch (error) {
 			console.error("[v0] Error fetching linked accounts:", error);
 		} finally {
@@ -60,15 +70,24 @@ export function LinkedAccounts() {
 		}
 	};
 
-	const handleLinkAccount = async (
-		provider: "github" | "gitlab" | "bitbucket"
-	) => {
+	const handleLinkAccount = async (provider: PublicGitProvider) => {
 		try {
 			const supabase = await createClient();
-			const { error } = await supabase.auth.signInWithOAuth({
+
+            // Verify session is valid before linking
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            
+            if (userError || !user) {
+                console.error("Session invalid, signing out:", userError);
+                await supabase.auth.signOut();
+                window.location.href = "/auth/signin"; // Redirect to login
+                return;
+            }
+			
+			const { error } = await supabase.auth.linkIdentity({
 				provider,
 				options: {
-					redirectTo: `${window.location.origin}/dashboard/profile`,
+					redirectTo: `${window.location.origin}/api/auth/callback?next=/dashboard/profile&provider=${provider}`,
 					scopes: provider === "github" ? "repo" : undefined,
 				},
 			});
@@ -76,19 +95,6 @@ export function LinkedAccounts() {
 			if (error) throw error;
 		} catch (err) {
 			console.error(`[v0] Error linking ${provider}:`, err);
-		}
-	};
-
-	const getProviderIcon = (provider: string) => {
-		switch (provider) {
-			case "github":
-				return <Github className="w-5 h-5" />;
-			case "gitlab":
-				return <GitBranch className="w-5 h-5" />;
-			case "bitbucket":
-				return <Boxes className="w-5 h-5" />;
-			default:
-				return <LinkIcon className="w-5 h-5" />;
 		}
 	};
 
@@ -148,7 +154,7 @@ export function LinkedAccounts() {
 									account.provider
 								)}`}
 							>
-								{getProviderIcon(account.provider)}
+								<GitProviderIcon provider={account.provider} size={20} />
 							</div>
 							<div>
 								<div className="flex items-center gap-2">
@@ -179,7 +185,7 @@ export function LinkedAccounts() {
 					<div className="flex items-center justify-between p-4 border border-dashed rounded-lg">
 						<div className="flex items-center gap-4">
 							<div className="p-2 rounded-lg bg-gray-100">
-								<Github className="w-5 h-5 text-gray-600" />
+								<GitProviderIcon provider="github" size={20} />
 							</div>
 							<div>
 								<p className="font-medium">GitHub</p>
@@ -203,7 +209,7 @@ export function LinkedAccounts() {
 					<div className="flex items-center justify-between p-4 border border-dashed rounded-lg">
 						<div className="flex items-center gap-4">
 							<div className="p-2 rounded-lg bg-orange-100">
-								<GitBranch className="w-5 h-5 text-orange-600" />
+								<GitProviderIcon provider="gitlab" size={20} />
 							</div>
 							<div>
 								<p className="font-medium">GitLab</p>
@@ -227,7 +233,7 @@ export function LinkedAccounts() {
 					<div className="flex items-center justify-between p-4 border border-dashed rounded-lg">
 						<div className="flex items-center gap-4">
 							<div className="p-2 rounded-lg bg-blue-100">
-								<Boxes className="w-5 h-5 text-blue-600" />
+								<GitProviderIcon provider="bitbucket" size={20} />
 							</div>
 							<div>
 								<p className="font-medium">Bitbucket</p>
