@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tendril.fullname" . }}
+  labels:
+    {{- include "tendril.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "tendril.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tendril.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "tendril.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: TENDRIL_CLUSTER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tendril.fullname" . }}-config
+                  key: cluster_id
+            - name: TENDRIL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tendril.fullname" . }}-config
+                  key: api_token
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tendril.fullname" . }}-config
+                  key: supabase_url
+            - name: SUPABASE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tendril.fullname" . }}-config
+                  key: supabase_key
+            - name: GRAPE_API_ORIGIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tendril.fullname" . }}-config
+                  key: grape_api_origin
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

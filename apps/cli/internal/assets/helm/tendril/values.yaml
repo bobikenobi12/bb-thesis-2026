@@ -1,0 +1,20 @@
+image:
+  repository: lowkeyfaint/tendril
+  pullPolicy: Always
+  tag: "latest"
+
+config:
+  clusterId: ""
+  apiToken: ""
+  supabaseUrl: ""
+  supabaseKey: ""
+  grapeApiOrigin: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "tendril-sa"
+
+# IAM Role ARN for Service Account (IRSA)
+# This is critical for the agent to create AWS resources
+roleArn: "" 
