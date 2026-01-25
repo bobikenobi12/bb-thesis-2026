@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { ClusterSelector } from "@/components/cluster-selector";
 import { ContainerPlatformSelector } from "@/components/container-platform-selector";
 import { RepositorySelector } from "@/components/repository-selector";
 import { Button } from "@/components/ui/button";
@@ -32,9 +33,20 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { publicConfigurationsInsertSchema } from "@/lib/validations/database.schemas";
-import { PublicConfigurationsInsert } from "@/lib/validations/db.schemas";
+import {
+	PublicClustersRow,
+	PublicConfigurationsInsert,
+} from "@/lib/validations/db.schemas";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertCircle, ArrowRight, Cloud, Database, Shield } from "lucide-react";
+import {
+	AlertCircle,
+	ArrowRight,
+	CheckCircle2,
+	Cloud,
+	Database,
+	Server,
+	Shield,
+} from "lucide-react";
 import { SubmitHandler, useForm } from "react-hook-form";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -42,10 +54,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export function ConfigurationForm() {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [selectedCluster, setSelectedCluster] =
+		useState<PublicClustersRow | null>(null);
 
 	const form = useForm<PublicConfigurationsInsert>({
 		resolver: zodResolver(publicConfigurationsInsertSchema),
 		defaultValues: {
+			container_platform: "",
+			user_id: "",
 			project_name: "",
 			aws_account_id: "",
 			environment_stage: "development",
@@ -85,8 +101,23 @@ topics:
 		},
 	});
 
+	// Handle Cluster Selection
+	const handleClusterSelect = (cluster: PublicClustersRow) => {
+		setSelectedCluster(cluster);
+		form.setValue("cluster_id", cluster.id);
+
+		const metadata = cluster.metadata as any;
+		if (metadata?.region) {
+			form.setValue("aws_region", metadata.region);
+		}
+		if (metadata?.vpc_cidr) {
+			form.setValue("vpc_cidr", metadata.vpc_cidr);
+			form.setValue("create_vpc", false);
+		}
+	};
+
 	const onSubmit: SubmitHandler<PublicConfigurationsInsert> = async (
-		data
+		data,
 	) => {
 		setIsLoading(true);
 		setError(null);
@@ -103,7 +134,7 @@ topics:
 			if (!response.ok) {
 				const errorData = await response.json();
 				throw new Error(
-					errorData.message || "Failed to create configuration"
+					errorData.message || "Failed to create configuration",
 				);
 			}
 
@@ -115,19 +146,43 @@ topics:
 			setError(
 				error instanceof Error
 					? error.message
-					: "An unexpected error occurred"
+					: "An unexpected error occurred",
 			);
 		} finally {
 			setIsLoading(false);
 		}
 	};
+
 	useEffect(() => {
 		console.log(form.formState.errors, form.formState.isValid);
 	}, [form.formState.errors]);
+
 	return (
 		<Form {...form}>
 			<form onSubmit={form.handleSubmit(onSubmit)}>
 				<div className="space-y-8">
+					{/* Cluster Selection (The "Context") */}
+					<div className="space-y-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+						<div className="flex items-center gap-2">
+							<Server className="w-5 h-5 text-indigo-600" />
+							<h3 className="font-serif text-lg font-semibold">
+								Target Environment
+							</h3>
+						</div>
+						<p className="text-sm text-slate-500">
+							Select the Kubernetes cluster where this
+							configuration will be deployed.
+						</p>
+						<ClusterSelector onSelect={handleClusterSelect} />
+
+						{selectedCluster && (
+							<div className="text-xs text-green-600 flex items-center gap-1 mt-2">
+								<CheckCircle2 className="w-3 h-3" />
+								Linked to {selectedCluster.name}
+							</div>
+						)}
+					</div>
+
 					{/* Project Configuration */}
 					<div className="space-y-6">
 						<div className="flex items-center gap-2 mb-4">
@@ -254,30 +309,41 @@ topics:
 											<FormLabel htmlFor="aws_region">
 												AWS Region *
 											</FormLabel>
-											<Select
-												onValueChange={field.onChange}
-												defaultValue={field.value}
-											>
-												<FormControl>
-													<SelectTrigger>
-														<SelectValue />
-													</SelectTrigger>
-												</FormControl>
-												<SelectContent>
-													<SelectItem value="us-east-1">
-														US East (N. Virginia)
-													</SelectItem>
-													<SelectItem value="us-west-2">
-														US West (Oregon)
-													</SelectItem>
-													<SelectItem value="eu-west-1">
-														Europe (Ireland)
-													</SelectItem>
-													<SelectItem value="ap-southeast-1">
-														Asia Pacific (Singapore)
-													</SelectItem>
-												</SelectContent>
-											</Select>
+											{selectedCluster ? (
+												<div className="p-2 bg-slate-100 rounded border text-sm text-slate-700">
+													{field.value} (Locked to
+													Cluster)
+												</div>
+											) : (
+												<Select
+													onValueChange={
+														field.onChange
+													}
+													defaultValue={field.value}
+												>
+													<FormControl>
+														<SelectTrigger>
+															<SelectValue />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														<SelectItem value="us-east-1">
+															US East (N.
+															Virginia)
+														</SelectItem>
+														<SelectItem value="us-west-2">
+															US West (Oregon)
+														</SelectItem>
+														<SelectItem value="eu-west-1">
+															Europe (Ireland)
+														</SelectItem>
+														<SelectItem value="ap-southeast-1">
+															Asia Pacific
+															(Singapore)
+														</SelectItem>
+													</SelectContent>
+												</Select>
+											)}
 											<FormMessage />
 										</FormItem>
 									)}

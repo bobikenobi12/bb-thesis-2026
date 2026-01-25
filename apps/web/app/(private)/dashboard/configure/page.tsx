@@ -14,7 +14,7 @@ export default function ConfigurePage() {
 		<div className="max-w-4xl mx-auto">
 			<div className="mb-8">
 				<div className="flex items-center gap-3 mb-4">
-					<div className="p-2 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-lg">
+					<div className="p-2 bg-linear-to-r from-cyan-600 to-purple-600 rounded-lg">
 						<Settings className="w-6 h-6 text-white" />
 					</div>
 					<div>

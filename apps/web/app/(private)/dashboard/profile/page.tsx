@@ -141,11 +141,24 @@ export default function ProfilePage() {
 									<Shield className="h-4 w-4" />
 									Authentication Provider
 								</Label>
-								<div>
-									{user?.app_metadata?.provider &&
-										getProviderBadge(
-											user.app_metadata.provider
-										)}
+								<div className="flex gap-2 flex-wrap">
+									{user?.identities &&
+									user.identities.length > 0 ? (
+										user.identities.map((identity) => (
+											<div key={identity.id}>
+												{getProviderBadge(
+													identity.provider,
+												)}
+											</div>
+										))
+									) : (
+										<div>
+											{user?.app_metadata?.provider &&
+												getProviderBadge(
+													user.app_metadata.provider,
+												)}
+										</div>
+									)}
 								</div>
 							</div>
 							<div>
@@ -156,12 +169,12 @@ export default function ProfilePage() {
 								<p className="font-medium">
 									{user?.created_at
 										? new Date(
-												user.created_at
-										  ).toLocaleDateString("en-US", {
+												user.created_at,
+											).toLocaleDateString("en-US", {
 												year: "numeric",
 												month: "long",
 												day: "numeric",
-										  })
+											})
 										: "Unknown"}
 								</p>
 							</div>
@@ -212,7 +225,7 @@ export default function ProfilePage() {
 							</p>
 						</div>
 					</div>
-					<Button className="bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700">
+					<Button className="bg-linear-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700">
 						Save Changes
 					</Button>
 				</CardContent>

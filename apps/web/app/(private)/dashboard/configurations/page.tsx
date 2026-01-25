@@ -18,7 +18,7 @@ import Link from "next/link";
 export default async function ConfigurationsPage({
 	searchParams,
 }: {
-	searchParams?: { [key: string]: string | undefined };
+	searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
 	const supabase = await createClient();
 	const {
@@ -31,7 +31,7 @@ export default async function ConfigurationsPage({
 		.eq("user_id", user!.id)
 		.order("updated_at", { ascending: false });
 
-	const highlightedConfig = searchParams?.highlight;
+	const { hightlight: highlightedConfig } = await searchParams;
 
 	return (
 		<div className="max-w-7xl mx-auto">
@@ -53,7 +53,7 @@ export default async function ConfigurationsPage({
 							className={cn(
 								"flex flex-col justify-between transition-all hover:scale-105 hover:shadow-xl dark:hover:shadow-cyan-500/20",
 								highlightedConfig === config.id &&
-									"border-cyan-400 shadow-lg shadow-cyan-500/30 dark:shadow-cyan-500/50"
+									"border-cyan-400 shadow-lg shadow-cyan-500/30 dark:shadow-cyan-500/50",
 							)}
 						>
 							<CardHeader>
@@ -90,7 +90,7 @@ export default async function ConfigurationsPage({
 											new Date(config.updated_at!),
 											{
 												addSuffix: true,
-											}
+											},
 										)}
 									</span>
 								</div>

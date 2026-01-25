@@ -27,6 +27,7 @@ import {
 	Menu,
 	Plus,
 	Search,
+	Server,
 	Settings,
 	User,
 	X,
@@ -74,6 +75,7 @@ export default function DashboardLayout({
 			href: "/dashboard/configurations",
 			icon: Folder,
 		},
+		{ name: "Clusters", href: "/dashboard/clusters", icon: Server },
 		{ name: "History", href: "/dashboard/history", icon: History },
 	];
 
@@ -83,7 +85,7 @@ export default function DashboardLayout({
 	};
 
 	return (
-		<div className="h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 overflow-y-hidden">
+		<div className="h-screen bg-linear-to-br from-slate-50 via-white to-slate-50 overflow-y-hidden">
 			{/* Header */}
 			<header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-40 shadow-sm">
 				<div className="px-6 py-4">
@@ -105,7 +107,7 @@ export default function DashboardLayout({
 								href="/dashboard"
 								className="flex items-center gap-3"
 							>
-								<div className="w-9 h-9 bg-gradient-to-br from-cyan-600 to-purple-600 rounded-xl shadow-lg"></div>
+								<div className="w-9 h-9 bg-linear-to-br from-cyan-600 to-purple-600 rounded-xl shadow-lg"></div>
 								<div>
 									<h2 className="font-sans text-lg font-bold text-slate-900">
 										ItGix Grape
@@ -151,7 +153,7 @@ export default function DashboardLayout({
 												src="/generic-user-avatar.png"
 												alt="User"
 											/>
-											<AvatarFallback className="bg-gradient-to-br from-cyan-600 to-purple-600 text-white">
+											<AvatarFallback className="bg-linear-to-br from-cyan-600 to-purple-600 text-white">
 												{getUserInitials()}
 											</AvatarFallback>
 										</Avatar>
@@ -221,7 +223,7 @@ export default function DashboardLayout({
 										className={cn(
 											"w-full justify-start gap-3 h-11",
 											isActive &&
-												"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50 shadow-sm",
+												"bg-linear-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50 shadow-sm",
 										)}
 									>
 										<item.icon className="h-5 w-5" />
@@ -242,7 +244,7 @@ export default function DashboardLayout({
 										src="/generic-user-avatar.png"
 										alt="User"
 									/>
-									<AvatarFallback className="bg-gradient-to-br from-cyan-600 to-purple-600 text-white text-sm">
+									<AvatarFallback className="bg-linear-to-br from-cyan-600 to-purple-600 text-white text-sm">
 										{getUserInitials()}
 									</AvatarFallback>
 								</Avatar>
@@ -291,7 +293,7 @@ export default function DashboardLayout({
 												className={cn(
 													"w-full justify-start gap-3 h-11",
 													isActive &&
-														"bg-gradient-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50",
+														"bg-linear-to-r from-cyan-50 to-purple-50 text-cyan-900 border border-cyan-200/50",
 												)}
 											>
 												<item.icon className="h-5 w-5" />
@@ -316,7 +318,7 @@ export default function DashboardLayout({
 												src="/generic-user-avatar.png"
 												alt="User"
 											/>
-											<AvatarFallback className="bg-gradient-to-br from-cyan-600 to-purple-600 text-white text-sm">
+											<AvatarFallback className="bg-linear-to-br from-cyan-600 to-purple-600 text-white text-sm">
 												{getUserInitials()}
 											</AvatarFallback>
 										</Avatar>
