@@ -6,11 +6,20 @@
 
 import { z } from "zod";
 import * as generated from "./database.schemas";
+export type PublicCloudProvider = z.infer<
+  typeof generated.publicCloudProviderSchema
+>;
+export type PublicClusterStatus = z.infer<
+  typeof generated.publicClusterStatusSchema
+>;
 export type PublicDeploymentResourceStatus = z.infer<
   typeof generated.publicDeploymentResourceStatusSchema
 >;
 export type PublicDeploymentStatus = z.infer<
   typeof generated.publicDeploymentStatusSchema
+>;
+export type PublicGitProvider = z.infer<
+  typeof generated.publicGitProviderSchema
 >;
 export type PublicIacTool = z.infer<typeof generated.publicIacToolSchema>;
 export type PublicLogsLevel = z.infer<typeof generated.publicLogsLevelSchema>;
@@ -27,6 +36,24 @@ export type PublicCliLoginsUpdate = z.infer<
 export type PublicCliLoginsRelationships = z.infer<
   typeof generated.publicCliLoginsRelationshipsSchema
 >;
+export type PublicCloudIdentitiesRow = z.infer<
+  typeof generated.publicCloudIdentitiesRowSchema
+>;
+export type PublicCloudIdentitiesInsert = z.infer<
+  typeof generated.publicCloudIdentitiesInsertSchema
+>;
+export type PublicCloudIdentitiesUpdate = z.infer<
+  typeof generated.publicCloudIdentitiesUpdateSchema
+>;
+export type PublicClustersRow = z.infer<
+  typeof generated.publicClustersRowSchema
+>;
+export type PublicClustersInsert = z.infer<
+  typeof generated.publicClustersInsertSchema
+>;
+export type PublicClustersUpdate = z.infer<
+  typeof generated.publicClustersUpdateSchema
+>;
 export type PublicConfigurationsRow = z.infer<
   typeof generated.publicConfigurationsRowSchema
 >;
@@ -35,6 +62,9 @@ export type PublicConfigurationsInsert = z.infer<
 >;
 export type PublicConfigurationsUpdate = z.infer<
   typeof generated.publicConfigurationsUpdateSchema
+>;
+export type PublicConfigurationsRelationships = z.infer<
+  typeof generated.publicConfigurationsRelationshipsSchema
 >;
 export type PublicDeploymentLogsRow = z.infer<
   typeof generated.publicDeploymentLogsRowSchema
@@ -80,4 +110,37 @@ export type PublicProfilesInsert = z.infer<
 >;
 export type PublicProfilesUpdate = z.infer<
   typeof generated.publicProfilesUpdateSchema
+>;
+export type PublicProviderTokensRow = z.infer<
+  typeof generated.publicProviderTokensRowSchema
+>;
+export type PublicProviderTokensInsert = z.infer<
+  typeof generated.publicProviderTokensInsertSchema
+>;
+export type PublicProviderTokensUpdate = z.infer<
+  typeof generated.publicProviderTokensUpdateSchema
+>;
+export type PublicProvisionLogsRow = z.infer<
+  typeof generated.publicProvisionLogsRowSchema
+>;
+export type PublicProvisionLogsInsert = z.infer<
+  typeof generated.publicProvisionLogsInsertSchema
+>;
+export type PublicProvisionLogsUpdate = z.infer<
+  typeof generated.publicProvisionLogsUpdateSchema
+>;
+export type PublicProvisionLogsRelationships = z.infer<
+  typeof generated.publicProvisionLogsRelationshipsSchema
+>;
+export type PublicProvisionsRow = z.infer<
+  typeof generated.publicProvisionsRowSchema
+>;
+export type PublicProvisionsInsert = z.infer<
+  typeof generated.publicProvisionsInsertSchema
+>;
+export type PublicProvisionsUpdate = z.infer<
+  typeof generated.publicProvisionsUpdateSchema
+>;
+export type PublicProvisionsRelationships = z.infer<
+  typeof generated.publicProvisionsRelationshipsSchema
 >;
