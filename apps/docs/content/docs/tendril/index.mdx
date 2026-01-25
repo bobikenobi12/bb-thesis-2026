@@ -1,0 +1,32 @@
+---
+title: Tendril Agent
+description: Documentation for the Tendril Agent.
+---
+
+# Tendril Agent
+
+Tendril is the autonomous agent that runs inside your Kubernetes cluster. It is responsible for executing provisioning jobs sent by the Trellis platform.
+
+## Features
+
+- **Secure Polling**: Connects outbound to Trellis to fetch jobs. No inbound ports required.
+- **Infrastructure as Code**: Executes Terraform natively within the cluster.
+- **Real-time Logging**: Streams execution logs back to the platform.
+- **Integrity Checks**: Verifies configuration hashes before execution.
+
+## Installation
+
+The agent is typically installed via the Grape CLI during the bootstrap process:
+
+```bash
+grape bootstrap
+```
+
+Alternatively, it can be installed via Helm:
+
+```bash
+helm install tendril oci://ghcr.io/bobikenobi12/charts/tendril \
+  --set config.clusterId=<CLUSTER_ID> \
+  --set config.apiToken=<TOKEN>
+```
+

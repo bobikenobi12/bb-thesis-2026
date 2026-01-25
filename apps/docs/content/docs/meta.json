@@ -2,7 +2,8 @@
   "title": "Documentation",
   "root": true,
   "pages": [
-    "cli",
-    "web"
+    "grape",
+    "trellis",
+    "tendril"
   ]
 }
