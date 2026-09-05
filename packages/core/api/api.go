@@ -1912,9 +1912,26 @@ func (c *Client) AddEnvironment(params AddEnvironmentParams) (*Environment, erro
 	return successResp.Environment, nil
 }
 
-// ListComponents returns a project's components. An empty kind/env lists all of them;
-// otherwise the listing is filtered server-side.
+// ListComponents returns every component in a project. An empty kind/env lists all of them;
+// otherwise the listing is filtered server-side. The signature stays source-compatible while
+// the implementation walks the server's cursor pages to exhaustion.
 func (c *Client) ListComponents(project, kind, env string) ([]Component, error) {
+	return AllPages(func(cursor string) ([]Component, PageInfo, error) {
+		page, err := c.getProjectComponentsPage(project, kind, env, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		return page.Components, page.Page, nil
+	})
+}
+
+// getProjectComponentsPage fetches one server page while preserving the component filters on
+// every cursor request. A server predating component paging omits Page, whose zero value naturally
+// describes one exhausted response to AllPages.
+func (c *Client) getProjectComponentsPage(project, kind, env, cursor string) (*struct {
+	Components []Component `json:"components"`
+	Page       PageInfo    `json:"page"`
+}, error) {
 	endpoint := fmt.Sprintf("%s/cli/projects/%s/components", c.baseURL, url.PathEscape(project))
 	params := url.Values{}
 	if kind != "" {
@@ -1923,16 +1940,18 @@ func (c *Client) ListComponents(project, kind, env string) ([]Component, error) 
 	if env != "" {
 		params.Set("env", env)
 	}
+	PageOpts{Cursor: cursor}.Apply(params)
 	if len(params) > 0 {
 		endpoint = fmt.Sprintf("%s?%s", endpoint, params.Encode())
 	}
 	var successResp struct {
 		Components []Component `json:"components"`
+		Page       PageInfo    `json:"page"`
 	}
 	if err := c.doGet(endpoint, &successResp); err != nil {
 		return nil, fmt.Errorf("failed to list components: %w", err)
 	}
-	return successResp.Components, nil
+	return &successResp, nil
 }
 
 // AddComponent creates a component of `kind` on a project. `name` is ignored for singleton

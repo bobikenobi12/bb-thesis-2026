@@ -196,9 +196,21 @@ describeIfDb("CLI project component add — environment scoping (#662)", () => {
 			instance_types: ["Standard_D2s_v3"],
 		});
 
-		expect(await listProjectComponents(PROJ, "cluster")).toHaveLength(2);
-		const scoped = await listProjectComponents(PROJ, "cluster", ENV_DEFAULT);
-		expect(scoped).toHaveLength(1);
-		expect(scoped[0]?.config.environment_id).toBe(ENV_DEFAULT);
+		const all = await listProjectComponents(
+			{ orgId: ORG, projectId: PROJ, kindFilter: "cluster" },
+			{ limit: 200, after: null },
+		);
+		expect(all.components).toHaveLength(2);
+		const scoped = await listProjectComponents(
+			{
+				orgId: ORG,
+				projectId: PROJ,
+				kindFilter: "cluster",
+				environmentId: ENV_DEFAULT,
+			},
+			{ limit: 200, after: null },
+		);
+		expect(scoped.components).toHaveLength(1);
+		expect(scoped.components[0]?.config.environment_id).toBe(ENV_DEFAULT);
 	});
 });

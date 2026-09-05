@@ -8,5 +8,11 @@
 			"cloud_identity_id": "string",
 			"config": {}
 		}
-	]
+	],
+	"page": {
+		"mode": "exact",
+		"limit": 1,
+		"total": 0,
+		"next_cursor": "string"
+	}
 }
