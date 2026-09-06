@@ -1,6 +1,6 @@
 module github.com/alethialabs-io/alethialabs/test/e2e
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/alethialabs-io/alethialabs/packages/core v0.0.0
