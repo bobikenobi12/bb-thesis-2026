@@ -633,6 +633,22 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/e2e-issuer:
+    dependencies:
+      '@repo/workload-identity':
+        specifier: workspace:*
+        version: link:../../packages/workload-identity
+    devDependencies:
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@25.0.8)(jsdom@29.1.1(@noble/hashes@2.3.0))(lightningcss@1.32.0)(terser@5.51.2)
+
   apps/marketing:
     dependencies:
       '@aws-sdk/client-sesv2':
