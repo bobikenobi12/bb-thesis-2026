@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
@@ -307,14 +308,20 @@ func projResetFlags() {
 	componentListKind = ""
 	componentAddKind, componentAddName, componentAddSet = "", "", nil
 	componentRemoveKind, componentRemoveName = "", ""
-	projectCreateRegion, projectCreateIdentity = "", ""
-	projectCreateStage, projectCreateIacVersion = string(stageDevelopment), ""
+	// `project create`'s flags are generated from projectCreateSpec, so they are reset through the
+	// binder that owns them rather than named one by one. That is the point: the list below stopped
+	// covering a flag the moment somebody added one without remembering this function, which is what
+	// the #3699 note underneath records happening. Reset() zeroes whatever is actually bound.
+	//
+	// `stage` resets to EMPTY rather than to stageDevelopment because the default is no longer a
+	// cobra default — it is applied by spec.Resolve, after the form, so that a form still asks about
+	// a field that has one.
+	projectCreateBinder.Reset()
 	projectEnvStage, projectEnvRegion = string(stageDevelopment), ""
 	// Added with #3699. Every one of these leaked between runs before it was listed here, and
 	// the symptom was four tests that PASSED alone and FAILED in the suite — a --cloud-account
 	// left set by an earlier run silently linking a later project, which is the same class of
 	// defect the flags themselves are arranged against.
-	projectCreateAccount, projectCreatePlacement, projectCreateEnvs = "", "", nil
 	projectPlanProjectRef, projectApplyProjectRef, projectDestroyProjectRef = "", "", ""
 	projectEnvPlacement, projectEnvFabric = "", ""
 	projectEnvNamespace, projectEnvLifecycle = "", ""
@@ -962,6 +969,14 @@ func TestProj_CreatePromptsOnTTY(t *testing.T) {
 	h := projEnv(t, &projServer{})
 	projTTY(t)
 	projForm(t)
+	previousPrompt := projectCreatePrompt
+	projectCreatePrompt = func(f spec.Field, token, accountRef string) (string, error) {
+		if f.Key == "region" {
+			return "eu-west-1", nil
+		}
+		return defaultProjectCreatePrompt(f, token, accountRef)
+	}
+	t.Cleanup(func() { projectCreatePrompt = previousPrompt })
 
 	if h.run("project", "create", "api", "--output", "json") {
 		t.Error("prompted project create exited fatally")
