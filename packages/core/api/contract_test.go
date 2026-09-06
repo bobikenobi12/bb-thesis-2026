@@ -374,6 +374,7 @@ func TestContract_Environment(t *testing.T) {
 func TestContract_Components(t *testing.T) {
 	var resp struct {
 		Components []Component `json:"components"`
+		Page       PageInfo    `json:"page"`
 	}
 	strictDecode(t, "components.json", &resp)
 	if len(resp.Components) != 1 {

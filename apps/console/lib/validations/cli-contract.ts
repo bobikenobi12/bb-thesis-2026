@@ -624,6 +624,7 @@ export const cliEnvironmentResponse = z.object({ environment: environmentWire })
 /** GET /api/cli/projects/:id/components result. */
 export const cliComponentsResponse = z.object({
 	components: z.array(componentWire),
+	page: pageInfoSchema,
 });
 /** POST /api/cli/projects/:id/components/:kind result. */
 export const cliComponentResponse = z.object({ component: componentWire });
