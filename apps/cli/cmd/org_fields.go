@@ -4,9 +4,9 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 )
 
 // The field spec for the org noun group — org, members, teams, roles, grants, sso, whoami.
@@ -33,36 +33,11 @@ import (
 //
 // It is deliberately local, the way auth_fields.go is. The general field-spec kit is #3661's; this
 // is one noun group's fields, described once.
-type orgField struct {
-	// Command is the cobra command path the field belongs to, e.g. "alethia teams delete". It is
-	// what the guard resolves against the real tree.
-	Command string
-	// Key identifies the field inside its command. Never shown; it is how the form asks for its
-	// own spec.
-	Key string
-	// Title is the form's question AND the docs table's "Field" cell.
-	Title string
-	// Description is the form's helper line AND the docs table's "What it is" cell. One sentence,
-	// no trailing period — the form renders it beneath the title.
-	Description string
-	// Flag is the long flag that supplies this value without a form. Empty when the value is a
-	// positional argument, in which case Arg carries the placeholder. Exactly one of the two is
-	// set; the guard fails on both or neither.
-	Flag string
-	// Arg is the positional placeholder as it appears in the command's Use string.
-	Arg string
-	// Selector is the flag that names this value by something a person can READ — an email, a
-	// name, a domain — for the fields whose positional is an opaque id. Empty when the field has
-	// no such flag, which is every field that is not an id.
-	//
-	// It is part of the spec rather than a detail of the resolver because it is the answer to
-	// "how do I run this without a terminal and without having copied an id": the refusal a
-	// scripted caller gets NAMES this flag, and the docs table carries it in its own column.
-	Selector string
-	// Page is the docs file, relative to the repository root, whose fieldspec table carries this
-	// row.
-	Page string
-}
+// orgField is spec.Field. The struct declared here was one of five near-identical copies across the
+// noun groups, each carrying a comment naming #3661 as where they converge. This is that
+// convergence; an ALIAS rather than a new type so every literal in this file and every call site
+// elsewhere reads unchanged. What the columns mean is documented once, on spec.Field.
+type orgField = spec.Field
 
 // Field keys. Constants rather than literals so a typo is a compile error and a rename reaches the
 // form and the spec together.
@@ -252,12 +227,14 @@ var orgFields = []orgField{
 // with an empty title and asks the user for something unnamed. The behavioural tests drive every
 // prompt, so an unresolvable key cannot ship.
 func mustOrgField(command, key string) orgField {
-	for _, f := range orgFields {
-		if f.Command == command && f.Key == key {
-			return f
-		}
-	}
-	panic(fmt.Sprintf("no orgField %q on %q — see orgFields in org_fields.go", key, command))
+	return orgGroup().Must(command, key)
+}
+
+// orgGroup wraps the org & identity group's table in the shared kit, so the lookup, the flag
+// registration and the docs rendering are the ones every other group uses rather than five copies
+// of each.
+func orgGroup() spec.Group {
+	return spec.Group{Name: "org", Source: "org_fields.go", Fields: orgFields}
 }
 
 // orgGroupRoots are the top-level commands this noun group owns. Used to derive the group's

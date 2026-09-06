@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 )
 
 // The field spec for the `ops` break-glass group.
@@ -30,28 +32,11 @@ import (
 // named here exists on the command, and that ops.mdx carries the same rows in the same order.
 
 // opsField is one value an ops command takes from a person.
-type opsField struct {
-	// Command is the cobra command path the field belongs to, e.g. "alethia ops cancel-job".
-	Command string
-	// Key identifies the field inside its command. Never shown; it is how the form asks for its
-	// own spec.
-	Key string
-	// Title is the form's question AND the docs table's "Field" cell.
-	Title string
-	// Description is the form's helper line AND the docs table's "What it is" cell. One sentence,
-	// no trailing period — the form renders it beneath the title.
-	Description string
-	// Flag is the long flag that supplies this value without a form. Empty when the value is a
-	// positional argument, in which case Arg carries the placeholder. Exactly one of the two is
-	// set; the guard fails on both or neither.
-	Flag string
-	// Arg is the positional placeholder as it appears in the command's Use string.
-	Arg string
-	// Bool marks a flag-backed field whose value is a switch rather than a string. Only
-	// `--send-emails` is one; it exists so flag registration can be derived from this table
-	// instead of repeated per command.
-	Bool bool
-}
+// opsField is spec.Field. The struct declared here was one of five near-identical copies across the
+// noun groups, each carrying a comment naming #3661 as where they converge. This is that
+// convergence; an ALIAS rather than a new type so every literal in this file and every call site
+// elsewhere reads unchanged. What the columns mean is documented once, on spec.Field.
+type opsField = spec.Field
 
 // Field keys. Constants rather than literals so a typo is a compile error and a rename reaches the
 // form and the spec together.
@@ -152,12 +137,14 @@ var opsFields = []opsField{
 // with an empty title and asks the operator for something unnamed, in an incident. The behavioural
 // tests drive every prompt, so an unresolvable key cannot ship.
 func mustOpsField(command, key string) opsField {
-	for _, f := range opsFields {
-		if f.Command == command && f.Key == key {
-			return f
-		}
-	}
-	panic(fmt.Sprintf("no opsField %q on %q — see opsFields in ops_fields.go", key, command))
+	return opsGroup().Must(command, key)
+}
+
+// opsGroup wraps the ops group's table in the shared kit, so the lookup, the flag
+// registration and the docs rendering are the ones every other group uses rather than five copies
+// of each.
+func opsGroup() spec.Group {
+	return spec.Group{Name: "ops", Source: "ops_fields.go", Fields: opsFields}
 }
 
 // ── the action catalog ──────────────────────────────────────────────────────────────────────────
