@@ -4,7 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { cn } from "@repo/ui/utils";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { getEnvironmentJobs } from "@/app/server/actions/canvas-jobs";
 import { useEnvironmentStatus } from "@/lib/canvas/environment-status-context";
 import { ago, JOB_LABEL, JOB_STATUS } from "@/lib/canvas/job-display";
@@ -42,10 +42,7 @@ export function ActivityRail({
 			<div className="flex items-center gap-2 border-b border-border px-2.5 py-1.5">
 				<span className="vx-eyebrow">Activity</span>
 				{env.activeJob && (
-					<span className="vx-status vx-status--live ml-auto">
-						<span className="vx-status__dot" />
-						running
-					</span>
+					<StatusBadge status="running" tier="live" className="ml-auto" />
 				)}
 			</div>
 
@@ -60,16 +57,17 @@ export function ActivityRail({
 								// A failed job's reason is the most useful thing on this rail.
 								title={job.error ?? job.status}
 							>
-								<span
-									className={cn("vx-status shrink-0", `vx-status--${vx}`)}
+								<StatusBadge
+									status={job.status}
+									tier={vx}
+									showLabel={false}
+									className="shrink-0"
 									suppressHydrationWarning
-								>
-									<span className="vx-status__dot" />
-								</span>
-								<span className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-wide">
+								/>
+								<span className="min-w-0 flex-1 truncate font-mono text-ui-2xs uppercase tracking-wide">
 									{JOB_LABEL[job.type] ?? job.type}
 								</span>
-								<span className="shrink-0 font-mono text-[9px] text-muted-foreground">
+								<span className="shrink-0 font-mono text-ui-3xs text-muted-foreground">
 									{ago(job.createdAt)}
 								</span>
 							</Link>

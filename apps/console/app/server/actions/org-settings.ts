@@ -9,7 +9,7 @@
 
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { currentActor } from "@/lib/authz/guard";
+import { authorizeInOrg, currentActor } from "@/lib/authz/guard";
 import { getServiceDb } from "@/lib/db";
 import { organization } from "@/lib/db/schema";
 
@@ -99,14 +99,26 @@ export async function getOrgSettings(): Promise<OrgSettings | null> {
 }
 
 /**
- * Stores the active org's primary address in its metadata JSON — set from the checkout
- * form when "Use the billing address as my team's primary address" is checked. Scoped to
- * the resolved active org (never client-supplied), merged into the existing metadata.
+ * Stores an org's primary address in its metadata JSON — set from the checkout form when "Use the
+ * billing address as my team's primary address" is checked. Merged into the existing metadata.
+ *
+ * @param orgId the org to write to, when it is not the ambient one. NAMED for the same reason
+ * `startProTrial` and `linkSubscriptionToNewOrg` are: the create-org sheet runs from a page inside
+ * the CURRENT org and then writes to the org it has just created, so under URL-wins the ambient org
+ * is the wrong one — ticking "use as my primary address" while creating a team from `/acme/…`
+ * silently overwrote ACME's primary address, and the caller's `catch {}` meant nothing surfaced.
+ * Optional because `upgrade-org-sheet` and `onboarding-form` genuinely mean the ambient org.
+ *
+ * It is still never client-supplied in the ambient case — an id passed here is authorized through
+ * `authorizeInOrg`, which refuses an org the caller is not scoped to.
  */
 export async function updateOrgPrimaryAddress(
 	address: OrgPrimaryAddress,
+	orgId?: string,
 ): Promise<{ ok: true }> {
-	const actor = await currentActor();
+	const actor = orgId
+		? await authorizeInOrg("manage_billing", { type: "billing" }, orgId)
+		: await currentActor();
 	if (actor.orgId === actor.userId) {
 		throw new Error("No organization in scope.");
 	}

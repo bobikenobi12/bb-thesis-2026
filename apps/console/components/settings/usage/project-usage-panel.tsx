@@ -2,19 +2,32 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// The per-PROJECT Usage panel — the project analogue of usage-panel.tsx. Shows only what is
-// genuinely scopeable to one project: its jobs, managed runner job-minutes, clusters, estimated
-// cloud cost, and AI credits attributed via ref_id (best-effort — see the footnote). Org-wide
-// meters (seats, plan limits, provisioned-runner hours) are NOT per-project, so we link out to
-// the organization usage report for them. Data comes from the project-usage server actions
-// through the shared TanStack cache (period-fixed reads are server-prefetched + hydrated; the
-// over-time chart re-queries as the range picker changes).
+// The per-PROJECT Usage panel — the project analogue of usage-panel.tsx.
+//
+// It shows only what is genuinely scopeable to one project: its jobs, managed runner job-minutes,
+// clusters, estimated cloud cost, and AI credits attributed via ref_id (best-effort — see the
+// footnote). Org-wide meters (seats, plan limits, provisioned-runner hours) are NOT per-project,
+// so the toolbar links out to the organization usage report for them. Data comes from the
+// project-usage server actions through the shared TanStack cache (period-fixed reads are
+// server-prefetched + hydrated; the over-time chart re-queries as the range picker changes).
+//
+// ── The order is usage-panel.tsx's order, deliberately ───────────────────────────────────────
+// The two pages answer one question at two scopes, so a reader who has learned one has learned
+// the other: what you consumed against the plan · what used it in the window you pick · what you
+// run and what it costs outside the plan. They used to open differently (the org page led with
+// its meters, this one with a Resources card), group differently, and disagree about where the
+// range's job total lives. It lives in `OverTimeCard` on both now, next to the picker that
+// changes it, and the fact lists on both hold only what a picker cannot move.
+//
+// A project has no quota of its own, so section 1 is a plain metered readout rather than gauges —
+// that is the one honest difference between the two pages, and `formatMinutes` (not `formatQuota`)
+// is where it shows.
 
 import { formatMonthlyRate } from "@repo/format";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Info } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
 	getProjectAiUsage,
 	getProjectResourceCounts,
@@ -23,13 +36,20 @@ import {
 } from "@/app/server/actions/project-usage";
 import { ErrorState } from "@/components/errors/error-state";
 import { SettingsSection } from "@/components/settings/settings-ui";
-import { Bars, Stat } from "@/components/settings/usage/usage-primitives";
+import {
+	count,
+	Fact,
+	FactList,
+	type Metric,
+	OverTimeCard,
+} from "@/components/settings/usage/usage-primitives";
 import { qk } from "@/lib/query/keys";
 import { globalHref } from "@/lib/routing";
 import { useActiveOrgSlug } from "@/lib/stores/use-workspace-store";
 import { formatMinutes } from "@repo/format";
 import { Button } from "@repo/ui/button";
 import { DateRangeFilter } from "@repo/ui/date-range-filter";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { QuickRangeFilter } from "@repo/ui/quick-range-filter";
 import {
 	type DateRange,
@@ -39,13 +59,6 @@ import {
 	RANGE_PRESETS,
 } from "@repo/ui/range";
 import { Skeleton } from "@repo/ui/skeleton";
-
-type Metric = "runnerMinutes" | "jobs" | "aiCredits";
-const METRICS: { id: Metric; label: string }[] = [
-	{ id: "runnerMinutes", label: "Runner minutes" },
-	{ id: "jobs", label: "Jobs" },
-	{ id: "aiCredits", label: "AI credits" },
-];
 
 /**
  * Renders the Usage view for a single project. `projectId` is resolved from the URL slug in
@@ -88,11 +101,6 @@ export function ProjectUsagePanel({ projectId }: { projectId: string }) {
 			}),
 	});
 
-	const metricTotal = useMemo(
-		() => overTime.data?.totals[metric] ?? 0,
-		[overTime.data, metric],
-	);
-
 	if (usage.isLoading && !usage.data) {
 		return (
 			<div className="space-y-4">
@@ -129,80 +137,55 @@ export function ProjectUsagePanel({ projectId }: { projectId: string }) {
 
 	return (
 		<div className="space-y-2">
-			{/* Header: scope + the link out to org-wide usage. */}
-			<div className="flex flex-wrap items-center justify-between gap-3 pb-2">
-				<span className="font-display text-[15px] font-semibold text-text-primary">
-					Project usage
-				</span>
-				<Link
-					href={globalHref(orgSlug, "usage")}
-					className="inline-flex items-center gap-1 text-[12.5px] text-text-secondary transition-colors hover:text-text-primary"
-				>
-					View organization usage
-					<ArrowUpRight size={13} />
-				</Link>
-			</div>
+			{/* No page title — the breadcrumb and the sidebar already say "Usage", and the old
+			    "Project usage" heading said nothing more. What the toolbar carries instead is the
+			    scope boundary a reader of this page actually needs, and the link that resolves it.
+			    That sentence used to be a paragraph at the FOOT of the page carrying a second copy
+			    of the same link; one statement, one link, at the top where the boundary applies. */}
+			<PageToolbar
+				className="pb-2"
+				description="Seats, plan limits and provisioned-runner hours are billed org-wide, not per project."
+				actions={
+					// A plain `<Link>` — see the sibling note in usage-panel.tsx: base-ui's
+					// non-native Button puts `role="button"` on the anchor, and this navigates.
+					<Link
+						href={globalHref(orgSlug, "usage")}
+						className="inline-flex items-center gap-1 text-ui-sm text-text-secondary transition-colors hover:text-text-primary"
+					>
+						View organization usage
+						<ArrowUpRight size={13} />
+					</Link>
+				}
+			/>
 
-			{/* Resources — the current scale of what this project runs. */}
-			<SettingsSection title="Resources">
-				<div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
-					<div className="grid grid-cols-2 sm:grid-cols-4">
-						<Stat
-							label="Jobs"
-							value={overTime.data ? overTime.data.totals.jobs.toLocaleString() : "—"}
-							sub={rangeLabel.toLowerCase()}
-						/>
-						<Stat
-							label="Running"
-							value={usage.data?.runningJobs ?? "—"}
-							sub="jobs in flight"
-						/>
-						<Stat
-							label="Clusters"
-							value={counts.data?.clusters ?? "—"}
-							sub="under management"
-						/>
-					</div>
-					<div className="flex items-center justify-between border-t border-border bg-surface-sunken px-6 py-[14px] text-[12px] text-text-tertiary">
-						<span className="flex items-center gap-2">
-							<Info size={13} />
-							Estimated cloud spend for this project
-						</span>
-						<span className="font-mono text-text-secondary">
-							{counts.data
-								? formatMonthlyRate(counts.data.estimatedMonthlyCost)
-								: "—"}
-						</span>
-					</div>
-				</div>
-			</SettingsSection>
-
-			{/* Runner job-minutes + AI credits — the metered, project-attributable units. */}
+			{/* 1 · Metered this period — runner job-minutes + AI credits, the units Alethia bills
+			    for and can attribute to one project. The org page's section 1 in its project form:
+			    a project has no quota, so these are readouts and not gauges. */}
 			<SettingsSection title="Metered usage this period">
 				<div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
-					<div className="grid grid-cols-1 sm:grid-cols-2">
-						<Stat
+					<FactList>
+						<Fact
 							label="Runner job-minutes"
 							value={
 								// `jobMinutes` is a float; a local Math.round here was one of the four
 								// disagreeing minutes readouts. formatMinutes owns the rounding now.
+								// No allowance to render against — a project has no quota of its own,
+								// so this is `formatMinutes` and not `formatQuota`.
 								usage.data ? formatMinutes(usage.data.jobMinutes) : "—"
 							}
 							sub={
 								usage.data
-									? `${usage.data.jobCount.toLocaleString()} managed jobs this period`
+									? `${count(usage.data.jobCount)} managed jobs this period`
 									: "managed runner usage this period"
 							}
 						/>
-						<Stat
+						<Fact
 							label="AI credits used"
-							value={
-								ai.data ? ai.data.creditsThisPeriod.toLocaleString() : "—"
-							}
+							value={ai.data ? count(ai.data.creditsThisPeriod) : "—"}
 							sub="attributed to this project *"
 						/>
-					</div>
-					<div className="flex items-center gap-2 border-t border-border bg-surface-sunken px-6 py-[14px] text-[12px] text-text-tertiary">
+					</FactList>
+					<div className="flex items-center gap-2 border-t border-border bg-surface-sunken px-6 py-[14px] text-ui-sm text-text-tertiary">
 						<Info size={13} />
 						<span>
 							* AI credits are attributed to a project via the scan job or agent thread
@@ -213,7 +196,9 @@ export function ProjectUsagePanel({ projectId }: { projectId: string }) {
 				</div>
 			</SettingsSection>
 
-			{/* Usage over time — cumulative, driven by the time-range filters. */}
+			{/* 2 · Usage over time — cumulative, and the only home for a number the range picker
+			    can move. The project's job total lived in the Resources card above the picker;
+			    it lives beside the picker now. */}
 			<SettingsSection
 				title="Usage over time"
 				action={
@@ -236,52 +221,54 @@ export function ProjectUsagePanel({ projectId }: { projectId: string }) {
 					</div>
 				}
 			>
-				<div className="overflow-hidden rounded-lg border border-border bg-surface p-5 shadow-sm">
-					<div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-						<div className="flex gap-1">
-							{METRICS.map((m) => (
-								<button
-									key={m.id}
-									type="button"
-									onClick={() => setMetric(m.id)}
-									className={`rounded-sm px-2.5 py-1 text-[12px] transition-colors ${
-										metric === m.id
-											? "bg-surface-muted text-text-primary"
-											: "text-text-tertiary hover:text-text-secondary"
-									}`}
-								>
-									{m.label}
-								</button>
-							))}
-						</div>
-						<div className="font-mono text-[12px] text-text-secondary">
-							{metricTotal.toLocaleString()}{" "}
-							<span className="text-text-tertiary">
-								{METRICS.find((m) => m.id === metric)?.label.toLowerCase()} ·{" "}
-								{rangeLabel.toLowerCase()}
-							</span>
-						</div>
-					</div>
-					{overTime.data && overTime.data.series.length > 0 ? (
-						<Bars points={overTime.data.series} pick={(p) => p[metric]} />
-					) : (
-						<div className="flex h-28 items-center justify-center font-mono text-[11px] text-text-tertiary">
-							No usage in this range.
-						</div>
-					)}
-				</div>
+				<OverTimeCard
+					metric={metric}
+					onMetricChange={setMetric}
+					series={overTime.data?.series}
+					totals={overTime.data?.totals}
+					// `&& !overTime.data` so a refetch that fails keeps showing the window it already
+					// has rather than replacing real bars with an error; react-query leaves the last
+					// good `data` in place across a failed refetch, and stale-but-labelled beats blank.
+					error={overTime.isError && !overTime.data}
+					rangeLabel={rangeLabel}
+				/>
 			</SettingsSection>
 
-			<p className="px-1 pt-1 text-[12px] text-text-tertiary">
-				Seats, plan limits, and provisioned-runner hours are billed org-wide —{" "}
-				<Link
-					href={globalHref(orgSlug, "usage")}
-					className="text-text-secondary underline-offset-2 hover:text-text-primary hover:underline"
-				>
-					view organization usage
-				</Link>
-				.
-			</p>
+			{/* 3 · Resources — what this project runs right now, and what those things cost OUTSIDE
+			    the plan. Same position, same closing row and same provider footnote as the org
+			    page's third section, because it is the same distinction one scope down. The org
+			    page stated that separately-billed caveat and this page did not. */}
+			<SettingsSection title="Resources">
+				<div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+					<FactList>
+						<Fact
+							label="Clusters"
+							value={counts.data ? count(counts.data.clusters) : "—"}
+							sub="under management"
+						/>
+						<Fact
+							label="Running jobs"
+							value={usage.data ? count(usage.data.runningJobs) : "—"}
+							sub="in flight right now"
+						/>
+						{/* In the list, not under it — see the sibling comment in usage-panel.tsx. */}
+						<Fact
+							className="border-t bg-surface-sunken"
+							icon={<Info size={13} />}
+							label="Estimated cloud spend for this project"
+							value={
+								counts.data
+									? formatMonthlyRate(counts.data.estimatedMonthlyCost)
+									: "—"
+							}
+						/>
+					</FactList>
+					<div className="flex items-center gap-2 border-t border-border bg-surface-sunken px-6 py-[14px] text-ui-sm text-text-tertiary">
+						<Info size={13} />
+						Your cloud-resource spend is billed separately by your provider.
+					</div>
+				</div>
+			</SettingsSection>
 		</div>
 	);
 }

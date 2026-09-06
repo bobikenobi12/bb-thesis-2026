@@ -26,7 +26,7 @@ import {
 import type { ProjectStatus } from "@/lib/db/schema/enums";
 import { PROBE_CADENCE_MS } from "@/lib/probes/schedule";
 import { sweepProbeSchedule } from "@/lib/probes/dispatch";
-import { describeIfDb } from "./db";
+import { defaultIfFirst, describeIfDb } from "./db";
 
 const USER = randomUUID();
 const ORG = randomUUID();
@@ -40,7 +40,15 @@ async function seedEnv(
 ): Promise<string> {
 	const [e] = await db
 		.insert(projectEnvironments)
-		.values({ project_id: projectId, user_id: USER, org_id: ORG, name, status, stage })
+		.values({
+			project_id: projectId,
+			user_id: USER,
+			org_id: ORG,
+			name,
+			status,
+			stage,
+			is_default: defaultIfFirst(projectId),
+		})
 		.returning({ id: projectEnvironments.id });
 	return e.id;
 }

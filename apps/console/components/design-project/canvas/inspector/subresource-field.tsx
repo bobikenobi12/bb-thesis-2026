@@ -120,7 +120,7 @@ function RowField({
 
 	return (
 		<div className={cn("space-y-1", full && "col-span-2")}>
-			<Label htmlFor={fieldId} className="vx-eyebrow text-[9px]">
+			<Label htmlFor={fieldId} className="vx-eyebrow text-ui-3xs">
 				{field.label}
 			</Label>
 			{field.type === "select" && options ? (

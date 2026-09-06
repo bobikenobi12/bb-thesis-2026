@@ -4,6 +4,7 @@
 
 import { Handle, Position } from "@xyflow/react";
 import { formatMonthlyRate } from "@repo/format";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
 import type { CloudProviderSlug } from "@/lib/cloud-providers";
 import { NODE_REGISTRY, type NodeFact } from "../graph/node-registry";
@@ -122,15 +123,23 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 	// paint can differ. Keep the DOM STABLE across hydration — always render the label span (hidden
 	// when nominal) rather than conditionally mounting it, and suppress the benign text mismatch —
 	// so a store rehydration never throws a hydration error.
+	//
+	// That is why the label is styled through `StatusBadge`'s OWN label span instead of a nested
+	// one: `showLabel={false}` would unmount that span, changing the child count across hydration,
+	// which `suppressHydrationWarning` does not cover. A class hides it instead. And `truncate` has
+	// to sit ON the flex item — `overflow: hidden` is what zeroes a flex item's automatic minimum
+	// size — so a wrapper span in between would stop the ellipsis from ever appearing.
 	const statusEl = (
-		<span
-			className={cn("vx-status min-w-0", `vx-status--${status.vx}`)}
+		<StatusBadge
+			status={status.label}
+			tier={status.vx}
+			className={cn(
+				"min-w-0 [&>span:last-child]:truncate",
+				!showLabel && "[&>span:last-child]:hidden",
+			)}
 			title={resolved.message ?? status.label}
 			suppressHydrationWarning
-		>
-			<span className="vx-status__dot" />
-			<span className={cn("truncate", !showLabel && "hidden")}>{status.label}</span>
-		</span>
+		/>
 	);
 
 	// ── glyph tier — far out, a node is an icon, a name, and a pulse ────────
@@ -151,7 +160,7 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 				>
 					<Icon className="h-5 w-5 text-muted-foreground" />
 				</span>
-				<span className="max-w-[76px] truncate font-mono text-[10px] text-muted-foreground">
+				<span className="max-w-[76px] truncate font-mono text-ui-2xs text-muted-foreground">
 					{title}
 				</span>
 				{statusEl}
@@ -192,23 +201,24 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 				    footer, matching the At-Scale `.n` node. */}
 				<div className="flex items-center gap-1.5 border-b border-border/60 px-2 py-1">
 					<Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-					<span className="vx-eyebrow truncate text-[9px]">{eyebrow}</span>
-					<span
-						className={cn("vx-status ml-auto shrink-0", `vx-status--${status.vx}`)}
+					<span className="vx-eyebrow truncate text-ui-3xs">{eyebrow}</span>
+					<StatusBadge
+						status={status.label}
+						tier={status.vx}
+						showLabel={false}
+						className="ml-auto shrink-0"
 						title={resolved.message ?? status.label}
 						suppressHydrationWarning
-					>
-						<span className="vx-status__dot" />
-					</span>
+					/>
 				</div>
 
 				<div className="space-y-1 px-2 py-1.5">
-					<div className="truncate font-mono text-[11px] leading-tight text-foreground">
+					<div className="truncate font-mono text-ui-xs leading-tight text-foreground">
 						{title}
 					</div>
 					{/* cost · primary fact  [Drift] — a fabricated $0 is never shown (honest silence). */}
 					{(resolved.monthlyCost != null || primaryFact || drifted > 0) && (
-						<div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground">
+						<div className="flex items-center gap-1.5 font-mono text-ui-3xs text-muted-foreground">
 							{resolved.monthlyCost != null && (
 								<span className="shrink-0 text-muted-foreground">
 									{formatMonthlyRate(resolved.monthlyCost, "exact")}
@@ -220,7 +230,7 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 							{primaryFact && <span className="truncate">{primaryFact}</span>}
 							{gitops && (
 								<span
-									className="ml-auto shrink-0 border border-border-strong px-1 text-[8px] uppercase tracking-wide text-foreground"
+									className="ml-auto shrink-0 border border-border-strong px-1 text-ui-3xs uppercase tracking-wide text-foreground"
 									title={`ArgoCD: ${gitops.label}`}
 								>
 									{gitops.label}
@@ -229,7 +239,7 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 							{compatChip && (
 								<span
 									className={cn(
-										"shrink-0 border px-1 text-[8px] uppercase tracking-wide text-foreground",
+										"shrink-0 border px-1 text-ui-3xs uppercase tracking-wide text-foreground",
 										compat?.status === "fail" ? "border-border-strong" : "border-dashed border-border",
 										!gitops && "ml-auto",
 									)}
@@ -241,7 +251,7 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 							{drifted > 0 && (
 								<span
 									className={cn(
-										"shrink-0 border border-border-strong px-1 text-[8px] uppercase tracking-wide text-foreground",
+										"shrink-0 border border-border-strong px-1 text-ui-3xs uppercase tracking-wide text-foreground",
 										!gitops && "ml-auto",
 									)}
 								>
@@ -286,7 +296,7 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 						{compatChip && (
 							<span
 								className={cn(
-									"shrink-0 border px-1 py-px font-mono text-[8px] uppercase tracking-wide",
+									"shrink-0 border px-1 py-px font-mono text-ui-3xs uppercase tracking-wide",
 									compat?.status === "fail"
 										? "border-border-strong text-foreground"
 										: "border-dashed border-border text-muted-foreground",
@@ -297,14 +307,13 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 							</span>
 						)}
 					{gitops && (
-						<span
-							className={cn("vx-status shrink-0", `vx-status--${gitops.vx}`)}
+						<StatusBadge
+							status={gitops.label}
+							tier={gitops.vx}
+							className="shrink-0"
 							title={`ArgoCD: ${gitops.label}`}
 							suppressHydrationWarning
-						>
-							<span className="vx-status__dot" />
-							<span>{gitops.label}</span>
-						</span>
+						/>
 					)}
 					{statusEl}
 				</span>
@@ -329,11 +338,11 @@ export function BaseNode({ id, selected }: BaseNodeProps) {
 			    environment has been planned — an honest silence rather than a fabricated $0. */}
 			{resolved.monthlyCost != null && (
 				<div className="flex items-center gap-2 border-t border-border/60 px-2.5 py-1.5">
-					<span className="font-mono text-[10px] text-foreground">
+					<span className="font-mono text-ui-2xs text-foreground">
 						{formatMonthlyRate(resolved.monthlyCost, "exact")}
 					</span>
 					{drifted > 0 && (
-						<span className="ml-auto border border-border-strong px-1 font-mono text-[9px] uppercase tracking-wide">
+						<span className="ml-auto border border-border-strong px-1 font-mono text-ui-3xs uppercase tracking-wide">
 							{drifted} drifted
 						</span>
 					)}
@@ -363,10 +372,10 @@ function FactGrid({ facts }: { facts: { label: string; value: string }[] }) {
 		>
 			{shown.map((f) => (
 				<div key={f.label} className="min-w-0 bg-card px-1.5 py-1">
-					<dt className="vx-eyebrow truncate text-[9px]">{f.label}</dt>
+					<dt className="vx-eyebrow truncate text-ui-3xs">{f.label}</dt>
 					<dd
 						className={cn(
-							"truncate font-mono text-[11px]",
+							"truncate font-mono text-ui-xs",
 							f.value ? "text-foreground" : "text-muted-foreground/60",
 						)}
 					>

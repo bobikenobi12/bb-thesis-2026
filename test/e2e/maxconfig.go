@@ -142,8 +142,8 @@ type MaxConfigCell struct {
 	// CloudCeiling, DeferredInProduct and ExcludedByCost: an exclusion nobody can read is
 	// indistinguishable from an oversight.
 	Why string
-	// ClusterProbe is an OPTIONAL SECOND assertion for an in-cluster cell, for the case where a
-	// converged Application does not actually prove the kind was delivered.
+	// ClusterProbe is an OPTIONAL SECOND assertion, for the case where a cell's primary evidence
+	// does not actually prove the kind was delivered.
 	//
 	// Usually it does: `addon-db-appdb` Healthy+Synced means a CNPG Cluster exists and is running.
 	// But `secrets` on hetzner is delivered by a Vault whose Helm release is perfectly Healthy while
@@ -153,12 +153,21 @@ type MaxConfigCell struct {
 	// the object whose readiness DOES discriminate: the ClusterSecretStore over that Vault, which
 	// ESO marks Ready only after it has authenticated and read the mount.
 	//
-	// CarriedInCluster only, and always additive — the Application must converge too.
+	// The same hazard exists on a TOFU cell, which is why this is not CarriedInCluster-only:
+	// `secrets` on the four managed clouds counts an `aws_secretsmanager_secret` (or its GCP / Azure
+	// / Alibaba sibling) in state, and that resource is genuinely there — while the ESO
+	// ClusterSecretStore, the only thing that lets a workload actually READ it, may never have been
+	// created at all. #2652 saw exactly that: the store's apply failed with `no matches for kind`
+	// and a retry absorbed it, so the cell stayed green on evidence compatible with the capability
+	// being absent. Every cross-account-secrets claim resting on that store would have been vacuous.
+	//
+	// Always ADDITIVE — the cell's primary evidence (a converged Application, or the counted tofu
+	// resource) must hold too. A probe never replaces it.
 	ClusterProbe *MaxConfigClusterProbe
 }
 
-// MaxConfigClusterProbe names one live object whose `Ready` condition must be True for an
-// in-cluster cell to count as delivered.
+// MaxConfigClusterProbe names one live object whose `Ready` condition must be True for a cell to
+// count as delivered — whichever carriage provisioned it.
 //
 // Deliberately narrow: a resource, a name, and the reason the Application alone is not enough. It is
 // read with the same `Ready`-condition parser the cross-account secrets lane uses
@@ -180,6 +189,31 @@ type MaxConfigClusterProbe struct {
 // signals that carry the kind into the template.
 func tofuCell(resource string, signals ...string) MaxConfigCell {
 	return MaxConfigCell{Carriage: CarriedByTofu, Resource: resource, Signals: signals}
+}
+
+// tofuProbedCell is tofuCell for a kind whose provisioned cloud resource does NOT by itself prove
+// the kind is USABLE — it additionally names a live in-cluster object whose readiness does. See
+// MaxConfigCell.ClusterProbe.
+func tofuProbedCell(resource string, probe MaxConfigClusterProbe, signals ...string) MaxConfigCell {
+	return MaxConfigCell{Carriage: CarriedByTofu, Resource: resource, Signals: signals, ClusterProbe: &probe}
+}
+
+// cloudSecretsCell is the `secrets` cell for a cloud whose own secret manager carries the kind.
+//
+// The counted tofu resource proves the SECRET exists. It does not prove anything can read it: a
+// workload reads a cloud secret only through the ESO ClusterSecretStore, and on aws/full run
+// 32883119943 that store's apply failed with `no matches for kind "ClusterSecretStore"` while a
+// retry absorbed the error — so the cell was green on a cluster where the store may never have been
+// created (#2652). #3452 fixed the ordering; this is the half that measures it, because "we have
+// never seen it fail" is not evidence that it works when the failure is what the retry swallowed.
+func cloudSecretsCell(provider, resource string) MaxConfigCell {
+	return tofuProbedCell(resource, MaxConfigClusterProbe{
+		Resource: "clustersecretstores.external-secrets.io",
+		Name:     argocd.PerCloudSecretStoreName(provider),
+		Why: "the secret in " + provider + "'s secret manager is real, but a workload reaches it ONLY " +
+			"through this store; ESO marks it Ready only after assuming the cloud identity and " +
+			"reaching the secret manager, neither of which a missing or unauthorised store permits",
+	}, "custom_secrets")
 }
 
 // inClusterCell declares a cell delivered by an in-cluster chart rather than cloud IaC, naming the
@@ -239,9 +273,23 @@ func (c MaxConfigCell) Validate() error {
 		return fmt.Errorf("carriage %q must not name a Chart (%q) — only %q does, because only there is the chart's existence the whole claim",
 			c.Carriage, c.Chart, DeferredInProduct)
 	}
-	if c.ClusterProbe != nil && c.Carriage != CarriedInCluster {
-		return fmt.Errorf("carriage %q must not name a ClusterProbe — only %q can, because only there is a live cluster the thing being asserted",
-			c.Carriage, CarriedInCluster)
+	if p := c.ClusterProbe; p != nil {
+		// Both PROVISIONING carriages may carry a probe. The distinction that matters is not tofu
+		// versus chart — it is whether the cell's primary evidence can be true while the capability
+		// is absent, and that happens on both. A sealed Vault's Application is Healthy; an
+		// `aws_secretsmanager_secret` in state is equally real while the ClusterSecretStore that is
+		// the only way a workload READS it was never created (#2652). A ceiling, a deferral and a
+		// cost exclusion provision nothing, so there is no live object for them to name.
+		if c.Carriage != CarriedInCluster && c.Carriage != CarriedByTofu {
+			return fmt.Errorf("carriage %q must not name a ClusterProbe — only %q and %q can, because only they provision something a live cluster can be asked about",
+				c.Carriage, CarriedByTofu, CarriedInCluster)
+		}
+		if p.Resource == "" || p.Name == "" {
+			return fmt.Errorf("carriage %q names a ClusterProbe with no Resource/Name (%+v) — it would assert nothing", c.Carriage, *p)
+		}
+		if p.Why == "" {
+			return fmt.Errorf("carriage %q names a ClusterProbe with no Why — a probe nobody can justify is a flake waiting to be deleted", c.Carriage)
+		}
 	}
 	switch c.Carriage {
 	case CarriedByTofu:
@@ -263,14 +311,6 @@ func (c MaxConfigCell) Validate() error {
 		}
 		if c.Why == "" {
 			return fmt.Errorf("carriage %q needs a Why — why cloud IaC does not carry it", c.Carriage)
-		}
-		if p := c.ClusterProbe; p != nil {
-			if p.Resource == "" || p.Name == "" {
-				return fmt.Errorf("carriage %q names a ClusterProbe with no Resource/Name (%+v) — it would assert nothing", c.Carriage, *p)
-			}
-			if p.Why == "" {
-				return fmt.Errorf("carriage %q names a ClusterProbe with no Why — a probe nobody can justify is a flake waiting to be deleted", c.Carriage)
-			}
 		}
 	case CloudCeiling:
 		if c.Resource != "" || c.ArgoApp != "" || len(c.Signals) > 0 {
@@ -742,9 +782,9 @@ var MaxConfigKinds = []MaxConfigKind{
 			}}
 		},
 		Populated: func(pc *types.ProjectConfig) bool { return len(pc.Secrets) > 0 },
-		AWS:       tofuCell("aws_secretsmanager_secret", "custom_secrets"),
-		GCP:       tofuCell("google_secret_manager_secret", "custom_secrets"),
-		Azure:     tofuCell("azurerm_key_vault_secret", "custom_secrets"),
+		AWS:       cloudSecretsCell("aws", "aws_secretsmanager_secret"),
+		GCP:       cloudSecretsCell("gcp", "google_secret_manager_secret"),
+		Azure:     cloudSecretsCell("azure", "azurerm_key_vault_secret"),
 		// Hetzner has no cloud secret store and hetznerProvider.ProviderTfvars never emits
 		// custom_secrets, so nothing lands in tofu state. #2430 left this DEFERRED because the chart
 		// was never the missing half; #2432 built the half that was — a platform-operated Vault
@@ -767,7 +807,7 @@ var MaxConfigKinds = []MaxConfigKind{
 				Why: "a sealed Vault's Helm release is Healthy and Synced while the Vault serves nothing — " +
 					"ESO marks this store Ready only after authenticating with the minted token and reading the KV mount",
 			}),
-		Alibaba: tofuCell("alicloud_kms_secret", "custom_secrets"),
+		Alibaba: cloudSecretsCell("alibaba", "alicloud_kms_secret"),
 	},
 	{
 		Kind: "bucket",

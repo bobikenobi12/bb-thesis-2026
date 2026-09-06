@@ -297,6 +297,7 @@ view from the canvas, so a capability that is only a template variable is invisi
 | `storage_containers` | 🚫 | 🚫 | ✅ | 🚫 | 🚫 | baseline |  (#2004) |
 | `subnet_ids` | ✅ | 🚫 | ✅ | ✅ | 🚫 | baseline |  (#2004) |
 | `subscription_id` | 🚫 | 🚫 | ✅ | 🚫 | 🚫 | baseline |  (#2004) |
+| `talos_image_cache` | 🚫 | 🚫 | 🚫 | 🚫 | ✅ | uniform | Hetzner-only by construction — it is the only template that BUILDS a node image (imager_image snapshots a Talos raw.xz before any cluster exists, ~5m and the floor's dominant deadline flake). EKS/AKS/GKE/ACK receive a node image from the managed control plane, so there is nothing for them to cache and no counterpart knob to add. See infra/templates/project/hetzner/README.md § The Talos snapshot cache. |
 | `talos_version` | 🚫 | 🚫 | 🚫 | 🚫 | ✅ | baseline |  (#2004) |
 | `valkey_create_valkey_user_and_secret` | 🚫 | ✅ | 🚫 | 🚫 | 🚫 | baseline |  (#2004) |
 | `valkey_data_storage_max` | 🚫 | ✅ | 🚫 | 🚫 | 🚫 | baseline |  (#2004) |

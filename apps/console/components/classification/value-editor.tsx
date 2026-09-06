@@ -28,17 +28,8 @@ import {
 	updateValue,
 } from "@/app/server/actions/classification/dimensions";
 import { type ValueInput, valueInputSchema } from "@/lib/validations/classification";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { InfoHint, Spinner } from "./classification-ui";
-
-/** Lowercases + hyphenates a label into a slug candidate. */
-function slugify(input: string): string {
-	return input
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 64);
-}
 
 /**
  * The value editor dialog. Pass an existing `value` to edit, or omit it to create one on
@@ -98,7 +89,7 @@ export function ValueEditor({
 
 	const onSubmit = async (data: ValueInput) => {
 		try {
-			const payload = { ...data, value: data.value || slugify(data.label) };
+			const payload = { ...data, value: data.value || slugifyOrEmpty(data.label) };
 			if (value) {
 				await updateValue(value.id, payload);
 				toast.success("Value updated.");
@@ -117,10 +108,10 @@ export function ValueEditor({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-[440px]">
 				<DialogHeader>
-					<DialogDescription className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-tertiary">
+					<DialogDescription className="font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-tertiary">
 						Value · {dimensionLabel}
 					</DialogDescription>
-					<DialogTitle className="font-display text-[17px]">
+					<DialogTitle className="font-display text-ui-xl">
 						{isEdit ? "Edit value" : "New value"}
 					</DialogTitle>
 				</DialogHeader>
@@ -136,7 +127,7 @@ export function ValueEditor({
 								onChange={(e) => {
 									form.setValue("label", e.target.value);
 									if (!isEdit && !form.formState.dirtyFields.value) {
-										form.setValue("value", slugify(e.target.value));
+										form.setValue("value", slugifyOrEmpty(e.target.value));
 									}
 								}}
 							/>
@@ -157,7 +148,7 @@ export function ValueEditor({
 							<div className="flex items-start gap-2">
 								<ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-text-tertiary" />
 								<div>
-									<div className="flex items-center gap-1.5 text-[12.5px] font-medium">
+									<div className="flex items-center gap-1.5 text-ui-sm font-medium">
 										Enforce promotion gates
 										<InfoHint>
 											When an environment is tagged with this value, promotions{" "}
@@ -166,7 +157,7 @@ export function ValueEditor({
 											the policy.
 										</InfoHint>
 									</div>
-									<p className="mt-0.5 text-[11px] text-text-tertiary">
+									<p className="mt-0.5 text-ui-xs text-text-tertiary">
 										Applies to any environment carrying this value.
 									</p>
 								</div>
@@ -177,7 +168,7 @@ export function ValueEditor({
 						{enforceOn && enforcement && (
 							<div className="space-y-3 border-t p-3">
 								<div className="flex items-center justify-between gap-4">
-									<div className="text-[12.5px]">Require manual approval</div>
+									<div className="text-ui-sm">Require manual approval</div>
 									<Switch
 										checked={enforcement.require_approval}
 										onCheckedChange={(v) =>
@@ -188,7 +179,7 @@ export function ValueEditor({
 									/>
 								</div>
 								<div className="flex items-center justify-between gap-4">
-									<div className="flex items-center gap-1.5 text-[12.5px]">
+									<div className="flex items-center gap-1.5 text-ui-sm">
 										Require verify pass
 										<InfoHint>
 											The elench verify gate must pass on the promotion{"'"}s plan (no
@@ -206,12 +197,12 @@ export function ValueEditor({
 								</div>
 								{enforcement.require_approval && (
 									<div className="flex items-center justify-between gap-4">
-										<div className="text-[12.5px]">Minimum approvals</div>
+										<div className="text-ui-sm">Minimum approvals</div>
 										<Input
 											type="number"
 											min={1}
 											max={10}
-											className="h-8 w-16 text-center text-[12.5px]"
+											className="h-8 w-16 text-center text-ui-sm"
 											{...form.register("enforcement.min_approvals", {
 												valueAsNumber: true,
 											})}

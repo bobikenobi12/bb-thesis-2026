@@ -21,6 +21,10 @@
 	# mirrors apps/console/microfrontends.json and must stay before the catch-all.
 	# import marketing*.caddy
 	handle {
-		reverse_proxy app:3000
+		reverse_proxy app:3000 {
+			# The app trusts only this single-value client-IP header for auth throttling.
+			# Overwrite it so a public client cannot select its own rate-limit bucket.
+			header_up cf-connecting-ip {remote_host}
+		}
 	}
 }

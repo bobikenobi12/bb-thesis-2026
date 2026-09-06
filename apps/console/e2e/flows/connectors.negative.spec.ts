@@ -86,8 +86,6 @@ test.describe("Connectors — connect-sheet validation", () => {
 });
 
 test.describe("Connectors — member permissions (read-only)", () => {
-	test.skip(!process.env.HAVE_MEMBER, "member persona pending (see AUTHORING.md)");
-
 	test("a member without manage rights sees no Connect/Manage actions", async ({ member }) => {
 		await gotoConnectors(member.page, member.orgSlug);
 		await member.page.getByLabel(/search connectors/i).fill("Datadog");

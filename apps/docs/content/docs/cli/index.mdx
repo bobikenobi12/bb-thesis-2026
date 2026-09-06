@@ -60,12 +60,14 @@ alethia is a **thin client** that communicates with the Alethia API over HTTPS. 
 
 ## Global Flags
 
-Every command accepts two persistent flags:
+Every command accepts four persistent flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o, --output <table\|json\|csv>` | `table` | Output format. `json`/`csv` print static, machine-readable output. |
-| `--no-input` | off | Disable interactive prompts; fail instead of prompting. Auto-enabled when stdin is not a TTY. |
+| `-o, --output <table\|json\|csv>` | `table` | Output format. `json`/`csv` print static, machine-readable output, and never open an interactive table. |
+| `--no-input` | off | Disable interactive prompts; fail instead of prompting. Auto-enabled when stdin is not a terminal. A form is refused separately when the stream it would draw on is redirected, so `alethia … 2> log` still renders the rich table. |
+| `--token <token>` | unset | Service-account token for non-interactive use. Prefer the `ALETHIA_TOKEN` environment variable in CI: a flag value lands in the process table and in shell history. |
+| `--org <id>` | the active org | Organization to act in for this invocation, instead of the active one. Sent as the `X-Alethia-Org` header on every request, and used as the org in the request path of `members` and `teams`. It selects a scope rather than granting one: the control plane refuses it with `403` when you are not a member of that organization. Under a service token it must name the token's OWN organization — a different one is refused with `403`, never quietly ignored, so a pipeline cannot believe it is acting on one org while every write lands in another. |
 
 List/get commands render an **interactive table** only on a TTY with the default `table` format.
 With `json`, `csv`, a pipe, or `--no-input`, they print static output instead — ideal for scripting:
@@ -93,12 +95,16 @@ alethia org switch
 # Connect a cloud account (AWS, GCP, or Azure)
 alethia connector gcp --project my-gcp-project
 
-# Plan infrastructure (Projects are created in the console)
-alethia project plan --project-id <id>
+# Create a project, or name one you already have
+alethia project create boutique
 
-# Stream logs
-alethia jobs logs <job-id> --follow
+# Plan infrastructure — --project takes the NAME
+alethia project plan --project boutique --wait
+
+# Or queue it and follow the logs of the job you just started
+alethia project plan --project boutique
+alethia jobs logs --latest --follow
 
 # Deploy
-alethia project apply --project-id <id> --plan-job-id <plan-job-id>
+alethia project apply --project boutique --wait
 ```

@@ -209,10 +209,10 @@ export function ProviderSheet({
 								(isEdit || !canManage) && "opacity-60",
 							)}
 						>
-							<div className="text-[13px] font-medium text-text-primary">
+							<div className="text-ui-md font-medium text-text-primary">
 								{t === "oidc" ? "OIDC" : "SAML 2.0"}
 							</div>
-							<div className="text-[11px] text-text-tertiary">
+							<div className="text-ui-xs text-text-tertiary">
 								{t === "oidc"
 									? "OpenID Connect (Okta, Entra ID, Auth0…)"
 									: "SAML assertions (ADFS, OneLogin…)"}
@@ -276,12 +276,12 @@ export function ProviderSheet({
 								{...form.register("entryPoint")}
 							/>
 							<div className="space-y-1.5">
-								<Label className="text-[11.5px] text-text-tertiary">
+								<Label className="text-ui-xs text-text-tertiary">
 									Signing certificate (X.509)
 								</Label>
 								<Textarea
 									rows={4}
-									className="font-mono text-[11px]"
+									className="font-mono text-ui-xs"
 									placeholder={
 										isEdit
 											? "•••••• (unchanged — paste a new cert to rotate)"
@@ -349,13 +349,13 @@ export function ProviderSheet({
 			complete: () => true,
 			summary: () => "",
 			body: (v) => (
-				<div className="space-y-1.5 text-[12.5px] text-text-secondary">
+				<div className="space-y-1.5 text-ui-sm text-text-secondary">
 					<Row k="Protocol" v={v.type === "saml" ? "SAML 2.0" : "OIDC"} />
 					<Row k="Provider id" v={v.providerId || provider?.providerId || "—"} />
 					<Row k="Domain" v={v.domain || "—"} />
 					<Row k="Issuer" v={v.issuer || "—"} />
 					{!isEdit && (
-						<p className="pt-1 text-[11.5px] text-text-tertiary">
+						<p className="pt-1 text-ui-xs text-text-tertiary">
 							After registering, add the DNS TXT record shown on the provider to verify
 							the domain — sign-in stays disabled until it&apos;s verified.
 						</p>
@@ -434,10 +434,10 @@ function Field({
 }) {
 	return (
 		<div className="space-y-1.5">
-			<Label className="text-[11.5px] text-text-tertiary">{label}</Label>
+			<Label className="text-ui-xs text-text-tertiary">{label}</Label>
 			<Input autoComplete="off" {...props} />
 			{hint && !error && (
-				<p className="text-[11px] text-text-tertiary">{hint}</p>
+				<p className="text-ui-xs text-text-tertiary">{hint}</p>
 			)}
 			{error && <p className="text-destructive text-xs">{error}</p>}
 		</div>

@@ -145,9 +145,12 @@ accounted for, in `symbols:` or in `baseline:`. A list of two of a module's seve
 exactly like a list of all seven.
 
 Three projects are not yet enrolled and are recorded as such rather than left silent — `@repo/ui`
-(47 files hidden behind a hand-listed `include`), `apps/marketing` and `ee` (six `exclude:` entries
-between them, none manifested). The guard names and counts them on every run; enrolling them is the
-next unit.
+(48 files hidden behind a hand-listed `include`), `apps/marketing` and `ee` (six `exclude:` entries
+between them, none manifested). Each carries a **`coverage-exclusions.pending`** marker naming the
+issue that will delete it: `issue: #1234`, plus an optional one-line `reason:`. The guard derives
+the pending set from those markers rather than from a list of its own, names and counts them on
+every run, and fails if one is missing, unreadable, or left behind once its project is enrolled.
+Enrolling them is the next unit.
 
 That first pass already retired one false claim: the console config said
 `tests/integration/reconcile-b2c.test.ts` verifies `lib/reconcile/gc.ts`, and that suite never

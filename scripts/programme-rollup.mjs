@@ -70,6 +70,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { validateReaperResult } from "./e2e/reaper-result.mjs";
 
 const SNAPSHOT = "docs/testing/programme-snapshot.json";
 const LEDGER = "demos/proofs/provisioning-e2e-log.md";
@@ -98,6 +99,7 @@ const RESOLVER = "scripts/e2e/resolve-dimension.sh";
 const UNSUPPORTED_KINDS = "apps/console/lib/cloud-providers/unsupported-kinds.ts";
 const PROOFS_DIR = "demos/proofs";
 const TARGET = "PROGRAMME.md";
+const REAPER_FRESH_HOURS = 48;
 
 const BEGIN = "<!-- BEGIN GENERATED: programme-rollup · tree-derived · DO NOT EDIT BELOW -->";
 const END = "<!-- END GENERATED: programme-rollup -->";
@@ -459,9 +461,16 @@ export function canonicalDimension(token) {
  * The ONE dimension label that names a composite run rather than a grid column.
  *
  * `scripts/e2e/resolve-dimension.sh`'s `dimension_label()` is the emitter, and its vocabulary is
- * closed: `full` → `full-bar`; `maxconfig|addons|byo|gitops|byo-iac|day2` → itself; anything else →
- * `floor`. Every one of those is a grid column (`byo` through DIMENSION_ALIASES) EXCEPT `full-bar`,
- * which names a bar that exercises the whole row. `--self-test` pins the two vocabularies together.
+ * closed: `full` → `full-bar`; `maxconfig|addons|byo|gitops|byo-iac|day2|cli-demo` → itself; `floor`
+ * and the UNSET token → `floor`; anything else is REFUSED rather than labelled. Every one of those
+ * is a grid column (`byo` through DIMENSION_ALIASES) EXCEPT `full-bar`, which names a bar that
+ * exercises the whole row. `--self-test` pins the two vocabularies together.
+ *
+ * The refusal arm is the fix for #4086. `cli-demo` was missing from the enumerated arm and fell
+ * through the old permissive `*) echo "floor"`, so a cli-demo red and a genuine floor red on one
+ * cloud produced the SAME title — and `parseNightlyRed` below reads that title as the dedup key, so
+ * the two collapsed onto one issue. #4086 itself was filed as "hetzner RED (floor)" for a cli-demo
+ * console build failure that never touched a cloud.
  */
 export const COMPOSITE_RED_DIMENSION = "full-bar";
 
@@ -660,6 +669,38 @@ export function deriveCell({ cloud, dimension, claims, bundleExists, compositeCr
 }
 
 /**
+ * How long a CARRIED gate inventory may stand before every declared gate reads `unknown`.
+ *
+ * Measured between two PERSISTED timestamps — `inventory_observed_at` and `derived_at` — never
+ * against the wall clock, so the rendered region stays a pure function of the snapshot.
+ */
+export const INVENTORY_FRESH_HOURS = 24 * 7;
+
+/**
+ * The window a nightly RED may close inside and still be counted, when the snapshot does not carry
+ * a `previous_derived_at` to bound it exactly. One nightly cadence: programme.yml runs at 08:47.
+ */
+export const DERIVATION_WINDOW_FALLBACK_HOURS = 24;
+
+/**
+ * The cell a nightly RED issue names, parsed out of its title — or `null`.
+ *
+ * ONE PARSER, TWO CALLERS. Open reds and reds that closed inside the derivation window are the same
+ * fact arriving through two lists, and a second copy of this regex would be a second vocabulary to
+ * keep in step with `dimension_label()` — which `--self-test` pins statically against exactly one.
+ *
+ * `matrix` is skipped deliberately: those issues say "no per-leg proof" and are about the matrix job
+ * itself, not about any cloud's cell.
+ *
+ * @returns {{cloud: string, dimension: string, number: number, date: string}|null}
+ */
+export function parseNightlyRed(issue) {
+	const m = /^e2e nightly:\s*(\S+)\s+RED\s*\(([^)·]+?)\s*(?:·[^)]*)?\)/.exec(issue?.title ?? "");
+	if (!m || m[1] === "matrix") return null;
+	return { cloud: m[1], dimension: m[2].trim(), number: issue.number, date: String(issue.createdAt ?? "").slice(0, 10) };
+}
+
+/**
  * Build the whole programme view. Pure — every input is passed in, so `--self-test` drives it with
  * fixtures and the real run reads files once.
  */
@@ -675,8 +716,17 @@ export function deriveBoard(snapshot) {
 			present: false,
 			ageHours: null,
 			issueState: () => "unknown",
+			issueListComplete: null,
+			inventoryObservedAt: null,
+			inventoryAgeHours: null,
+			inventoryPresent: false,
+			inventoryFresh: null,
+			windowStart: null,
+			windowClosedRedIssues: [],
 			gateState: () => "unknown",
 			observedGate: () => null,
+			reaperObservation: () => null,
+			derivedAt: null,
 			needsHuman: [],
 			// Empty, not "no contradictions". With no snapshot there is nothing to contradict the
 			// ledger WITH, and the check below is skipped rather than reported as clean — absence of
@@ -694,19 +744,97 @@ export function deriveBoard(snapshot) {
 			observations.set(o.provider, o);
 		}
 	}
+	const reaperObservations = new Map();
+	for (const o of snapshot.orphan_reaper_observations ?? []) {
+		if (o && typeof o.provider === "string" && !reaperObservations.has(o.provider)) {
+			reaperObservations.set(o.provider, o);
+		}
+	}
 	const open = new Map((snapshot.open_issues ?? []).map((i) => [i.number, i]));
 	const closed = new Map((snapshot.closed_issues ?? []).map((i) => [i.number, i]));
 	const names = new Set([...(snapshot.variables ?? []), ...(snapshot.secrets ?? [])]);
+	const derivedAt = snapshot.derived_at ? Date.parse(snapshot.derived_at) : NaN;
+
+	// ── HOW OLD IS THE READING, not how old is the FILE. ──────────────────────────────────────────
+	//
+	// `programme-fetch.sh` cannot list repo variables or secrets — no workflow permission scope for
+	// it exists — so EVERY nightly carries the previous inventory forward and stamps
+	// `inventory_observed_at` with the moment it was actually observed. That field was written and
+	// read by nothing: the only staleness rule ages `derived_at`, which the same run re-stamps, so
+	// the bound could never bind. `derived_at` reached 2026-09-01 against an inventory observed
+	// 2026-08-27, and deleting `E2E_ARGO_APPS_REPO` would have left the GitOps row rendering
+	// `✅ wired` indefinitely.
+	//
+	// So it is measured HERE, and against `derived_at` rather than the clock — two persisted
+	// timestamps, so the rendered region stays byte-identical until the snapshot changes.
+	//
+	// A MISSING OR UNREADABLE FIELD IS `unknown`, NOT FRESH. A non-empty inventory with no record of
+	// when it was observed is precisely the state this rule exists to refuse; reading absence as
+	// freshness would restore the defect for any snapshot written by an older fetch.
+	const inventoryObservedAt = typeof snapshot.inventory_observed_at === "string" && snapshot.inventory_observed_at !== "" ? snapshot.inventory_observed_at : null;
+	const observedAtMs = inventoryObservedAt === null ? NaN : Date.parse(inventoryObservedAt);
+	const inventoryAgeHours = Number.isNaN(observedAtMs) || Number.isNaN(derivedAt) ? null : (derivedAt - observedAtMs) / 3_600_000;
+	// Negative is FRESH, not suspicious: `inventory_observed_at` is stamped a few seconds AFTER
+	// `derived_at` within the same run, so an un-carried reading is normally a hair in the future.
+	const inventoryFresh = inventoryAgeHours !== null && inventoryAgeHours <= INVENTORY_FRESH_HOURS;
 	// A repo with zero variables AND zero secrets is not a state this repo can be in — it needs both
 	// to run anything. So an empty inventory is evidence the fetch failed, not evidence of absence.
-	const gatesKnown = names.size > 0;
-	const derivedAt = snapshot.derived_at ? Date.parse(snapshot.derived_at) : NaN;
+	// A STALE inventory gets the same `unknown`, and for the same reason: it is not a measurement of
+	// today, and a gate deleted since it was taken would still read wired.
+	const gatesKnown = names.size > 0 && inventoryFresh;
+
+	// ── THE DERIVATION WINDOW. ────────────────────────────────────────────────────────────────────
+	//
+	// Issues that closed since the previous snapshot. A red filed and closed BETWEEN two refreshes
+	// appears in neither one's `open_issues`, so nothing contests its cell and no cell cites it, so
+	// staleness cannot fire either — #3580 was filed 09:46Z, closed 11:25Z, and the 11:32Z snapshot
+	// published `0 failing` for a leg that had failed that morning.
+	//
+	// `previous_derived_at` is the exact boundary and is recorded by the fetch. The 24h fallback is
+	// for a snapshot written before that field existed: the cadence is nightly, so one day is the
+	// window it would have had. Without either timestamp there is no window and nothing is claimed.
+	const previousDerivedAt = snapshot.previous_derived_at ? Date.parse(snapshot.previous_derived_at) : NaN;
+	const windowStart = !Number.isNaN(previousDerivedAt)
+		? previousDerivedAt
+		: Number.isNaN(derivedAt)
+			? null
+			: derivedAt - DERIVATION_WINDOW_FALLBACK_HOURS * 3_600_000;
+
 	// The snapshot carries the only timestamp in the mechanism, so "now" is read here and never
 	// rendered — a clock inside a diff-gated region would make every PR stale on arrival.
 	const ageHours = Number.isNaN(derivedAt) ? null : (Date.now() - derivedAt) / 3_600_000;
 	return {
 		present: true,
 		ageHours,
+		/**
+		 * Is the issue list COMPLETE? Three-valued: `true` complete, `false` truncated, `null` the
+		 * snapshot cannot say.
+		 *
+		 * A count cannot tell "exactly N" from "capped at N", and `--limit 500` had been silently
+		 * dropping 228 closed issues per refresh. It matters because `issueState` answers `unknown`
+		 * for a dropped issue while `staleCitations` fires only on `closed`, so a red cell citing one
+		 * stays `failing` forever.
+		 *
+		 * `null` IS NOT `true`, and the distinction is not academic: the snapshot in the tree when
+		 * this was written WAS capped at 500 and carries no flag, because the fetch that wrote it
+		 * could not answer the question. Reading a missing flag as "complete" would render that
+		 * snapshot clean — the same collapse of unknown into a value that this file refuses
+		 * everywhere else.
+		 */
+		issueListComplete:
+			snapshot.closed_issues_truncated === undefined && snapshot.open_issues_truncated === undefined
+				? null
+				: snapshot.closed_issues_truncated !== true && snapshot.open_issues_truncated !== true,
+		/** When the gate inventory was actually observed, verbatim, or null. */
+		inventoryObservedAt,
+		/** How much older than `derived_at` that reading is, in hours, or null when unmeasurable. */
+		inventoryAgeHours,
+		/** Was anything at all fetched? Distinguishes "stale reading" from "no reading". */
+		inventoryPresent: names.size > 0,
+		/** Is that reading recent enough to act on? */
+		inventoryFresh,
+		/** Epoch ms the derivation window opens at, or null. */
+		windowStart,
 		/** The snapshot's own timestamp, verbatim — the only form safe to RENDER (see the provenance note). */
 		derivedAt: snapshot.derived_at ?? null,
 		/** @returns {"open"|"closed"|"unknown"} */
@@ -753,6 +881,8 @@ export function deriveBoard(snapshot) {
 		 * `gateReached` for why its conclusion alone is not enough to read.
 		 */
 		observedGate: (cloud) => observations.get(cloud) ?? null,
+		/** The newest persisted real-reclaim result for one cloud, or null. */
+		reaperObservation: (cloud) => reaperObservations.get(cloud) ?? null,
 		needsHuman: [...open.values()].filter((i) => (i.labels ?? []).includes("needs:human")),
 		/**
 		 * Every OPEN nightly-red issue, parsed out of its title, as `{cloud, dimension, number, date}`.
@@ -766,11 +896,112 @@ export function deriveBoard(snapshot) {
 		 * matrix job itself, not about any cloud's cell.
 		 */
 		openRedIssues: [...open.values()].flatMap((i) => {
-			const m = /^e2e nightly:\s*(\S+)\s+RED\s*\(([^)·]+?)\s*(?:·[^)]*)?\)/.exec(i.title ?? "");
-			if (!m || m[1] === "matrix") return [];
-			return [{ cloud: m[1], dimension: m[2].trim(), number: i.number, date: String(i.createdAt ?? "").slice(0, 10) }];
+			const red = parseNightlyRed(i);
+			return red === null ? [] : [red];
 		}),
+		/**
+		 * Every nightly RED that was CLOSED inside this derivation window — filed and resolved
+		 * between the previous snapshot and this one, so it never appeared in any `open_issues`.
+		 *
+		 * THE ONE STATE NEITHER EXISTING CHECK CAN SEE. `openRedIssues` contests a cell only while
+		 * the issue is open; `staleCitations` fires only on a closed issue a cell CITES, and a
+		 * nightly red writes no ledger row so no cell cites it. #3580 was filed 2026-09-01T09:46Z
+		 * for the run whose gcp leg failed at *T2 — real runner provisions a real cloud cluster*,
+		 * closed 11:25Z, and the 11:32Z snapshot published `0 failing` and `gcp/floor ✅`.
+		 *
+		 * A red is evidence whether or not its issue is still open. This is the list that says so.
+		 *
+		 * It is deliberately BOUNDED by the window rather than by "is closed". A closed red that was
+		 * already visible to an earlier derivation has had the file's documented clearing act applied
+		 * to it — "close the issue if that run was a flake" — and reviving it forever would contest
+		 * every cell that ever went red, which is most of them. What was missing is the derivation
+		 * that never got to see it at all.
+		 */
+		windowClosedRedIssues:
+			windowStart === null
+				? []
+				: [...closed.values()].flatMap((i) => {
+						const red = parseNightlyRed(i);
+						if (red === null) return [];
+						const closedAtMs = Date.parse(String(i.closedAt ?? ""));
+						// No `closedAt` — a snapshot from before the fetch captured it — is UNKNOWN,
+						// and unknown never collapses: it is not "closed inside the window".
+						if (Number.isNaN(closedAtMs) || closedAtMs < windowStart) return [];
+						return [{ ...red, closedOn: String(i.closedAt).slice(0, 10) }];
+					}),
 	};
+}
+
+/**
+ * Derive one cloud's standing-resource state from persisted timestamps and raw result facts.
+ * No wall clock enters this function, so the generated Markdown stays byte-identical until its
+ * committed snapshot changes.
+ */
+export function deriveReaperObservation(observation, snapshotAt) {
+	if (observation === null || observation === undefined) {
+		return { state: "indeterminate", why: "no durable reclaim result", observation: null, integrityFailure: null };
+	}
+	const validation = validateReaperResult(observation, true);
+	if (!validation.ok) {
+		return {
+			state: "indeterminate",
+			why: `malformed durable result: ${validation.errors.join("; ")}`,
+			observation,
+			integrityFailure: `orphan-reaper result for ${observation.provider ?? "unknown provider"} is malformed: ${validation.errors.join("; ")}`,
+		};
+	}
+	const reference = Date.parse(snapshotAt ?? "");
+	const completed = Date.parse(observation.completed_at);
+	// THE GRACE MUST BOUND THE FETCH, NOT A CLOCK SKEW. `derived_at` is stamped at the TOP of a
+	// programme-fetch run that then makes 120+ API calls, so the snapshot's own timestamp is already
+	// minutes older than the moment it is written. A five-minute window was narrower than the
+	// script's own runtime: a reaper dispatch finishing while the fetch was still walking runs
+	// committed a `completed_at` ahead of `derived_at` and made that cell indeterminate — a false
+	// negative from a benign race, on evidence that was perfectly good.
+	//
+	// An hour bounds the fetch with room and still refuses the thing this check is for: a result
+	// timestamped well after the snapshot it claims to belong to, which would mean the evidence and
+	// the snapshot are not describing the same moment.
+	const REAPER_COMPLETION_GRACE_MS = 60 * 60_000;
+	if (Number.isNaN(reference) || completed > reference + REAPER_COMPLETION_GRACE_MS) {
+		return {
+			state: "indeterminate",
+			why: "result timestamp cannot be reconciled with the snapshot",
+			observation,
+			integrityFailure: `orphan-reaper result for ${observation.provider} has a completion time outside its snapshot`,
+		};
+	}
+	const run = `run ${observation.run_id} at ${observation.completed_at}`;
+	if (observation.mode !== "reclaim") return { state: "indeterminate", why: `${run} was a dry run`, observation, integrityFailure: null };
+	if (!observation.gate_ran) return { state: "indeterminate", why: `${run} skipped its cloud gate`, observation, integrityFailure: null };
+	if (!observation.log_present) return { state: "indeterminate", why: `${run} produced no sweep log`, observation, integrityFailure: null };
+	if (observation.sweep_exit_code !== 0) return { state: "indeterminate", why: `${run} exited ${observation.sweep_exit_code ?? "without a status"}`, observation, integrityFailure: null };
+	if (observation.residual_detected) return { state: "standing", why: `${run} reported residual orphan resources`, observation, integrityFailure: null };
+	// A DISCOVERY THAT NEVER ANSWERED USED TO RENDER `clean`. Every check above and below this one
+	// asks about something the sweep REPORTED, and a preflight whose discovery call failed reports
+	// nothing at all: the orphan list comes back empty, the `[ -z "$orphans" ] → exit 0` early
+	// return fires, and the log is byte-identical to a genuinely empty account — exit 0, no
+	// residual, zero unverified. `unverified_count` could not catch it, because on four of five
+	// clouds the warning it keys on is emitted BELOW that early return, and aws called the tagging
+	// API raw with `2>/dev/null` so a throttle never reached the ledger either. The cell then read
+	// ✅ clean and PROGRAMME.md published "nothing standing" — about resources that BILL.
+	//
+	// The sweepers now emit a POSITIVE marker on every path a preflight can leave (see
+	// probe_report_discovery in scripts/e2e/lib/sweep-probe.sh). Absence is the fail-closed answer:
+	// a log that never said discovery ran is not evidence that it did. This sits AFTER the residual
+	// check on purpose — a run that FOUND orphans plainly discovered them, and `standing` is the
+	// stronger and truer verdict there.
+	if (!observation.discovery_reported) return { state: "indeterminate", why: `${run} never reported completing its orphan discovery — a discovery that failed silently looks exactly like an empty account`, observation, integrityFailure: null };
+	if (observation.unverified_count > 0) return { state: "indeterminate", why: `${run} could not verify ${observation.unverified_count} check(s)`, observation, integrityFailure: null };
+	if (observation.unattributable_count > 0) return { state: "indeterminate", why: `${run} found ${observation.unattributable_count} unattributable resource(s)`, observation, integrityFailure: null };
+	const ageHours = (reference - completed) / 3_600_000;
+	if (ageHours > REAPER_FRESH_HOURS) {
+		return { state: "stale", why: `${run} was clean but is older than ${REAPER_FRESH_HOURS} hours at this snapshot`, observation, integrityFailure: null };
+	}
+	const incident = observation.orphan_runs_found > 0
+		? `reclaimed ${observation.orphan_runs_found} orphan run(s) / ${observation.resources_reclaimed} resource(s), then verified clean`
+		: "found no orphan runs and verified clean";
+	return { state: "clean", why: `${run} ${incident}`, observation, integrityFailure: null };
 }
 
 export function derive({ ledgerText, spine, workflowText, resolverText = "", unsupportedText, bundleExists, readBundleSummary = () => null, exclusionCounts, snapshot, ledgerBaseline = {}, assertRequirements = {} }) {
@@ -1362,6 +1593,81 @@ export function derive({ ledgerText, spine, workflowText, resolverText = "", uns
 		contested.push({ cloud: red.cloud, dimension: dim, issue: `#${red.number}`, provenOn, redFiledOn: red.date });
 	}
 
+	// ── REDS THAT CLOSED INSIDE THE DERIVATION WINDOW ─────────────────────────────────────────────
+	//
+	// The blind spot between the two checks above. `openRedIssues` contests only while the issue is
+	// OPEN; `staleCitations` fires only on a CLOSED issue a cell CITES — and a nightly red writes no
+	// ledger row, so no cell cites it. A red filed 09:46Z and closed 11:25Z, snapshot derived 11:32Z,
+	// entered neither: PROGRAMME.md published `0 failing` and `gcp/floor ✅` on a day that leg failed.
+	// The ✅ was defensible on the last *proven* state; `0 failing` is a claim about today.
+	//
+	// So a red the window saw close still contests its cell for THIS derivation, exactly as an open
+	// one does. It is not a second, weaker verdict — the contradiction is identical, and `contested`
+	// already takes no side about whether the run was a flake or a regression.
+	//
+	// WHAT THIS DOES NOT DO, stated so nobody reads more into it: it does not make PROGRAMME.md a
+	// historical record. On the next refresh the red is outside the window and the cell returns to
+	// ✅, because closing the issue is one of the two acts the file already documents as clearing a
+	// contest. What it fixes is a derivation that never got to see the red AT ALL.
+	//
+	// EVERY window-closed red is reported, whatever happens to its cell — "leaves no trace" is the
+	// defect, and a red that contests nothing because its cell was never proven still happened.
+	for (const red of board.windowClosedRedIssues) {
+		const { known, composite, dimensions } = redDimensions(red.dimension, dimensionIds, compositeDimensionIds);
+		const label = `#${red.number} (\`${red.cloud}/${red.dimension}\`, filed ${red.date}, closed ${red.closedOn})`;
+		if (!known) {
+			// Same lever as the open-red case: an issue TITLE is human-editable, so this is an
+			// advisory rather than a failure that would red every PR in the repo over a typo.
+			notes.push(
+				`${label} is a nightly RED that was filed and closed INSIDE this derivation window, and its dimension \`${red.dimension}\` resolves to no grid column, so it contests nothing. ` +
+					`The emitter is \`dimension_label()\` in scripts/e2e/resolve-dimension.sh; its labels are ${[...dimensionIds, COMPOSITE_RED_DIMENSION].map((d) => `\`${d}\``).join(", ")}.`,
+			);
+			continue;
+		}
+		if (composite) {
+			// A bar does not necessarily reach every dimension, so it contests no individual cell —
+			// the same refusal `compositeCredits` already applies in the crediting direction.
+			const missing = dimensions.filter((d) => !answeredBy(red.cloud, d, red.date));
+			notes.push(
+				missing.length === 0
+					? `${label} is a bar-wide nightly RED that closed inside this derivation window; every cell it covers has since been proven on or after it.`
+					: `${label} is a bar-wide nightly RED that closed inside this derivation window, unseen by any derivation. It contests no single cell (a bar does not necessarily reach every dimension), but ${missing.length} of ${compositeDimensionIds.length} cells have no proof dated on or after it — ${missing.join(", ")}.`,
+			);
+			continue;
+		}
+		const [dim] = dimensions;
+		const answered = answeredBy(red.cloud, dim, red.date);
+		if (answered) {
+			// Answered by a later proof AND already closed. Nothing to contest and nothing to ask a
+			// human for — `supersededReds` exists to say "close it", and this one is closed. It is
+			// still REPORTED, because a red that happened is a fact whatever answered it.
+			notes.push(
+				`${label} is a nightly RED that was filed and closed INSIDE this derivation window, so no derivation ever saw it open. ` +
+					`It contests nothing: \`${red.cloud}/${dim}\` was proven ${answered}, on or after the red.`,
+			);
+			continue;
+		}
+		const cell = grid[red.cloud]?.[dim];
+		// NO SECOND DATE COMPARISON HERE. `answeredBy` above is the ordering rule, and repeating it
+		// as `red.date <= provenOn` produced a branch no fixture could reach — a defensive test that
+		// can only ever pass is indistinguishable from no test, which is the failure mode this file
+		// keeps rediscovering. The open-red loop above compares once for the same reason.
+		const provenOn = cell?.state === STATE.proven ? (cell.row?.date ?? "") : "";
+		if (!provenOn) {
+			notes.push(
+				`${label} is a nightly RED that was filed and closed INSIDE this derivation window, so no derivation ever saw it open. ` +
+					`It contests nothing: \`${red.cloud}/${dim}\` is \`${cell?.state ?? "unknown"}\`, not a cell the ledger calls proven.`,
+			);
+			continue;
+		}
+		grid[red.cloud][dim] = {
+			...cell,
+			state: STATE.contested,
+			why: `${cell.why} — but #${red.number} was filed ${red.date}, AFTER the ${provenOn} run that proved it, and CLOSED ${red.closedOn} inside this refresh window, so no derivation ever saw it open`,
+		};
+		contested.push({ cloud: red.cloud, dimension: dim, issue: `#${red.number}`, provenOn, redFiledOn: red.date, closedOn: red.closedOn });
+	}
+
 	// ── SUPERSEDED: the inverse of `contested`, and the direction nothing reported ──
 	//
 	// `contested` fires when a red is filed AFTER the run that proved a cell. The complement among
@@ -1417,11 +1723,90 @@ export function derive({ ledgerText, spine, workflowText, resolverText = "", uns
 		return { cloud: c, gate: CLOUD_GATES[c] ?? "(unknown)", state: declared, observed, effective };
 	});
 
+	// MVP predicate 6: the latest REAL reclaim result per cloud, compared only with the persisted
+	// snapshot timestamp. A reclaimed incident may end clean; ambiguity and age never do.
+	const reaper = clouds.map((cloud) => ({ cloud, ...deriveReaperObservation(board.reaperObservation(cloud), board.derivedAt) }));
+	// AN UNREADABLE OBSERVATION DEGRADES ITS CELL; IT DOES NOT RED THE REPOSITORY.
+	//
+	// These used to go into `failures`, which exits 1 — and this file runs on every PR. That made a
+	// single malformed carried-forward observation red EVERY PR, permanently and unfixably:
+	// `programme-fetch.sh` carries `prev_reaper` forward without re-validating, so the offending
+	// entry is re-committed unchanged every night, and no PR can remove it because every PR is red.
+	// Bumping REAPER_RESULT_SCHEMA_VERSION would have done exactly that to every stale v1 entry at
+	// once.
+	//
+	// Nothing is silenced by this. `deriveReaperObservation` already returns `indeterminate` for
+	// both cases, so the cell renders `? indeterminate` with its reason in the table a human reads,
+	// and the notice below names it on stderr. Indeterminate is the correct fail-closed answer for
+	// "this evidence cannot be read" — it is not `clean`, and it never counts toward `reaperClean`.
+	// It is also self-healing: the next real reclaim result replaces the entry.
+	for (const result of reaper) {
+		if (result.integrityFailure !== null) {
+			console.error(`::notice::${result.integrityFailure} — the ${result.cloud} cell is indeterminate until a later reclaim result replaces it.`);
+		}
+	}
+	const reaperClean = reaper.filter((result) => result.state === "clean").length;
+
 	// Snapshot freshness. A broken cron produces NO signal, so staleness has to be an error eventually
 	// rather than a note nobody reads — but it warns first, because a quiet week should not red the repo
 	// on a Monday morning.
 	if (board.present && board.ageHours !== null && board.ageHours > 24 * 7) {
 		failures.push(`${SNAPSHOT} is ${Math.round(board.ageHours / 24)} days old — the live half is not being refreshed. Check the programme cron.`);
+	}
+
+	// ── A TRUNCATED ISSUE LIST IS AN UNSOUND DERIVATION, AND IT USED TO BE SILENT. ────────────────
+	//
+	// `gh issue list --limit 500` returned exactly 500 closed issues for weeks — indistinguishable,
+	// in every signal the mechanism produced, from a repo that has exactly 500. 228 were dropped
+	// every night. `issueState` answers `unknown` for a dropped issue and `staleCitations` fires
+	// only on `closed`, so a red cell citing one can never be reclassified and stays `failing`
+	// forever: the #1714/#1722/#2058 defect, reintroduced by truncation rather than by logic.
+	//
+	// AN ADVISORY, NOT A FAILURE, for the reason this file has now recorded twice: `failures` exits
+	// 1 and this runs on every PR, while the snapshot is refreshed by a cron no PR author can
+	// re-drive. Reding every PR over a truncated fetch is the wedge the malformed-reaper-result rule
+	// was rewritten to avoid. The fetch annotates its own run `::error::`, the cells that actually
+	// lose an answer are named below, and the rendered table says which `?` cannot be resolved.
+	//
+	// AND A MISSING FLAG IS `null`, NOT `false`. The snapshot in the tree when this landed WAS capped
+	// at 500 and says nothing about it, because the fetch that wrote it never asked. Reading that as
+	// "complete" would render the actually-truncated snapshot clean, which is the whole defect one
+	// level up.
+	if (board.present && board.issueListComplete !== true) {
+		notes.push(
+			board.issueListComplete === false
+				? `${SNAPSHOT} carries a TRUNCATED issue list — a query came back at its limit, so the tail was dropped and every dropped issue reads \`unknown\`. ` +
+						`A red cell citing one can never be reclassified \`stale\`. Raise the limit in scripts/programme-fetch.sh and re-run the refresh.`
+				: `${SNAPSHOT} predates the truncation check, so whether its issue list is complete is UNKNOWN. ` +
+						`It is not evidence the list is whole: the query that wrote it was capped at 500 and reported the same count either way. The next refresh answers it.`,
+		);
+		for (const r of reds.filter((x) => x.issue !== "" && x.issueState === "unknown")) {
+			notes.push(
+				`\`${r.cloud}/${r.dimension}\` cites ${r.issue}, which is in neither the open nor the closed list, and that list is ` +
+					`${board.issueListComplete === false ? "TRUNCATED" : "of UNKNOWN completeness"}. ` +
+					`It is rendered \`${r.state}\` because its citation could not be resolved, not because the issue was checked and found open.`,
+			);
+		}
+	}
+
+	// ── A CARRIED GATE INVENTORY THAT NOBODY AGED. ────────────────────────────────────────────────
+	//
+	// `inventory_observed_at` was written by the fetch and read by nothing (#3652). The only
+	// staleness rule ages `derived_at`, which the same run re-stamps, so a carried inventory could
+	// stand indefinitely: `derived_at` reached 2026-09-01 against a reading taken 2026-08-27, and
+	// deleting a gate variable would have left its row rendering `✅ wired` forever.
+	//
+	// `deriveBoard` now degrades every DECLARED gate to `unknown` past the bound. That is the
+	// correction, and it is fail-closed rather than fail-loud on purpose — an OBSERVED gate (a leg
+	// that actually got past it) still wins in both directions, so what goes unknown is exactly the
+	// half that was never a measurement of today. This note says why the states changed.
+	if (board.present && board.inventoryPresent && !board.inventoryFresh) {
+		notes.push(
+			board.inventoryObservedAt === null
+				? `${SNAPSHOT} carries a gate inventory with no \`inventory_observed_at\`, so there is no record of when it was read. Every DECLARED gate reads \`unknown\` until a refresh stamps one.`
+				: `${SNAPSHOT}'s gate inventory was observed ${board.inventoryObservedAt}, ${Math.round((board.inventoryAgeHours ?? 0) / 24)} days before the snapshot was derived — past the ${INVENTORY_FRESH_HOURS / 24}-day bound. ` +
+					`Every DECLARED gate reads \`unknown\` until it is re-read. The nightly token cannot list variables or secrets at all, so refreshing it takes a run with a PAT.`,
+		);
 	}
 
 
@@ -1478,7 +1863,7 @@ export function derive({ ledgerText, spine, workflowText, resolverText = "", uns
 		}
 	}
 
-	return { rows, claims, clouds, notes, kindCount: spine.kinds.length, grid, carriage, deferredCells, ceilingCells, cli, cliBlockers, gates, unsupported, tally, next, failures, exclusionCounts, board, reds, staleCitations, contested, supersededReds, compositeReds, unmappedReds, costCells, gateReality, cloudGates, unreachedComposites };
+	return { rows, claims, clouds, notes, kindCount: spine.kinds.length, grid, carriage, deferredCells, ceilingCells, cli, cliBlockers, gates, unsupported, tally, next, failures, exclusionCounts, board, reds, staleCitations, contested, supersededReds, compositeReds, unmappedReds, costCells, gateReality, cloudGates, reaper, reaperClean, unreachedComposites };
 }
 
 // ───────────────────────────── rendering ─────────────────────────────
@@ -1490,9 +1875,15 @@ export function render(v) {
 
 	L.push("## Where the programme actually is");
 	L.push("");
+	// EVERY STATE THE TALLY COUNTS IS PRINTED. `contested` was omitted, which made the headline the
+	// one place a reader could not see that the ledger and the board disagree: a cell leaving
+	// `proven` simply lowered the numerator and the rest of the line still read `0 failing`. A
+	// summary that counts a state and does not name it is the same silent overstatement the grid
+	// exists to prevent.
 	L.push(
 		`**${v.tally.proven} of ${total} proof cells are proven.** ` +
-			`${v.tally.failing} failing · ${v.tally.stale} stale (cause fixed, needs a re-run) · ` +
+			`${v.tally.failing} failing · ${v.tally.contested} contested (the ledger and the board disagree) · ` +
+			`${v.tally.stale} stale (cause fixed, needs a re-run) · ` +
 			`${v.tally.blocked} blocked · ${v.tally.never_run} never run.`,
 	);
 	L.push("");
@@ -1671,18 +2062,57 @@ export function render(v) {
 				"unwired, on the strength of a file nobody fetched.",
 		);
 		L.push("");
+	} else if (v.board.inventoryPresent && !v.board.inventoryFresh) {
+		// The declared half of gate reality is a CARRIED reading, because the nightly token cannot
+		// list variables or secrets at all. Past the bound it stops being a measurement of today, and
+		// the whole point of `inventory_observed_at` is to say when it stopped.
+		L.push(
+			`⚠️ **The gate inventory is stale.** It was observed **${v.board.inventoryObservedAt ?? "(never recorded)"}**, more than ` +
+				`${INVENTORY_FRESH_HOURS / 24} days before this snapshot was derived, so every **declared** gate above reads \`unknown\` rather than ` +
+				"asserting a variable that may since have been deleted. An **observed** gate — a leg that actually got past it — " +
+				"still wins in both directions. The nightly's token cannot list repo variables or secrets at all, so the " +
+				"inventory only refreshes on a run carrying a PAT.",
+		);
+		L.push("");
 	}
 
 	// ── the live board join ──
 	L.push("### Open REDs");
 	L.push("");
+	// A STATEMENT ABOUT THE SNAPSHOT, NOT ABOUT THE REDS, so it is rendered whether or not any cell
+	// is red. Tucking it inside the table's `else` would have hidden it on exactly the mornings the
+	// grid looks cleanest — and "no cell is failing" is a weaker claim than it reads when the list
+	// that resolves citations may be missing its tail.
+	if (v.board.present && v.board.issueListComplete !== true) {
+		L.push(
+			v.board.issueListComplete === false
+				? "⚠️ **The issue list in the snapshot is TRUNCATED** — a query came back at its limit, so its tail was " +
+						"dropped and every dropped issue reads `unknown`. A red cell citing one can never be reclassified " +
+						"`stale`, so it stays `failing` whether or not its cause was fixed. Raise the limit in " +
+						"`scripts/programme-fetch.sh` and re-run the refresh."
+				: "⚠️ **This snapshot predates the truncation check**, so whether its issue list is complete is unknown — " +
+						"and it is not evidence that it is: the query that wrote it was capped at 500 and reported the same " +
+						"count whether or not it dropped the tail. The next refresh answers it.",
+		);
+		L.push("");
+	}
 	if (v.reds.length === 0) {
 		L.push("No cell is failing or blocked.");
 	} else {
 		L.push("| cell | state | issue | issue state |");
 		L.push("|---|---|---|:---:|");
 		for (const r of v.reds) {
-			const s = { open: "open", closed: "⛔ **CLOSED**", unknown: "?" }[r.issueState];
+			// `?` MUST SAY WHICH `?` IT IS. An issue in neither list is either from another repo or
+			// past the fetch limit, and while the fetch is TRUNCATED the second is the likely one —
+			// a cell whose citation was dropped stays `failing` forever, because the reclassification
+			// to `stale` fires only on a resolved `closed`. Rendering both as a bare `?` is what made
+			// that indistinguishable from a citation that was checked.
+			const unknownLabel = v.board.issueListComplete === false
+				? "? **unresolvable (list truncated)**"
+				: v.board.issueListComplete === null
+					? "? **unresolvable (completeness unknown)**"
+					: "?";
+			const s = { open: "open", closed: "⛔ **CLOSED**", unknown: unknownLabel }[r.issueState];
 			L.push(`| \`${r.cloud}/${r.dimension}\` | ${r.state} | ${r.issue || "**none**"} | ${s} |`);
 		}
 		L.push("");
@@ -1705,7 +2135,7 @@ export function render(v) {
 	// scroll past it. It appears only when the two sources actually disagree, and when it appears
 	// it says which act clears it.
 	if (v.contested.length > 0) {
-		L.push("### ⚠️ Contested — proven by the ledger, contradicted by an open red");
+		L.push("### ⚠️ Contested — proven by the ledger, contradicted by a red");
 		L.push("");
 		L.push(
 			"A nightly that goes red files an **issue** and writes **no ledger row**. So from the ledger's point of " +
@@ -1714,10 +2144,15 @@ export function render(v) {
 				"direction that overstates — which is the thing this whole file exists to prevent.",
 		);
 		L.push("");
-		L.push("| cell | proven by a run dated | open red | filed |");
-		L.push("|---|:---:|---|:---:|");
+		L.push("| cell | proven by a run dated | red | filed | red's state |");
+		L.push("|---|:---:|---|:---:|---|");
 		for (const c of v.contested) {
-			L.push(`| \`${c.cloud}/${c.dimension}\` | ${c.provenOn} | ${c.issue} | ${c.redFiledOn} |`);
+			// A red that was filed AND closed between two refreshes is contradiction the board can no
+			// longer show you: it was never in any snapshot's `open_issues`. It contests the cell for
+			// this derivation exactly as an open one does, and the column says which it was so the
+			// reader knows whether there is still an issue to go and read.
+			const state = c.closedOn ? `closed ${c.closedOn}, inside this refresh window` : "open";
+			L.push(`| \`${c.cloud}/${c.dimension}\` | ${c.provenOn} | ${c.issue} | ${c.redFiledOn} | ${state} |`);
 		}
 		L.push("");
 		L.push(
@@ -1725,10 +2160,27 @@ export function render(v) {
 				"run, and guessing either way is worse than naming the contradiction. It claims only what is " +
 				"derivable — the two sources disagree, so the ✅ is not trustworthy right now.\n\n" +
 				"**Two human acts clear it, and either one is fine:** close the issue if that run was a flake, or " +
-				"append a `FAIL` row for it if it was not. The next derivation picks the answer up.",
+				"append a `FAIL` row for it if it was not. The next derivation picks the answer up.\n\n" +
+				"A row marked **closed … inside this refresh window** is a red that was filed and closed between two " +
+				"snapshots, so it was never in anybody's `open_issues` and no derivation ever saw it. It is shown once, " +
+				"here, and clears on the next refresh — the closing act has already happened. That is the whole of it: " +
+				"a red is evidence whether or not its issue is still open, and `0 failing` is a claim about **today**.",
 		);
 		L.push("");
 	}
+
+	L.push("");
+	L.push("### Orphan reaper — nothing standing");
+	L.push("");
+	L.push(`**${v.reaperClean} of ${v.clouds.length} clouds are verified clean.** A real reclaim result stays current for ${REAPER_FRESH_HOURS} hours.`);
+	L.push("");
+	L.push("A run that reclaimed an orphan may still finish clean; the incident counts remain visible. Dry runs, skipped gates, failed or missing logs, unverifiable checks and unattributable resources never count as clean.");
+	L.push("");
+	L.push("| cloud | state | durable evidence |");
+	L.push("|---|:---:|---|");
+	const reaperGlyph = { clean: "✅ clean", standing: "❌ standing", indeterminate: "? indeterminate", stale: "♻️ stale" };
+	for (const result of v.reaper) L.push(`| **${result.cloud}** | ${reaperGlyph[result.state]} | ${result.why} |`);
+	L.push("");
 
 	L.push("### Blocked on a human");
 	L.push("");
@@ -1774,6 +2226,19 @@ export function render(v) {
 			: "Live board snapshot: **absent**. Every issue state and gate state above reads `unknown`.",
 	);
 	L.push("");
+	if (v.board.present) {
+		// TWO TIMESTAMPS, NOT ONE. `derived_at` says when the fetch ran; `inventory_observed_at` says
+		// when the gate inventory it carries was actually READ, and those are days apart by design —
+		// the nightly token cannot list variables or secrets, so every refresh carries the previous
+		// reading forward. Printing only the first is what let a five-day-old inventory look freshly
+		// measured. Both are printed VERBATIM, never as an age, for the reason stated above.
+		L.push(
+			`Gate inventory observed: **${v.board.inventoryObservedAt ?? "(not recorded)"}** — carried forward on every refresh whose token ` +
+				`cannot list repo variables or secrets. Past ${INVENTORY_FRESH_HOURS / 24} days behind the snapshot it stops being a measurement of today, ` +
+				"and every declared gate degrades to `unknown`.",
+		);
+		L.push("");
+	}
 	L.push(
 		`Ledger rows read: **${v.rows.length}** · surviving claims: **${[...v.claims.values()].filter((c) => c !== null).length}** ` +
 			`(a \`RETRACTED\` row voids a claim rather than replacing it, so surviving < rows is expected).`,
@@ -1811,20 +2276,51 @@ export function splice(existing, generated) {
 export function intentHalfViolations(existing) {
 	const idx = existing.indexOf(BEGIN);
 	const intent = idx === -1 ? existing : existing.slice(0, idx);
+	return statusClaimsIn(intent).map(
+		(c) => `${TARGET}:${c.line}: ${c.kind === "glyph"
+			? "a verdict glyph in the intent half — status belongs below the marker."
+			: c.kind === "count"
+				? "a derived count in the intent half — it will rot. Let the rollup render it."
+				: 'a status claim in the intent half ("is green"/"is proven"/…) — status belongs below the marker.'}`,
+	);
+}
+
+/**
+ * The three shapes that make a line a STATUS CLAIM rather than intent: a verdict glyph, a derived
+ * count, or an "is/are (now) green|proven|passing|red".
+ *
+ * Exported because `scripts/check-one-board.mjs` asks the same question of `docs/testing/*.md`, and
+ * two definitions of "this line asserts status" would be exactly the drift both guards exist to
+ * stop. This function is the definition; both callers phrase the message their own way.
+ *
+ * @param {string} text
+ * @returns {{line: number, kind: "glyph"|"count"|"claim", text: string}[]}
+ */
+export function statusClaimsIn(text, { prose = true } = {}) {
 	const out = [];
-	for (const [i, line] of intent.split("\n").entries()) {
-		if (/^\s*(#|>|_)/.test(line)) continue; // headings and quoted rationale
+	for (const [i, raw] of text.split("\n").entries()) {
+		// `prose: true` is PROGRAMME.md's intent half, where `#` is a heading and `>` is quoted
+		// rationale — neither asserts status, and skipping them is what lets the file document the
+		// very phrasings it forbids.
+		//
+		// `prose: false` is a BOARD, where that reasoning inverts: a heading and a blockquote are
+		// exactly where a board's status lives. `### hetzner ✅ green` is a verdict, and blockquoting
+		// a matrix is a one-character-per-line edit that made the whole corpus invisible to the
+		// guard. So the skip is dropped and a leading quote marker is STRIPPED before matching,
+		// rather than treated as an exemption.
+		const line = prose ? raw : raw.replace(/^\s*>+\s?/, "");
+		if (prose && /^\s*(#|>|_)/.test(line)) continue; // headings and quoted rationale
 		// A CITATION is not a claim. Strip backticked code and double-quoted spans before matching,
 		// so prose may name the very phrasing it forbids — the anti-patterns section has to be able
 		// to say `"is green"` without tripping the rule that forbids saying it. Without this the
 		// guard's only stable state is one where nobody can document it.
-		const prose = line.replace(/`[^`]*`/g, " ").replace(/"[^"]*"/g, " ").replace(/[“][^”]*[”]/g, " ");
-		if (/[✅❌⛔🔶]/.test(prose)) out.push(`${TARGET}:${i + 1}: a verdict glyph in the intent half — status belongs below the marker.`);
-		if (/\b\d+\s*(?:of|\/)\s*\d+\s+(?:cells|clouds|proven|passing|green)\b/i.test(prose)) {
-			out.push(`${TARGET}:${i + 1}: a derived count in the intent half — it will rot. Let the rollup render it.`);
+		const matchable = line.replace(/`[^`]*`/g, " ").replace(/"[^"]*"/g, " ").replace(/[“][^”]*[”]/g, " ");
+		if (/[✅❌⛔🔶]/.test(matchable)) out.push({ line: i + 1, kind: "glyph", text: line });
+		if (/\b\d+\s*(?:of|\/)\s*\d+\s+(?:cells|clouds|proven|passing|green)\b/i.test(matchable)) {
+			out.push({ line: i + 1, kind: "count", text: line });
 		}
-		if (/\b(?:is|are)\s+(?:now\s+)?(?:green|proven|passing|red)\b/i.test(prose)) {
-			out.push(`${TARGET}:${i + 1}: a status claim in the intent half ("is green"/"is proven"/…) — status belongs below the marker.`);
+		if (/\b(?:is|are)\s+(?:now\s+)?(?:green|proven|passing|red)\b/i.test(matchable)) {
+			out.push({ line: i + 1, kind: "claim", text: line });
 		}
 	}
 	return out;
@@ -2265,6 +2761,9 @@ function runSelfTest() {
 		const wiredSnap = {
 			gate_observations: [],
 			derived_at: new Date(Date.now() - 3600_000).toISOString(),
+			// Stamped, because an inventory with no observation time is `unknown` rather than wired —
+			// without it this block would measure the staleness rule instead of the reach rule.
+			inventory_observed_at: new Date(Date.now() - 3600_000).toISOString(),
 			open_issues: [],
 			closed_issues: [],
 			variables: repoGates,
@@ -2611,14 +3110,26 @@ function runSelfTest() {
 	}
 
 	// ── the LIVE BOARD half ──
-	const snap = (open = [], closed = [], variables = [], secrets = [], gate_observations = []) => ({
-		gate_observations,
-		derived_at: new Date(Date.now() - 3600_000).toISOString(),
-		open_issues: open.map((n) => ({ number: n, title: `t${n}`, labels: [] })),
-		closed_issues: closed.map((n) => ({ number: n, title: `t${n}`, labels: [] })),
-		variables,
-		secrets,
-	});
+	const snap = (open = [], closed = [], variables = [], secrets = [], gate_observations = [], orphan_reaper_observations = []) => {
+		const derived_at = new Date(Date.now() - 3600_000).toISOString();
+		return {
+			gate_observations,
+			orphan_reaper_observations,
+			derived_at,
+			// A FIXTURE HAS TO MODEL A REAL SNAPSHOT. `programme-fetch.sh` stamps both of these on
+			// every write, and both are now READ: an absent `inventory_observed_at` means "no record
+			// of when the gate inventory was read", which degrades every declared gate to `unknown`,
+			// and `previous_derived_at` bounds the window a closed red may count inside.
+			inventory_observed_at: derived_at,
+			previous_derived_at: new Date(Date.now() - 25 * 3600_000).toISOString(),
+			open_issues_truncated: false,
+			closed_issues_truncated: false,
+			open_issues: open.map((n) => ({ number: n, title: `t${n}`, labels: [] })),
+			closed_issues: closed.map((n) => ({ number: n, title: `t${n}`, labels: [] })),
+			variables,
+			secrets,
+		};
+	};
 	const failRow = row("2026-08-01", "aws", "floor", "FAIL", "demos/proofs/aws/x", "#1040");
 
 	// THE HEADLINE. A FAIL citing a CLOSED issue is not open work — its cause is fixed and it needs a
@@ -2700,6 +3211,204 @@ function runSelfTest() {
 		// And a red against a FAILING cell changes nothing — that cell already says so.
 		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: redSnap("e2e nightly: aws RED (floor)", "2026-08-02T00:00:00Z") });
 		ok("a red against an already-failing cell leaves it failing", r.grid.aws.floor.state === "failing", r.grid.aws.floor.state);
+	}
+
+	// ── #3652: A RED THAT CLOSES INSIDE THE DERIVATION WINDOW IS INVISIBLE ────────────────────────
+	//
+	// The blind spot between the two checks above. `contested` reads OPEN issues; `staleCitations`
+	// reads a CLOSED issue a cell CITES — and a nightly red writes no ledger row, so no cell cites
+	// it. A red filed and closed between two refreshes therefore entered NEITHER, and PROGRAMME.md
+	// published `0 failing` and `gcp/floor ✅` on a morning that leg failed.
+	//
+	// The fixture is the worked case from the issue, to the minute: #3580 filed 2026-09-01T09:46Z,
+	// closed 11:25Z, snapshot derived 11:32Z — seven minutes later.
+	{
+		const passRow = row("2026-08-01", "aws", "floor", "PASS", "demos/proofs/aws/x");
+		/** A snapshot whose window opened at the previous nightly and closed at 11:32Z. */
+		const winSnap = (closed_issues) => ({
+			...snap(),
+			derived_at: "2026-09-01T11:32:00Z",
+			previous_derived_at: "2026-08-31T08:47:00Z",
+			inventory_observed_at: "2026-09-01T11:32:00Z",
+			closed_issues,
+		});
+		const red3580 = (overrides = {}) => ({
+			number: 3580,
+			title: "e2e nightly: aws RED (floor)",
+			labels: [],
+			createdAt: "2026-09-01T09:46:00Z",
+			closedAt: "2026-09-01T11:25:00Z",
+			...overrides,
+		});
+
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580()]) });
+		ok("a red filed AND closed inside the derivation window still contests its cell", r.grid.aws.floor.state === "contested", r.grid.aws.floor.state);
+		ok("...and the tally stops counting it as proven", r.tally.proven === 0 && r.tally.contested === 1, JSON.stringify(r.tally));
+		ok("...and it names the issue, the filing date and the closing date", /#3580/.test(r.grid.aws.floor.why) && /2026-09-01/.test(r.grid.aws.floor.why) && /2026-08-01/.test(r.grid.aws.floor.why), r.grid.aws.floor.why);
+		ok("...and it is NOT an integrity failure (this gate reds every PR in the repo)", r.failures.length === 0, JSON.stringify(r.failures));
+		{
+			const out = render(r);
+			// THE HEADLINE NUMBER. `0 failing` was true and useless: the cell left `proven` and no
+			// count named where it went, so the summary read the same as a clean morning.
+			ok("...and the summary NAMES the contested count rather than only lowering the numerator", /1 contested/.test(out), out.split("\n").find((l) => /proof cells are proven/.test(l)));
+			// A reader sent to an OPEN issue that is closed learns the mechanism is lying to them.
+			ok("...and the contested table says the red is already closed", /closed 2026-09-01, inside this refresh window/.test(out), out.split("\n").find((l) => /#3580/.test(l)));
+		}
+
+		// A red closed BEFORE the window opened has already been through the file's documented
+		// clearing act. Reviving it forever would contest every cell that ever went red.
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ closedAt: "2026-08-30T00:00:00Z" })]) });
+		ok("a red closed BEFORE the window opened does not contest — closing it is the documented clearing act", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+
+		// UNKNOWN NEVER COLLAPSES. A snapshot written before the fetch captured `closedAt` must not
+		// have every closed red read as "closed just now".
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ closedAt: undefined })]) });
+		ok("a closed red with no closedAt is unknown, never in-window", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+
+		// The ordering rule is the same one the open half uses: a red that predates the proof was
+		// answered by it. Getting this backwards would contest most of the grid.
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ createdAt: "2026-07-01T00:00:00Z" })]) });
+		ok("a window-closed red filed BEFORE the run that proved the cell does not contest it", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+		ok("...and says so, rather than vanishing", r.notes.some((n) => /#3580/.test(n) && /proven 2026-08-01, on or after the red/.test(n)), JSON.stringify(r.notes.filter((n) => /3580/.test(n))));
+
+		// The same vocabulary rules as the open half, through the SAME parser.
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ title: "e2e nightly: matrix RED (floor · no per-leg proof)" })]) });
+		ok("a window-closed `matrix` red is not a cloud and contests nothing", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ title: "e2e nightly: aws RED (day2)" })]) });
+		ok("a window-closed red against a DIFFERENT dimension does not contest this cell", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+
+		// LEAVING NO TRACE IS THE DEFECT. A window-closed red that contests nothing still happened,
+		// and must be reported rather than silently dropped.
+		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: winSnap([red3580()]) });
+		ok("a window-closed red against an already-failing cell leaves it failing", r.grid.aws.floor.state === "failing", r.grid.aws.floor.state);
+		ok("...but is still REPORTED — 'leaves no trace' is the defect", r.notes.some((n) => /#3580/.test(n) && /INSIDE this derivation window/.test(n)), JSON.stringify(r.notes.filter((n) => /3580/.test(n))));
+
+		// A bar-wide red contests no single cell, exactly as the open half refuses to — a bar does
+		// not necessarily reach every dimension. It is reported instead.
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ title: "e2e nightly: aws RED (full-bar)" })]) });
+		ok("a window-closed bar-wide red contests no single cell", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+		ok("...and is reported instead", r.notes.some((n) => /#3580/.test(n) && /bar-wide/.test(n)), JSON.stringify(r.notes.filter((n) => /3580/.test(n))));
+
+		// A label this file cannot resolve is reported, never dropped — same lever as the open half.
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: winSnap([red3580({ title: "e2e nightly: aws RED (teleportation)" })]) });
+		ok("a window-closed red whose dimension resolves to no column is reported", r.notes.some((n) => /#3580/.test(n) && /resolves to no grid column/.test(n)), JSON.stringify(r.notes.filter((n) => /3580/.test(n))));
+
+		// THE WINDOW WITHOUT ITS BOUNDARY. A snapshot written before `previous_derived_at` existed
+		// still has to have a window, or the fix does nothing until the second refresh after it
+		// lands. One nightly cadence is what it would have had.
+		const noPrev = (closedAt) => {
+			const s = { ...snap(), closed_issues: [red3580({ closedAt })] };
+			delete s.previous_derived_at;
+			return s;
+		};
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: noPrev(new Date(Date.now() - 2 * 3600_000).toISOString()) });
+		ok("with no previous_derived_at the window falls back to one nightly cadence", r.grid.aws.floor.state === "contested", r.grid.aws.floor.state);
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: noPrev(new Date(Date.now() - 30 * 3600_000).toISOString()) });
+		ok("...and a red closed before that fallback window is outside it", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+
+		// And with NO timestamps at all there is no window, so nothing is claimed in either direction.
+		const noClock = { ...snap(), closed_issues: [red3580()] };
+		delete noClock.previous_derived_at;
+		delete noClock.derived_at;
+		r = derive({ ...base, ledgerText: hdr + passRow, snapshot: noClock });
+		ok("with no timestamps there is no window and nothing is claimed", r.grid.aws.floor.state === "proven", r.grid.aws.floor.state);
+	}
+
+	// ── #3652: A TRUNCATED ISSUE LIST MUST BE REPORTED AS TRUNCATED ───────────────────────────────
+	//
+	// `gh issue list --limit 500` returned exactly 500 closed issues for weeks. Every signal the
+	// mechanism produced — the array length, the trailing printf — read identically to a repo that
+	// has exactly 500, while 228 were dropped nightly. The consequence is load-bearing:
+	// `issueState` answers `unknown` for a dropped issue and `staleCitations` fires only on
+	// `closed`, so a red cell citing one stays `failing` forever.
+	//
+	// The OBSERVABLE is asserted, not the pagination: a capped fetch is REPORTED as capped.
+	{
+		const truncated = { ...snap([], []), closed_issues_truncated: true };
+		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: truncated });
+		ok("a truncated closed list is visible to the derivation", r.board.issueListComplete === false, JSON.stringify(r.board.issueListComplete));
+		ok("...and is reported, naming the consequence for a cell that cites a dropped issue", r.notes.some((n) => /TRUNCATED/.test(n) && /stale/.test(n)), JSON.stringify(r.notes));
+		ok("...and the cell whose citation could not be resolved is named", r.notes.some((n) => /aws\/floor/.test(n) && /#1040/.test(n) && /TRUNCATED/.test(n)), JSON.stringify(r.notes));
+		{
+			const out = render(r);
+			// A bare `?` reads as "checked, and it is neither open nor closed". While the list is
+			// truncated it means "we never looked", and those must not render the same.
+			ok("...and the rendered table says the `?` is unresolvable rather than checked", /unresolvable \(list truncated\)/.test(out), out.split("\n").find((l) => /aws\/floor/.test(l) && /#1040/.test(l)));
+			ok("...and the section says how to fix it", /issue list in the snapshot is TRUNCATED/.test(out) && /programme-fetch\.sh/.test(out));
+		}
+		// AN UNTRUNCATED FETCH MUST NOT SAY THIS. A warning that is always on is not a warning.
+		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: snap([], []) });
+		ok("an untruncated fetch reports no truncation", r.board.issueListComplete === true && !r.notes.some((n) => /TRUNCATED/.test(n)), JSON.stringify(r.notes));
+		ok("...and renders a bare `?`, not the unresolvable form", !/unresolvable/.test(render(r)));
+		// The OPEN query has the same defect class and the same flag; it is not closed-only.
+		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: { ...snap([], []), open_issues_truncated: true } });
+		ok("a truncated OPEN list is reported too", r.board.issueListComplete === false && r.notes.some((n) => /TRUNCATED/.test(n)), JSON.stringify(r.notes));
+
+		// A MISSING FLAG IS `null`, NEVER `true`. The snapshot in the tree when this landed was capped
+		// at 500 and says nothing about it, so reading absence as completeness renders the
+		// actually-truncated snapshot clean — the defect, one level up.
+		const unasked = { ...snap([], []) };
+		delete unasked.open_issues_truncated;
+		delete unasked.closed_issues_truncated;
+		r = derive({ ...base, ledgerText: hdr + failRow, snapshot: unasked });
+		ok("a snapshot that never asked about truncation is unknown, never complete", r.board.issueListComplete === null, JSON.stringify(r.board.issueListComplete));
+		ok("...and says so rather than rendering clean", r.notes.some((n) => /predates the truncation check/.test(n)), JSON.stringify(r.notes));
+		ok("...and its unresolvable citation is marked as such", /unresolvable \(completeness unknown\)/.test(render(r)), render(r).split("\n").find((l) => /#1040/.test(l)));
+	}
+
+	// ── #3652: `inventory_observed_at` WAS WRITTEN AND READ BY NOTHING ────────────────────────────
+	//
+	// The nightly token cannot list repo variables or secrets — no workflow permission scope for it
+	// exists — so every refresh carries the previous inventory forward and stamps when it was
+	// actually observed. The only staleness rule aged `derived_at`, which the same run re-stamps, so
+	// the bound could never bind: `derived_at` reached 2026-09-01 against a reading taken
+	// 2026-08-27, and deleting a gate variable would have left its row rendering `✅ wired` forever.
+	//
+	// The bound is measured between two PERSISTED timestamps, so it cannot put a clock in the
+	// diff-gated region.
+	{
+		const GATE = "E2E_AWS_ROLE_ARN";
+		const invSnap = (observed, extra = {}) => {
+			const s = { ...snap([], [], [GATE]), derived_at: "2026-09-01T00:00:00Z", inventory_observed_at: observed, ...extra };
+			if (observed === undefined) delete s.inventory_observed_at;
+			return s;
+		};
+		const awsGate = (view) => view.cloudGates.find((g) => g.cloud === "aws");
+
+		r = derive({ ...base, ledgerText: hdr, snapshot: invSnap("2026-08-31T00:00:00Z") });
+		ok("a freshly observed inventory reads wired", awsGate(r)?.effective === "wired", JSON.stringify(awsGate(r)));
+
+		// BOTH SIDES OF THE BOUNDARY, one second apart. A rule tested only well inside its range
+		// proves the direction and not the threshold.
+		r = derive({ ...base, ledgerText: hdr, snapshot: invSnap("2026-08-25T00:00:00Z") });
+		ok(`an inventory exactly ${INVENTORY_FRESH_HOURS / 24} days old is still fresh`, awsGate(r)?.effective === "wired", JSON.stringify(awsGate(r)));
+		r = derive({ ...base, ledgerText: hdr, snapshot: invSnap("2026-08-24T23:59:59Z") });
+		ok("one second past the bound, every DECLARED gate degrades to unknown", awsGate(r)?.effective === "unknown", JSON.stringify(awsGate(r)));
+		ok("...and it is REPORTED, naming when the inventory was actually observed", r.notes.some((n) => /2026-08-24T23:59:59Z/.test(n) && /DECLARED gate/.test(n)), JSON.stringify(r.notes));
+		ok("...and the rendered gate section says why, rather than an unexplained `?`", /The gate inventory is stale/.test(render(r)) && /2026-08-24T23:59:59Z/.test(render(r)));
+		// The dimension table reads the SAME `gateState`, so it is not asserted twice here — in this
+		// fixture the workflow text mentions no repo gate, so every row is `no_vehicle` and the
+		// assertion would pass without measuring the rule. `referencedGates` is what it would be
+		// testing, which has its own block above.
+
+		// AN INVENTORY WITH NO OBSERVATION TIME IS `unknown`, NOT FRESH. Reading absence as freshness
+		// would restore the defect for every snapshot an older fetch wrote.
+		r = derive({ ...base, ledgerText: hdr, snapshot: invSnap(undefined) });
+		ok("an inventory with no observation time is unknown, never fresh", awsGate(r)?.effective === "unknown", JSON.stringify(awsGate(r)));
+
+		// AN OBSERVATION IS A MEASUREMENT OF TODAY AND STILL WINS. The declaration going unknown must
+		// not erase a leg that demonstrably got past its gate — that would be the fix overshooting
+		// into the false-red this file's other half exists to prevent.
+		const observedRun = [{ provider: "aws", gate_off: "skipped", earlier_failure: false, run: "999", at: "2026-08-31T09:00:00Z" }];
+		r = derive({ ...base, ledgerText: hdr, snapshot: invSnap("2026-08-24T23:59:59Z", { gate_observations: observedRun }) });
+		ok("a stale inventory does not erase an OBSERVED gate", awsGate(r)?.effective === "wired", JSON.stringify(awsGate(r)));
+		ok("...while the declaration it replaced still reads unknown, so the two are never confused", awsGate(r)?.state === "unknown", JSON.stringify(awsGate(r)));
+
+		// The provenance has to print BOTH timestamps. Printing only `derived_at` is what let a
+		// five-day-old inventory look freshly measured.
+		const fresh = render(derive({ ...base, ledgerText: hdr, snapshot: invSnap("2026-08-31T00:00:00Z") }));
+		ok("the provenance prints when the inventory was observed, not just derived_at", /Gate inventory observed: \*\*2026-08-31T00:00:00Z\*\*/.test(fresh), fresh.split("\n").find((l) => /Gate inventory/.test(l)));
+		ok("...verbatim, never as an age", !/\b(hours? old|days old|ago)\b/.test(fresh), fresh.split("\n").find((l) => /Gate inventory/.test(l)));
 	}
 
 	// Composite crediting, the OTHER half: once a repo-gated dimension's gates are wired, its layer
@@ -3000,6 +3709,94 @@ function runSelfTest() {
 	ok("a snapshot older than 7 days fails", r.failures.some((f) => /days old/.test(f)), JSON.stringify(r.failures));
 	r = derive({ ...base, ledgerText: hdr, snapshot: { ...snap(), derived_at: new Date(Date.now() - 2 * 864e5).toISOString() } });
 	ok("...but a 2-day-old snapshot does not", !r.failures.some((f) => /days old/.test(f)), JSON.stringify(r.failures));
+
+	// ORPHAN REAPER: post-sweep state, not incident-free history. Every ambiguity is explicitly
+	// non-clean, and freshness compares two persisted timestamps rather than the wall clock.
+	{
+		const result = (overrides = {}) => ({
+			schema_version: 2,
+			provider: "aws",
+			region: "us-east-1",
+			run_id: "123",
+			run_attempt: 1,
+			event_name: "schedule",
+			mode: "reclaim",
+			gate_ran: true,
+			sweep_exit_code: 0,
+			log_present: true,
+			discovery_reported: true,
+			orphan_runs_found: 0,
+			resources_reclaimed: 0,
+			residual_detected: false,
+			unverified_count: 0,
+			unattributable_count: 0,
+			completed_at: "2026-09-01T00:00:00Z",
+			...overrides,
+		});
+		const at48 = deriveReaperObservation(result(), "2026-09-03T00:00:00Z");
+		ok("a verified reclaim exactly 48h old is clean", at48.state === "clean", JSON.stringify(at48));
+		const stale = deriveReaperObservation(result(), "2026-09-03T00:00:01Z");
+		ok("a verified reclaim older than 48h is stale", stale.state === "stale", JSON.stringify(stale));
+		const reclaimed = deriveReaperObservation(result({ orphan_runs_found: 2, resources_reclaimed: 7 }), "2026-09-02T00:00:00Z");
+		ok("a run that reclaimed incidents and verified afterward is clean", reclaimed.state === "clean" && /reclaimed 2/.test(reclaimed.why), JSON.stringify(reclaimed));
+		ok("an explicit residual is standing", deriveReaperObservation(result({ residual_detected: true }), "2026-09-02T00:00:00Z").state === "standing");
+		for (const [name, changes] of [
+			["dry run", { mode: "dry_run" }],
+			["skipped gate", { gate_ran: false }],
+			["missing log", { log_present: false }],
+			["failed sweep", { sweep_exit_code: 4 }],
+			["unverified check", { unverified_count: 1 }],
+			["unattributable resource", { unattributable_count: 1 }],
+			// THE FALSE ALL-CLEAR. Every other row here is a fact the sweep REPORTED; this one is a
+			// fact it never got to. A preflight whose discovery call failed produces an empty orphan
+			// list, takes its early return and exits 0 — no residual, nothing unverified, a log
+			// byte-identical to an empty account — and this cell used to read ✅ clean while
+			// PROGRAMME.md published "nothing standing" about resources that BILL.
+			["unreported discovery", { discovery_reported: false }],
+		]) {
+			const status = deriveReaperObservation(result(changes), "2026-09-02T00:00:00Z");
+			ok(`${name} is indeterminate, never clean`, status.state === "indeterminate", JSON.stringify(status));
+		}
+		// …and it must not swallow a stronger verdict: a run that found residual orphans plainly
+		// DID discover them, so `standing` wins over the discovery check that follows it.
+		ok(
+			"a residual finding still reads standing, not indeterminate",
+			deriveReaperObservation(result({ residual_detected: true, discovery_reported: false }), "2026-09-02T00:00:00Z").state === "standing",
+		);
+		const malformed = derive({
+			...base,
+			ledgerText: hdr,
+			snapshot: { ...snap(), derived_at: "2026-09-02T00:00:00Z", orphan_reaper_observations: [result({ raw_log: "must never persist" })] },
+		});
+		// A MALFORMED DURABLE RESULT DEGRADES ITS CELL, IT DOES NOT RED THE REPOSITORY. This used to
+		// assert the opposite. It was changed deliberately: `failures` exits 1 and this file runs on
+		// every PR, while `programme-fetch.sh` carries a bad entry forward without re-validating it —
+		// so one malformed observation redded every PR permanently, and no PR could remove it because
+		// every PR was red. Both halves are asserted here so a future "tighten this up" cannot
+		// re-introduce the wedge without also deleting a stated reason.
+		ok(
+			"a malformed durable result does NOT fail the build",
+			!malformed.failures.some((failure) => /orphan-reaper result/.test(failure)),
+			JSON.stringify(malformed.failures),
+		);
+		const malformedCell = deriveReaperObservation(result({ raw_log: "must never persist" }), "2026-09-02T00:00:00Z");
+		ok(
+			"...and is indeterminate, never clean",
+			malformedCell.state === "indeterminate" && malformedCell.integrityFailure !== null,
+			JSON.stringify(malformedCell),
+		);
+		const fullyClean = derive({
+			...base,
+			ledgerText: hdr,
+			snapshot: {
+				...snap(),
+				derived_at: "2026-09-02T00:00:00Z",
+				orphan_reaper_observations: [result(), result({ provider: "hetzner", region: "nbg1", run_id: "124" })],
+			},
+		});
+		ok("the clean tally is per declared cloud", fullyClean.reaperClean === 2, JSON.stringify(fullyClean.reaper));
+		ok("the rendered table preserves reclaimed incident history", /reclaimed 2 orphan run/.test(render({ ...fullyClean, reaper: fullyClean.reaper.map((entry) => entry.cloud === "aws" ? { ...reclaimed, cloud: "aws" } : entry) })));
+	}
 
 	// NO CLOCK IN THE RENDERED OUTPUT. An age is computed from Date.now(), so rendering one would make
 	// this diff-gated region go stale an hour after every refresh with no input change — redding CI for

@@ -1,9 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authorizeCli } from "@/lib/authz/guard";
+import {
+	type CursorScope,
+	MAX_PAGE_SIZE,
+	cursorKey,
+	paginate,
+	parsePageOpts,
+} from "@/lib/cli/paging";
 import { resolveCliProject } from "@/lib/cli/resolve-project";
 import { getServiceDb } from "@/lib/db";
 import { projectEnvironments, projectFabrics } from "@/lib/db/schema";
@@ -12,13 +19,18 @@ import {
 	environmentStage,
 	placementMode,
 } from "@/lib/db/schema/enums";
-import { slugify } from "@/lib/slug";
 import { NextResponse } from "next/server";
 import { cliJson } from "@/lib/cli/respond";
+import {
+	environmentNameSchema,
+	namespaceSchema,
+} from "@/lib/validations/names";
 import {
 	cliEnvironmentResponse,
 	cliEnvironmentsResponse,
 } from "@/lib/validations/cli-contract";
+
+const ENVIRONMENTS_LIST = "project-environments";
 
 /** Body of POST /api/cli/projects/:id/environments — add an environment.
  *
@@ -28,7 +40,12 @@ import {
  * state key. The isolation ladder the product leads with (namespace → vcluster → dedicated) was
  * unreachable from the CLI, and the cheap rungs are the interesting ones. */
 const addEnvironmentBody = z.object({
-	name: z.string().min(1),
+	/** Validated AND normalized by the shared rule (lib/validations/names.ts), which is the same
+	 *  one `project create --env` and the console's own `addEnvironment` action now use. Parsing
+	 *  yields the stored slug, so this route cannot forget the normalization step — and it now
+	 *  refuses a name a console route would permanently shadow (`project env add settings` used to
+	 *  create an environment whose URL was unreachable forever). */
+	name: environmentNameSchema,
 	stage: z.enum(environmentStage.enumValues).default("development"),
 	region: z.string().min(1).optional(),
 	/** Defaults to `namespace`: an environment ADDED to an existing project is the cheap-rung case,
@@ -38,12 +55,12 @@ const addEnvironmentBody = z.object({
 	 *  Defaults to the project's default Fabric — "the second tier is free" only works if a shared
 	 *  placement lands on the Fabric that already exists. */
 	fabric: z.string().min(1).optional(),
-	/** ArgoCD destination namespace for a shared placement. NULL → derived from the env name. */
-	namespace: z
-		.string()
-		.max(63)
-		.regex(/^[a-z][a-z0-9-]*$/, "Namespace must be a DNS-1123 label.")
-		.optional(),
+	/** ArgoCD destination namespace for a shared placement. NULL → derived from the env name.
+	 *  Kubernetes' own grammar, exactly. The pattern here required a leading letter and constrained
+	 *  nothing at the end, so it ACCEPTED `dev-` — which Kubernetes refuses, making the failure
+	 *  arrive at apply time naming a namespace rather than a name — and refused `1dev`, which
+	 *  Kubernetes accepts. */
+	namespace: namespaceSchema.optional(),
 	lifecycle: z.enum(environmentLifecycle.enumValues).optional(),
 });
 
@@ -122,6 +139,18 @@ export async function GET(
 	if ("error" in auth) return auth.error;
 	const { actor } = auth;
 	const { id } = await params;
+	const { searchParams } = new URL(req.url);
+	const cursorScope: CursorScope = { orgId: actor.orgId, list: ENVIRONMENTS_LIST };
+	const parsed = parsePageOpts(searchParams, cursorScope);
+	if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+	const asked = (key: string) => {
+		const raw = searchParams.get(key);
+		return raw !== null && raw !== "";
+	};
+	const opts =
+		!asked("limit") && !asked("cursor")
+			? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+			: parsed.opts;
 
 	try {
 		const project = await resolveCliProject(actor.orgId, id);
@@ -132,18 +161,35 @@ export async function GET(
 		// LEFT join: a `dedicated` environment whose Fabric has not been created yet, and any
 		// environment placed on none, must still appear. An inner join would silently drop rows
 		// from a list whose job is to account for every tier.
-		const rows = await getServiceDb()
-			.select({
-				environment: projectEnvironments,
-				fabricName: projectFabrics.name,
-			})
-			.from(projectEnvironments)
-			.leftJoin(projectFabrics, eq(projectEnvironments.fabric_id, projectFabrics.id))
-			.where(eq(projectEnvironments.project_id, project.id))
-			.orderBy(desc(projectEnvironments.is_default), projectEnvironments.created_at);
+		const db = getServiceDb();
+		const { items, page } = await paginate({
+			db,
+			table: projectEnvironments,
+			createdAt: projectEnvironments.created_at,
+			id: projectEnvironments.id,
+			scope: [eq(projectEnvironments.project_id, project.id)],
+			cursor: cursorScope,
+			opts,
+			rows: (query) =>
+				db
+					.select({
+						environment: projectEnvironments,
+						fabricName: projectFabrics.name,
+						cursor_key: cursorKey(projectEnvironments.created_at),
+					})
+					.from(projectEnvironments)
+					.leftJoin(projectFabrics, eq(projectEnvironments.fabric_id, projectFabrics.id))
+					.where(query.where)
+					.orderBy(desc(projectEnvironments.is_default), ...query.orderBy)
+					.limit(query.limit),
+			positionOf: (row) => ({ createdAt: row.cursor_key, id: row.environment.id }),
+		});
 
 		return cliJson(cliEnvironmentsResponse, {
-			environments: rows.map((r) => toEnvironmentWire(r.environment, r.fabricName)),
+			environments: items.map(({ cursor_key: _cursor, ...r }) =>
+				toEnvironmentWire(r.environment, r.fabricName),
+			),
+			page,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";
@@ -151,7 +197,8 @@ export async function GET(
 	}
 }
 
-/** Adds a non-default environment to a project (name slugified; region inherits the project). */
+/** Adds a non-default environment to a project (name normalized by the shared env-name rule;
+ *  region inherits the project). */
 export async function POST(
 	req: Request,
 	{ params }: { params: Promise<{ id: string }> },
@@ -163,15 +210,17 @@ export async function POST(
 
 	const parsed = addEnvironmentBody.safeParse(await req.json().catch(() => null));
 	if (!parsed.success) {
-		return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-	}
-	const name = slugify(parsed.data.name);
-	if (!name) {
+		// The name rules carry their own messages ("settings" is reserved, "must contain at least
+		// one letter or number"); a bare "Invalid request body" would tell the operator nothing
+		// about a name the server will never accept.
+		const issue = parsed.error.issues[0];
 		return NextResponse.json(
-			{ error: "Environment name is required" },
+			{ error: issue ? `${issue.path.join(".") || "body"}: ${issue.message}` : "Invalid request body" },
 			{ status: 400 },
 		);
 	}
+	// Already the stored slug — environmentNameSchema normalizes on parse.
+	const name = parsed.data.name;
 
 	try {
 		const db = getServiceDb();
@@ -211,7 +260,14 @@ export async function POST(
 				name,
 				stage: parsed.data.stage,
 				status: "DRAFT",
-				is_default: false,
+				// TRUE WHEN THE PROJECT HAS NONE — see the same expression in
+				// app/server/actions/projects.ts. A flat `false` made a project that had reached
+				// zero environments unrepairable: the constraint trigger refuses the very insert
+				// that would fix it, and the CLI surfaced that as a raw 500.
+				is_default: sql<boolean>`NOT EXISTS (
+					SELECT 1 FROM public.project_environments e
+					 WHERE e.project_id = ${project.id}::uuid AND e.is_default
+				)`,
 				region: parsed.data.region ?? null,
 				fabric_id: fabricId,
 				placement_mode: mode,

@@ -193,7 +193,7 @@ function formToInput(v: FormValues): FleetPoolCreateInput {
 
 const STEPS = ["Cloud", "Placement", "Capacity", "Version", "Review"] as const;
 const MONO_LABEL =
-  "font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground";
+  "font-mono text-ui-3xs uppercase tracking-[0.12em] text-muted-foreground";
 
 interface FleetPoolWizardProps {
   open: boolean;
@@ -288,7 +288,7 @@ export function FleetPoolWizard({
               <li key={label} className="flex flex-1 items-center gap-1.5">
                 <span
                   className={cn(
-                    "flex h-5 w-5 flex-none items-center justify-center rounded-full font-mono text-[10px]",
+                    "flex h-5 w-5 flex-none items-center justify-center rounded-full font-mono text-ui-2xs",
                     i < step
                       ? "bg-foreground text-background"
                       : i === step
@@ -357,7 +357,7 @@ export function FleetPoolWizard({
                               <ProviderIcon provider={p} size={16} />
                               {PROVIDER_LABELS[p] ?? p}
                               {!isEdit && usedProviders.includes(p) && (
-                                <span className="text-[10px] text-muted-foreground">
+                                <span className="text-ui-2xs text-muted-foreground">
                                   · pooled
                                 </span>
                               )}
@@ -373,7 +373,7 @@ export function FleetPoolWizard({
                 <FieldLabel>Display name (optional)</FieldLabel>
                 <Input placeholder="e.g. AWS primary" {...register("name")} />
                 <FieldError message={errors.name?.message} />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-xs text-muted-foreground">
                   Shown on the pool card. Defaults to the provider name.
                 </p>
               </div>
@@ -396,7 +396,7 @@ export function FleetPoolWizard({
                 </FieldLabel>
                 <Input placeholder="fsn1, nbg1" {...register("locationsCsv")} />
                 <FieldError message={errors.locationsCsv?.message} />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-xs text-muted-foreground">
                   Comma-separated region codes for {providerLabel}.
                 </p>
                 {locations.length > 0 && (
@@ -404,7 +404,7 @@ export function FleetPoolWizard({
                     {locations.map((l) => (
                       <span
                         key={l}
-                        className="border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-foreground"
+                        className="border border-border bg-muted px-2 py-0.5 font-mono text-ui-xs text-foreground"
                       >
                         {l}
                       </span>
@@ -592,7 +592,7 @@ export function FleetPoolWizard({
                               </span>
                               {opt.title}
                             </span>
-                            <span className="text-[11px] leading-relaxed text-muted-foreground">
+                            <span className="text-ui-xs leading-relaxed text-muted-foreground">
                               {opt.desc}
                             </span>
                           </button>
@@ -613,7 +613,7 @@ export function FleetPoolWizard({
                   <FieldLabel required>Channel</FieldLabel>
                   <Input placeholder="stable" {...register("channel")} />
                   <FieldError message={errors.channel?.message} />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-ui-xs text-muted-foreground">
                     Usually <span className="font-mono">stable</span>.
                   </p>
                 </div>
@@ -725,7 +725,7 @@ function NumberField({
       {error ? (
         <FieldError message={error} />
       ) : (
-        <p className="text-[10px] leading-tight text-muted-foreground">
+        <p className="text-ui-2xs leading-tight text-muted-foreground">
           {hint}
         </p>
       )}
@@ -736,7 +736,7 @@ function NumberField({
 /** Inline field error message. */
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="text-[11px] text-destructive">{message}</p>;
+  return <p className="text-ui-xs text-destructive">{message}</p>;
 }
 
 /** A small inline notice block (informational by default, or a warning). */
@@ -840,10 +840,10 @@ function PoolCapacityPreview({
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-2.5">
-      <dt className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      <dt className="font-mono text-ui-2xs uppercase tracking-wider text-muted-foreground">
         {label}
       </dt>
-      <dd className="max-w-[60%] text-right text-[13px]">{value}</dd>
+      <dd className="max-w-[60%] text-right text-ui-md">{value}</dd>
     </div>
   );
 }

@@ -105,7 +105,7 @@ function FacetOutputRow({
 }) {
 	return (
 		<div className="space-y-1">
-			<span className="vx-eyebrow text-[9px]">{label}</span>
+			<span className="vx-eyebrow text-ui-3xs">{label}</span>
 			<Select
 				value={value || OUTPUT_NONE}
 				onValueChange={(v) => onChange(v === OUTPUT_NONE ? undefined : v)}
@@ -123,7 +123,7 @@ function FacetOutputRow({
 				</SelectContent>
 			</Select>
 			{hint ? (
-				<p className="text-[10px] leading-tight text-muted-foreground">{hint}</p>
+				<p className="text-ui-2xs leading-tight text-muted-foreground">{hint}</p>
 			) : null}
 		</div>
 	);
@@ -249,7 +249,7 @@ export function BindingsField({
 
 						<div className="grid grid-cols-2 gap-2">
 							<div className="space-y-1">
-								<span className="vx-eyebrow text-[9px]">Target kind</span>
+								<span className="vx-eyebrow text-ui-3xs">Target kind</span>
 								<Select
 									value={binding.target.kind}
 									onValueChange={(v) =>
@@ -273,7 +273,7 @@ export function BindingsField({
 								</Select>
 							</div>
 							<div className="space-y-1">
-								<span className="vx-eyebrow text-[9px]">Resource</span>
+								<span className="vx-eyebrow text-ui-3xs">Resource</span>
 								{hasResourceOptions ? (
 									<Select value={resourceValue} onValueChange={pickResource}>
 										<SelectTrigger className="h-8 text-xs">
@@ -298,7 +298,7 @@ export function BindingsField({
 													{iacTargets.map((t) => (
 														<SelectItem key={t.address} value={t.address}>
 															<span className="font-mono">{t.name}</span>
-															<span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
+															<span className="ml-1.5 font-mono text-ui-2xs text-muted-foreground">
 																{t.address}
 															</span>
 														</SelectItem>
@@ -325,7 +325,7 @@ export function BindingsField({
 						</div>
 
 						<div className="space-y-1.5">
-							<span className="vx-eyebrow text-[9px]">Inject</span>
+							<span className="vx-eyebrow text-ui-3xs">Inject</span>
 							{binding.inject.map((inj, ii) => (
 								// Injections are positional too.
 								// eslint-disable-next-line react/no-array-index-key
@@ -367,7 +367,7 @@ export function BindingsField({
 										</SelectContent>
 									</Select>
 									{isSecretFacet(inj.from) && (
-										<span className="shrink-0 rounded-sm border border-border px-1 font-mono text-[8px] uppercase tracking-wide text-muted-foreground">
+										<span className="shrink-0 rounded-sm border border-border px-1 font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
 											secret
 										</span>
 									)}
@@ -410,9 +410,9 @@ export function BindingsField({
 						    unsatisfiable. */}
 						{enableIacTargets && binding.target.address ? (
 							<div className="space-y-2 border-t border-border pt-2.5">
-								<span className="vx-eyebrow text-[9px]">Map to module outputs</span>
+								<span className="vx-eyebrow text-ui-3xs">Map to module outputs</span>
 								{iacOutputs.length === 0 ? (
-									<p className="text-[11px] leading-relaxed text-muted-foreground">
+									<p className="text-ui-xs leading-relaxed text-muted-foreground">
 										This module exports no{" "}
 										<span className="font-mono">output</span> blocks to bind to. Add them and
 										re-scan the IaC source.
@@ -464,7 +464,7 @@ export function BindingsField({
 				Bind a resource
 			</button>
 
-			<p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+			<p className="font-mono text-ui-xs leading-relaxed text-muted-foreground">
 				Alethia injects the endpoint and credentials at deploy — keyless, via ExternalSecret. A
 				secret facet becomes a Kubernetes secretKeyRef, never written into the manifest.
 			</p>

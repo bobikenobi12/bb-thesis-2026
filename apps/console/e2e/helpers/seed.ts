@@ -12,21 +12,14 @@
 // aws|azure|gcp|alibaba|digitalocean|hetzner|civo; cloud_identity_status = pending|testing|connected|
 // degraded|disconnected|failed.
 
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
+
 import { db } from "./db";
 
 /** The persona identity every seeded row is scoped to. */
 export interface Owner {
 	userId: string;
 	orgId: string;
-}
-
-/** Slugify like the app (lowercase, non-alnum → single dash, trimmed). */
-function slugify(name: string): string {
-	return name
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 60);
 }
 
 /** Inserts a verified/connected cloud identity so a project can link it and Connectors shows it. */
@@ -71,7 +64,7 @@ export async function seedProject(
 ): Promise<SeededProject> {
 	const sql = db();
 	const name = opts.name ?? `e2e-project-${Date.now()}`;
-	const slug = slugify(name);
+	const slug = slugifyOrEmpty(name);
 	const region = opts.region ?? "eu-central-1";
 	const [proj] = await sql<{ id: string }[]>`
 		insert into projects ${sql({

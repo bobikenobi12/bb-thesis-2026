@@ -44,7 +44,7 @@ import { FacetFilter } from "@repo/ui/facet-filter";
 import { FilterBar, FilterBarReset } from "@repo/ui/filter-bar";
 import { FilterSearch } from "@repo/ui/filter-search";
 import { MultiCombobox } from "@repo/ui/multi-combobox";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import {
   Select,
   SelectContent,
@@ -390,19 +390,19 @@ export function MembersTable() {
         const r = row.original;
         return (
           <div className="flex items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-[11px] text-muted-foreground">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-ui-xs text-muted-foreground">
               {r.avatar}
             </span>
             <div className="flex min-w-0 flex-col">
               <span className="flex items-center gap-1.5 text-foreground">
                 {r.name}
                 {r.isYou && (
-                  <span className="rounded-full border px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wide text-muted-foreground">
+                  <span className="rounded-full border px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
                     You
                   </span>
                 )}
               </span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">
+              <span className="font-mono text-ui-2xs text-muted-foreground">
                 {r.meta}
               </span>
               {/* Classification (Workstream B) — members only (not invites). */}
@@ -461,13 +461,13 @@ export function MembersTable() {
             row.original.teams.map((t) => (
               <span
                 key={t}
-                className="whitespace-nowrap rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                className="whitespace-nowrap rounded-full border px-2 py-0.5 font-mono text-ui-2xs text-muted-foreground"
               >
                 {t}
               </span>
             ))
           ) : (
-            <span className="rounded-full border border-dashed px-2 py-0.5 font-mono text-[10px] text-muted-foreground/60">
+            <span className="rounded-full border border-dashed px-2 py-0.5 font-mono text-ui-2xs text-muted-foreground/60">
               No team
             </span>
           )}
@@ -503,9 +503,8 @@ export function MembersTable() {
 
   return (
     <div>
-      <PageHeader
+      <PageToolbar
         className="mb-4"
-        title="Members"
         description="Organization members and pending invitations."
         count={filtered.length}
         actions={
@@ -593,13 +592,13 @@ export function MembersTable() {
       {/* bulk bar */}
       {canManage && selected.size > 0 && (
         <div className="mb-3 flex items-center justify-between gap-4 rounded-md border border-foreground bg-muted py-[9px] pl-4 pr-[14px]">
-          <div className="flex items-center gap-3 text-[12.5px] text-foreground">
+          <div className="flex items-center gap-3 text-ui-sm text-foreground">
             <span>
               <b className="font-semibold">{selected.size}</b> selected
             </span>
             <button
               type="button"
-              className="font-mono text-[11px] text-muted-foreground hover:text-foreground"
+              className="font-mono text-ui-xs text-muted-foreground hover:text-foreground"
               onClick={() => setSelected(new Set())}
             >
               Clear

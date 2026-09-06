@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"os"
 	"sync"
 
 	"github.com/charmbracelet/huh"
@@ -74,8 +75,31 @@ func HuhTheme() *huh.Theme {
 	return huhThemeInst
 }
 
+// InteractiveOutput is the stream Alethia's transient terminal widgets — forms, pickers,
+// confirmations and the loading spinner — draw on.
+//
+// MEASURED, not assumed, and the upstream defaults are neither consistent nor the ones you would
+// guess. huh v0.8.0 builds its bubbletea program with `tea.WithOutput(os.Stderr)` (form.go:112);
+// huh's SPINNER passes a nil writer, which bubbletea resolves to os.Stdout (tea.go:261); and
+// bubbletea's own default, which ui.ShowTable gets, is os.Stdout too.
+//
+// So a form drew on stderr and a spinner drew on stdout, and one of those is a defect a user can
+// see: `alethia jobs list -o json > jobs.json` from a terminal wrote eight ANSI sequences and the
+// frame "⣽  Fetching jobs..." into the file AHEAD of the payload, and `jq` answered
+// "Invalid numeric literal at line 1, column 2". Progress is not part of the document.
+//
+// STDERR is the answer for both, and it is the convention every other tool follows: stdout carries
+// the answer, stderr carries the narration. The rich TABLE stays on stdout deliberately — it is
+// not narration, it IS the answer, which is why interactiveTable asks about a different descriptor.
+//
+// Declaring it here rather than inheriting the upstream defaults makes it a property of THIS
+// package: the gate in apps/cli/cmd/seams.go derives its isatty check from this very function, so
+// the stream a widget draws on and the stream the gate tests cannot drift apart, and a dependency
+// bump that moved a default could not silently invert either.
+func InteractiveOutput() *os.File { return os.Stderr }
+
 // NewForm builds a huh form with the grayscale theme applied — the single
 // construction point so no interactive form uses the stock colorful theme.
 func NewForm(groups ...*huh.Group) *huh.Form {
-	return huh.NewForm(groups...).WithTheme(HuhTheme())
+	return huh.NewForm(groups...).WithTheme(HuhTheme()).WithOutput(InteractiveOutput())
 }

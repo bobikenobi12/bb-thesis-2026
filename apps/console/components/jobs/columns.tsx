@@ -13,12 +13,12 @@ import { PROVIDER_LABELS, ProviderIcon } from "@repo/ui/provider-icon";
 import { lookup } from "@/lib/typed-object";
 import type { JobWithMeta } from "@/app/server/actions/jobs";
 import type { ProvisionJobStatus, ProvisionJobType } from "@/lib/db/schema";
-import { JOB_TYPES, formatDuration } from "@/lib/jobs/format";
+import { formatDuration, formatRelative } from "@repo/format";
+import { JOB_TYPES } from "@/lib/jobs/format";
 import { JobAuthor, type JobAuthorInfo } from "@/components/jobs/job-author";
 import { ReleaseNotesPopover } from "@/components/runners/release-notes-popover";
 import { projectHref } from "@/lib/routing";
 import type { ColumnDef } from "@tanstack/react-table";
-import { formatDistanceToNow } from "date-fns";
 import { ArrowRight, Layers, Server } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -144,7 +144,7 @@ function ProjectCell({
               {projectName}
             </p>
             {label && (
-              <p className="text-[11px] text-muted-foreground">{label}</p>
+              <p className="text-ui-xs text-muted-foreground">{label}</p>
             )}
           </div>
         </div>
@@ -189,7 +189,7 @@ function RunnerCell({
         <Server className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="text-xs text-foreground">{name}</span>
         {runnerVersion && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-ui-2xs text-muted-foreground">
             {runnerVersion}
           </span>
         )}
@@ -205,7 +205,7 @@ function RunnerCell({
           <span className="text-xs text-foreground hover:underline">
             {name}
           </span>
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-ui-2xs text-muted-foreground">
             v{runnerVersion}
           </span>
         </button>
@@ -243,7 +243,7 @@ export function buildJobColumns({
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <span className="text-xs font-medium">{info.label}</span>
-              <p className="hidden text-[10px] text-muted-foreground sm:block">
+              <p className="hidden text-ui-2xs text-muted-foreground sm:block">
                 {info.description}
               </p>
             </div>
@@ -352,7 +352,7 @@ export function buildJobColumns({
           <div className="flex items-center justify-end gap-2">
             {created_at && (
               <span className="whitespace-nowrap text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(created_at), { addSuffix: true })}
+                {formatRelative(created_at)}
               </span>
             )}
             <JobAuthor author={author} />

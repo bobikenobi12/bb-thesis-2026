@@ -190,20 +190,20 @@ test.describe("Onboarding — returning user login", () => {
 test.describe("Onboarding — org switcher + create-org sheet", () => {
 	test("switcher shows the active org and its plan badge", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
-		await owner.page.getByRole("combobox", { name: /switch organization/i }).click();
+		await owner.page.getByRole("button", { name: /switch organization/i }).click();
 		await expect(owner.page.getByPlaceholder(/find organization/i)).toBeVisible();
 		await expect(owner.page.getByRole("option", { name: /e2e hobby org/i }).first()).toBeVisible();
 	});
 
 	test("switcher exposes the create-organization action", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
-		await owner.page.getByRole("combobox", { name: /switch organization/i }).click();
+		await owner.page.getByRole("button", { name: /switch organization/i }).click();
 		await expect(owner.page.getByRole("button", { name: /create organization/i })).toBeVisible();
 	});
 
 	test("create-organization opens the purchase sheet", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
-		await owner.page.getByRole("combobox", { name: /switch organization/i }).click();
+		await owner.page.getByRole("button", { name: /switch organization/i }).click();
 		await owner.page.getByRole("button", { name: /create organization/i }).click();
 		await expect(
 			owner.page.getByRole("heading", { level: 1, name: /create a team/i }),
@@ -215,7 +215,7 @@ test.describe("Onboarding — org switcher + create-org sheet", () => {
 		// ownerHobby onboarded on Hobby, so it still holds its one account-wide trial →
 		// the name step routes to the trial panel (no Stripe intent, no org created).
 		await owner.page.goto(`/${owner.orgSlug}`);
-		await owner.page.getByRole("combobox", { name: /switch organization/i }).click();
+		await owner.page.getByRole("button", { name: /switch organization/i }).click();
 		await owner.page.getByRole("button", { name: /create organization/i }).click();
 		await owner.page.getByPlaceholder(/acme cloud/i).fill(`e2e-switch-${Date.now()}`);
 		await owner.page.getByRole("button", { name: /^continue$/i }).click();

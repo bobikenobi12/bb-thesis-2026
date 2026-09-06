@@ -111,13 +111,13 @@ export function ProtectionRulesDialog({
 					{/* header */}
 					<div className="flex items-start justify-between gap-3 border-b px-[22px] py-5">
 						<div>
-							<div className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+							<div className="font-mono text-ui-2xs uppercase tracking-[0.16em] text-text-tertiary">
 								Protection rules
 							</div>
-							<div className="mt-1.5 font-mono text-[16px] text-text-primary">
+							<div className="mt-1.5 font-mono text-ui-xl text-text-primary">
 								{envName}
 							</div>
-							<p className="mt-2 max-w-[40ch] text-[12.5px] text-text-tertiary">
+							<p className="mt-2 max-w-[40ch] text-ui-sm text-text-tertiary">
 								Gates a promotion must clear before it deploys into this environment.
 							</p>
 						</div>
@@ -153,7 +153,7 @@ export function ProtectionRulesDialog({
 						/>
 						{requireApproval && (
 							<div className="flex items-center justify-between gap-3 pl-[26px] pr-3.5">
-								<span className="text-[12.5px] text-text-secondary">
+								<span className="text-ui-sm text-text-secondary">
 									Approvals required
 								</span>
 								<Controller
@@ -219,8 +219,8 @@ function ToggleRow({
 	return (
 		<label className="flex items-center justify-between gap-3 rounded-lg border px-3.5 py-3">
 			<span className="min-w-0">
-				<span className="text-[13px] font-medium text-text-primary">{title}</span>
-				<span className="mt-0.5 block text-[11.5px] text-text-tertiary">{desc}</span>
+				<span className="text-ui-md font-medium text-text-primary">{title}</span>
+				<span className="mt-0.5 block text-ui-xs text-text-tertiary">{desc}</span>
 			</span>
 			<Controller
 				control={control}
@@ -248,8 +248,8 @@ function NumberRow({
 	return (
 		<div className="flex items-center justify-between gap-3 rounded-lg border px-3.5 py-3">
 			<span className="min-w-0">
-				<span className="text-[13px] font-medium text-text-primary">{title}</span>
-				<span className="mt-0.5 block text-[11.5px] text-text-tertiary">{desc}</span>
+				<span className="text-ui-md font-medium text-text-primary">{title}</span>
+				<span className="mt-0.5 block text-ui-xs text-text-tertiary">{desc}</span>
 			</span>
 			<Controller
 				control={control}

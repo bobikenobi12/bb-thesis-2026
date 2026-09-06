@@ -1,0 +1,11 @@
+# A pending-enrolment record. See scripts/check-coverage-exclusions.mjs.
+#
+# Measured on 2026-09-03: two coverage `exclude:` entries — `**/*.d.ts`, `**/*.test.ts` — and no
+# coverage-exclusions.yaml. This is the licensed tier whose floor the ratchet enforces, so it is
+# the least recorded surface in the repository and the one where an added `exclude:` would have
+# passed in silence.
+#
+# Deleting this file is part of the enrolment PR: the guard fails the moment
+# ee/coverage-exclusions.yaml exists while this record still stands.
+issue: #4105
+reason: the paid tier's exclusions need classifying with the evidence each section demands

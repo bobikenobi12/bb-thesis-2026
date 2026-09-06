@@ -2,11 +2,11 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Shared presentation for the Environments surface — the grayscale status dot (reusing the
-// brand `.vx-status` device), an initials avatar, and the mappings that turn a promotion's
-// real data (status, gate results, protection rules) into pipeline / gate / chip views.
+// Shared presentation for the Environments surface — the grayscale status dot, an initials
+// avatar, and the mappings that turn a promotion's real data (status, gate results, protection
+// rules) into pipeline / gate / chip views.
 
-import { cn } from "@repo/ui/utils";
+import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import {
 	Clock,
 	DollarSign,
@@ -17,32 +17,46 @@ import {
 } from "lucide-react";
 import type { GateResult } from "@/types/jsonb.types";
 
-/** The brand status tiers (`@repo/brand` .vx-status--*). Meaning is carried by the dot + label. */
-export type StatusTier =
-	| "active"
-	| "pending"
-	| "idle"
-	| "failed"
-	| "disabled"
-	| "live";
+/**
+ * The status tiers, re-exported from the one place that defines them.
+ *
+ * This file used to declare its own copy of the union AND rebuild the `.vx-status` markup by
+ * hand — a second source of truth for what a status looks like, invisible to
+ * `check:shared-surface` because nothing about a hand-written class string says "status". A
+ * tier added to `@repo/ui/status-badge` would have reached every console surface except this one.
+ */
+export type { StatusTier };
 
-/** A status dot (+ optional label), reusing the shared `.vx-status` brand device. */
+/**
+ * A status dot (+ optional label) for a caller that already knows the TIER.
+ *
+ * A thin adapter over {@link StatusBadge}, not a second renderer: the tiers, the markup and the
+ * dot come from `@repo/ui/status-badge`. It exists because the promotion surfaces resolve a tier
+ * themselves (`promoStatus`, `pipelineSteps`, `gateView` below) from vocabulary `statusTier()`'s
+ * lookup does not know, so there is no product status string to hand the badge. The last consumer
+ * outside `components/environments/` is `components/create-project/environment-placement.tsx`
+ * (#3624's lane); once that moves to `StatusBadge` this can go with it.
+ *
+ * The `size` prop is gone. It rendered the same device at 8px, 9px and 12px on three surfaces of
+ * one product, which is exactly the disagreement §6 is about — every dot is now the shared 7px.
+ */
 export function StatusDot({
 	tier,
 	label,
-	size = 8,
 	className,
 }: {
 	tier: StatusTier;
 	label?: string;
-	size?: number;
 	className?: string;
 }) {
 	return (
-		<span className={cn(`vx-status vx-status--${tier}`, className)}>
-			<span className="vx-status__dot" style={{ width: size, height: size }} />
-			{label ? <span>{label}</span> : null}
-		</span>
+		<StatusBadge
+			status={label ?? tier}
+			tier={tier}
+			label={label}
+			showLabel={label !== undefined}
+			className={className}
+		/>
 	);
 }
 

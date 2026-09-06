@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/names"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
 )
@@ -31,7 +32,11 @@ const addonSecretLabelKey = "alethia.io/addon-secret"
 // The SecretRef fields interpolate into a YAML manifest and kubectl commands, and they
 // arrive via the DB-persisted config snapshot — validating here keeps a tampered snapshot
 // (or a future catalog bug) from injecting YAML documents or shell into the runner.
-var k8sNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+//
+// The grammar is names.NamespacePattern, generated from apps/console/lib/validations/names.ts
+// (#3665) — the same one the console validates against, so the two cannot come to disagree about
+// what a name may be.
+var k8sNameRe = names.NamespacePattern
 
 // secretKeyRe is the k8s Secret data-key charset (alphanumerics, '-', '_', '.').
 var secretKeyRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)

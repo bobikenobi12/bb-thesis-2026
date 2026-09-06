@@ -218,7 +218,7 @@ export function PoliciesPanel({
 					{/* master-detail */}
 					<div className="flex flex-wrap items-start gap-4">
 						<div className="min-w-[290px] flex-1 overflow-hidden rounded-xl border border-border/60 bg-background shadow-sm">
-							<div className="px-4 py-3 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground/70">
+							<div className="px-4 py-3 font-mono text-ui-3xs uppercase tracking-[0.14em] text-muted-foreground/70">
 								Policies
 							</div>
 							{rows.length === 0 ? (
@@ -244,10 +244,10 @@ export function PoliciesPanel({
 									>
 										<StatusBadge {...policyBadge(p)} showLabel={false} />
 										<span className="min-w-0 flex-1">
-											<span className="block truncate font-medium text-[13px]">
+											<span className="block truncate font-medium text-ui-md">
 												{p.name}
 											</span>
-											<span className="font-mono text-[10px] text-muted-foreground">
+											<span className="font-mono text-ui-2xs text-muted-foreground">
 												{p.event_patterns.length} events ·{" "}
 												{p.enabled ? "enabled" : "off"}
 											</span>
@@ -426,7 +426,7 @@ function PolicyDetail({
 								</span>
 							)}
 							{policy.is_security && (
-								<span className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+								<span className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 									security
 								</span>
 							)}
@@ -456,7 +456,7 @@ function PolicyDetail({
 					</div>
 				</div>
 				<div className="flex flex-none items-center gap-2">
-					<StatusBadge {...policyBadge(policy)} className="text-[10px]" />
+					<StatusBadge {...policyBadge(policy)} className="text-ui-2xs" />
 					<Switch
 						checked={policy.enabled}
 						disabled={!canManage || ed}
@@ -498,10 +498,10 @@ function PolicyDetail({
 			{/* events */}
 			<div className="space-y-3 border-b border-border/60 p-5">
 				<div className="flex items-center gap-2">
-					<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+					<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 						Trigger · events
 					</span>
-					<span className="ml-auto font-mono text-[10px] text-muted-foreground">
+					<span className="ml-auto font-mono text-ui-2xs text-muted-foreground">
 						{events.length} selected
 					</span>
 				</div>
@@ -517,7 +517,7 @@ function PolicyDetail({
 			{/* routing */}
 			<div className="space-y-3 border-b border-border/60 p-5">
 				<div className="flex items-center gap-2">
-					<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+					<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 						Routing · channels
 					</span>
 					<button
@@ -539,7 +539,7 @@ function PolicyDetail({
 
 			{/* conditions */}
 			<div className="space-y-3 border-b border-border/60 p-5">
-				<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+				<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 					Conditions
 				</span>
 				<PolicyConditions
@@ -561,7 +561,7 @@ function PolicyDetail({
 			{/* throttle */}
 			<div className="space-y-2 p-5">
 				<div className="flex items-center gap-1.5">
-					<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+					<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 						Notify at most once per
 					</span>
 				</div>
@@ -595,10 +595,10 @@ function PolicyDetail({
 function MetaCell({ k, v }: { k: string; v: string }) {
 	return (
 		<div className="min-w-[120px] flex-1 border-r border-border/60 px-5 py-3 last:border-r-0">
-			<div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+			<div className="font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 				{k}
 			</div>
-			<div className="mt-1.5 truncate text-[13px]">{v}</div>
+			<div className="mt-1.5 truncate text-ui-md">{v}</div>
 		</div>
 	);
 }

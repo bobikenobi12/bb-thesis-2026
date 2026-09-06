@@ -28,7 +28,7 @@ export function DriftTab({ row }: { row: EvidenceEnvRow }) {
 
 	return (
 		<div className="flex flex-col gap-3">
-			<div className="font-mono text-[11px] text-text-secondary">
+			<div className="font-mono text-ui-xs text-text-secondary">
 				{drift.inSync
 					? `In sync — no managed resource has drifted. Scanned ${formatRelative(drift.scannedAt)}.`
 					: `${drift.drifted} resource${drift.drifted === 1 ? "" : "s"} diverged from the provisioned state. Scanned ${formatRelative(drift.scannedAt)}.`}
@@ -42,17 +42,17 @@ export function DriftTab({ row }: { row: EvidenceEnvRow }) {
 						>
 							<span
 								className={cn(
-									"shrink-0 rounded-full border border-border-strong px-2 py-0.5 font-mono text-[8.5px] uppercase tracking-wide",
+									"shrink-0 rounded-full border border-border-strong px-2 py-0.5 font-mono text-ui-3xs uppercase tracking-wide",
 									TONE_TEXT[kindTone(d.kind)],
 								)}
 							>
 								{d.kind}
 							</span>
 							<div className="min-w-0 flex-1">
-								<div className="truncate font-mono text-[11.5px] text-text-primary">
+								<div className="truncate font-mono text-ui-xs text-text-primary">
 									{d.address}
 								</div>
-								<div className="mt-0.5 font-mono text-[10px] text-text-tertiary">
+								<div className="mt-0.5 font-mono text-ui-2xs text-text-tertiary">
 									{d.type}
 								</div>
 							</div>

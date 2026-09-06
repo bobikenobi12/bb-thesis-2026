@@ -10,6 +10,7 @@ import { getPlanResult } from "@/app/server/actions/jobs";
 import { getProject } from "@/app/server/actions/projects";
 import { DeployPane } from "@/components/agent/deploy-pane";
 import { BuildPane } from "@/components/agent/build-pane";
+import { PANEL_EMPTY } from "@/components/agent/panel-empty";
 import type {
 	BuildJobState,
 	BuildServiceInput,
@@ -24,6 +25,7 @@ import { Badge } from "@repo/ui/badge";
 import { CountPill } from "@repo/ui/count-pill";
 import { EmptyState } from "@repo/ui/empty";
 import { ScrollArea } from "@repo/ui/scroll-area";
+import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/tabs";
 import { getProvider, type CloudProviderSlug } from "@/lib/cloud-providers";
 import { type CostItem, computeCostItems } from "@/lib/cost/compute-cost-items";
@@ -316,7 +318,7 @@ export function ArtifactPanel() {
 								) : logs.length === 0 ? (
 									<EmptyState title="Waiting for logs…" className={PANEL_EMPTY} />
 								) : (
-									<div className="space-y-0.5 font-mono text-[11px] leading-relaxed">
+									<div className="space-y-0.5 font-mono text-ui-xs leading-relaxed">
 										{logs.map((l) => (
 											<div
 												key={l.id}
@@ -341,21 +343,10 @@ export function ArtifactPanel() {
 	);
 }
 
-/**
- * Density tuning for `@repo/ui/empty`'s `EmptyState` inside this panel.
- *
- * The shared component is sized for a page: `p-6 md:p-12` and a `text-lg` headline. `md:` is a
- * VIEWPORT breakpoint, so a 340px side panel on a desktop still gets 48px of padding around a
- * headline wider than the column. The structure and semantics stay shared; only the scale is
- * local, which is the difference between tuning a component and forking one.
- */
-const PANEL_EMPTY =
-	"gap-2 p-8 md:p-8 [&_[data-slot=empty-title]]:text-xs [&_[data-slot=empty-title]]:font-normal [&_[data-slot=empty-title]]:text-muted-foreground [&_[data-slot=empty-description]]:text-xs";
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
 	return (
 		<div>
-			<div className="vx-eyebrow pb-1 text-[9px]">{title}</div>
+			<div className="vx-eyebrow pb-1 text-ui-3xs">{title}</div>
 			<div className="border border-border px-3">{children}</div>
 		</div>
 	);
@@ -363,7 +354,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Row({ k, v }: { k: string; v: ReactNode }) {
 	return (
-		<div className="flex items-center justify-between gap-3 border-b border-border py-2 font-mono text-[11px] last:border-0">
+		<div className="flex items-center justify-between gap-3 border-b border-border py-2 font-mono text-ui-xs last:border-0">
 			<span className="text-muted-foreground">{k}</span>
 			<span className="truncate text-right text-foreground">{v || "—"}</span>
 		</div>
@@ -397,7 +388,7 @@ function ConfigPane({ project }: { project: ProjectDetail | null }) {
 		<div className="space-y-4">
 			<div className="border border-border bg-muted/40 p-3">
 				<div className="text-sm font-medium">{project.project.project_name}</div>
-				<div className="vx-eyebrow mt-1 text-[9px]">
+				<div className="vx-eyebrow mt-1 text-ui-3xs">
 					{cloudProvider} · {project.project.region ?? "—"} ·{" "}
 					{project.project.environment_stage}
 				</div>
@@ -476,7 +467,7 @@ function CostPane({ cost }: { cost: { items: CostItem[]; total: number } | null 
 							{item.detail && (
 								<Badge
 									variant="outline"
-									className="shrink-0 rounded-none px-1 py-0 text-[9px]"
+									className="shrink-0 rounded-none px-1 py-0 text-ui-3xs"
 								>
 									{item.detail}
 								</Badge>
@@ -516,17 +507,31 @@ function PlanCountTile({ n, label }: { n: number; label: string }) {
 				// tabular figures, locale separators, the null guard — comes from the component.
 				className="bg-transparent px-0 py-0 text-base font-semibold text-foreground"
 			/>
-			<div className="vx-eyebrow text-[8px]">{label}</div>
+			<div className="vx-eyebrow text-ui-3xs">{label}</div>
 		</div>
 	);
 }
 
-/** Verdict/status → grayscale Badge variant (no color; fail is solid, pass is outline). */
-function statusBadgeVariant(s: VerifyStatus): "default" | "outline" | "secondary" {
-	if (s === "fail") return "default";
-	if (s === "pass") return "outline";
-	return "secondary";
-}
+/**
+ * Verdict/status → the shared grayscale status tier.
+ *
+ * `StatusBadge` resolves the infrastructure vocabulary (active/queued/failed/…) on its own, and
+ * NONE of the gate's four words is in it: `statusTier("not_evaluable")` returns `idle` silently,
+ * which would render "not evaluable" and "warnings" identically to a pass a reader has already
+ * learned to trust. So this is the explicit `tier` the component asks for when a domain brings its
+ * own words — a vocabulary map, not the local colour map it replaces.
+ *
+ * The ordering it preserves is the one the old Badge variants encoded: `fail` carries the most ink
+ * (a solid dot with a cut-out), `pass` the settled one, and the two honest non-answers sit between
+ * them without claiming either — `warn` still in flight, `not_evaluable` present but saying
+ * nothing. A `not_evaluable` must never read as a pass.
+ */
+const VERDICT_TIER: Record<VerifyStatus, StatusTier> = {
+	pass: "active",
+	fail: "failed",
+	warn: "pending",
+	not_evaluable: "idle",
+};
 
 const VERDICT_LABEL: Record<VerifyStatus, string> = {
 	pass: "passed",
@@ -544,41 +549,41 @@ export function VerifyBlock({ report }: { report: VerifyReport }) {
 	return (
 		<Section title="Verification">
 			<div className="flex items-center justify-between border-b border-border py-2">
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-ui-2xs text-muted-foreground">
 					{report.provider} · {report.catalog_version}
 				</span>
-				<Badge
-					variant={statusBadgeVariant(report.verdict)}
-					className="rounded-none text-[9px] uppercase"
-				>
-					{VERDICT_LABEL[report.verdict]}
-				</Badge>
+				<StatusBadge
+					status={report.verdict}
+					tier={VERDICT_TIER[report.verdict]}
+					label={VERDICT_LABEL[report.verdict]}
+					className="text-ui-3xs"
+				/>
 			</div>
 			{report.controls.map((c) => (
 				<div key={c.id} className="border-b border-border py-2 last:border-0">
 					<div className="flex items-center justify-between gap-2">
-						<span className="font-mono text-[11px] text-foreground">{c.id}</span>
-						<Badge
-							variant={statusBadgeVariant(c.status)}
-							className="rounded-none text-[9px] uppercase"
-						>
-							{c.status.replace("_", " ")}
-						</Badge>
+						<span className="font-mono text-ui-xs text-foreground">{c.id}</span>
+						<StatusBadge
+							status={c.status}
+							tier={VERDICT_TIER[c.status]}
+							label={c.status.replace("_", " ")}
+							className="text-ui-3xs"
+						/>
 					</div>
-					<div className="text-[10px] text-muted-foreground">
+					<div className="text-ui-2xs text-muted-foreground">
 						{c.title}
 						{c.frameworks?.length ? ` · ${c.frameworks.join(", ")}` : ""}
 					</div>
 					{(c.findings ?? []).map((f, i) => (
 						<div
 							key={`${f.address}-${i}`}
-							className="mt-1 font-mono text-[10px] text-foreground"
+							className="mt-1 font-mono text-ui-2xs text-foreground"
 						>
 							<span className="text-muted-foreground">{f.address}</span> — {f.message}
 						</div>
 					))}
 					{c.coverage && (
-						<div className="mt-1 text-[10px] italic text-muted-foreground">
+						<div className="mt-1 text-ui-2xs italic text-muted-foreground">
 							coverage: {c.coverage}
 						</div>
 					)}
@@ -593,44 +598,44 @@ export function VerifyBlock({ report }: { report: VerifyReport }) {
  * for the compat report the apply gate attaches on `execution_metadata.compat_result`
  * (#1215). CompatReport carries no `provider`/`frameworks`, so the header shows only the
  * catalog version and each control shows only its title. `CompatStatus` is the same union
- * as `VerifyStatus`, so it reuses `statusBadgeVariant` + `VERDICT_LABEL` verbatim.
+ * as `VerifyStatus`, so it reuses `VERDICT_TIER` + `VERDICT_LABEL` verbatim.
  */
 export function CompatBlock({ report }: { report: CompatReport }) {
 	return (
 		<Section title="Compatibility">
 			<div className="flex items-center justify-between border-b border-border py-2">
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-ui-2xs text-muted-foreground">
 					compat · {report.catalog_version}
 				</span>
-				<Badge
-					variant={statusBadgeVariant(report.verdict)}
-					className="rounded-none text-[9px] uppercase"
-				>
-					{VERDICT_LABEL[report.verdict]}
-				</Badge>
+				<StatusBadge
+					status={report.verdict}
+					tier={VERDICT_TIER[report.verdict]}
+					label={VERDICT_LABEL[report.verdict]}
+					className="text-ui-3xs"
+				/>
 			</div>
 			{report.controls.map((c) => (
 				<div key={c.id} className="border-b border-border py-2 last:border-0">
 					<div className="flex items-center justify-between gap-2">
-						<span className="font-mono text-[11px] text-foreground">{c.id}</span>
-						<Badge
-							variant={statusBadgeVariant(c.status)}
-							className="rounded-none text-[9px] uppercase"
-						>
-							{c.status.replace("_", " ")}
-						</Badge>
+						<span className="font-mono text-ui-xs text-foreground">{c.id}</span>
+						<StatusBadge
+							status={c.status}
+							tier={VERDICT_TIER[c.status]}
+							label={c.status.replace("_", " ")}
+							className="text-ui-3xs"
+						/>
 					</div>
-					<div className="text-[10px] text-muted-foreground">{c.title}</div>
+					<div className="text-ui-2xs text-muted-foreground">{c.title}</div>
 					{(c.findings ?? []).map((f, i) => (
 						<div
 							key={`${f.address}-${i}`}
-							className="mt-1 font-mono text-[10px] text-foreground"
+							className="mt-1 font-mono text-ui-2xs text-foreground"
 						>
 							<span className="text-muted-foreground">{f.address}</span> — {f.message}
 						</div>
 					))}
 					{c.coverage && (
-						<div className="mt-1 text-[10px] italic text-muted-foreground">
+						<div className="mt-1 text-ui-2xs italic text-muted-foreground">
 							coverage: {c.coverage}
 						</div>
 					)}
@@ -676,7 +681,7 @@ function ReceiptBlock({ receipt, jobId }: { receipt: SignedReceipt; jobId: strin
 				<button
 					type="button"
 					onClick={download}
-					className="w-full border border-border px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+					className="w-full border border-border px-2 py-1 text-ui-2xs uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
 				>
 					Download receipt
 				</button>
@@ -718,7 +723,7 @@ function PlanPane({
 						{plan.planSummary.resources.map((r) => (
 							<div
 								key={r.address}
-								className="flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-[11px]"
+								className="flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-ui-xs"
 							>
 								<span className="truncate text-foreground">
 									{r.displayName} · {r.name}

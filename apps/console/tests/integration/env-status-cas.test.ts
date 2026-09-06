@@ -36,7 +36,7 @@ describeIfDb("set_env_status CAS", () => {
 		projectId = p.id;
 		const [e] = await db
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT" })
+			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT", is_default: true })
 			.returning({ id: projectEnvironments.id });
 		envId = e.id;
 	});

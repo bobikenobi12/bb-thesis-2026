@@ -9,6 +9,8 @@ import {
 	AI_PLAN_CATALOG,
 	aiPlanMeta,
 	aiPlanUnitAmountCents,
+	asSupportedCurrency,
+	formatSeatPrice,
 	PAID_AI_PLANS,
 	PAID_PLANS,
 	PLAN_CATALOG,
@@ -26,6 +28,15 @@ describe("planMeta", () => {
 	it("falls back to community for an unknown id", () => {
 		// @ts-expect-error — exercising the runtime fallback path
 		expect(planMeta("mystery").id).toBe("community");
+	});
+});
+
+describe("supported currency boundary", () => {
+	it("accepts sale currencies and refuses unsupported Stripe quotes", () => {
+		expect(asSupportedCurrency("usd")).toBe("usd");
+		expect(asSupportedCurrency("eur")).toBe("eur");
+		expect(asSupportedCurrency("jpy")).toBeNull();
+		expect(formatSeatPrice(2000, "usd", "month")).toBe("$20 / seat / mo");
 	});
 });
 

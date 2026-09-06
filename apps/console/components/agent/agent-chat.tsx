@@ -243,7 +243,7 @@ export function AgentChat({
 												: "Elench · Working";
 										return (
 											<Marker key={key} variant="separator" className="my-1">
-												<MarkerContent className="font-mono text-[10px] uppercase tracking-wide">
+												<MarkerContent className="font-mono text-ui-2xs uppercase tracking-wide">
 													{phaseLabel}
 												</MarkerContent>
 											</Marker>

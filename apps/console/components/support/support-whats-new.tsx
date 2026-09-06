@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { Activity, BookOpen, Newspaper } from "lucide-react";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 /**
  * A chip in the "See what's new" band. Every destination is a real, deployed surface — the
@@ -29,13 +30,12 @@ export function SupportWhatsNew() {
 	return (
 		<section className="border-y bg-muted/20">
 			<div className="space-y-6 py-12">
-				<div className="max-w-xl space-y-3">
-					<h2 className="text-2xl font-semibold tracking-tight">See what&apos;s new</h2>
-					<p className="text-sm text-muted-foreground">
-						Stay up to date with the latest platform updates, releases, and
-						announcements.
-					</p>
-				</div>
+				<SectionHeading
+					level={2}
+					className="max-w-xl"
+					title="See what's new"
+					description="Stay up to date with the latest platform updates, releases, and announcements."
+				/>
 				<div className="flex flex-wrap gap-3">
 					{LINKS.map(({ label, href, icon: Icon, external }) => (
 						<a

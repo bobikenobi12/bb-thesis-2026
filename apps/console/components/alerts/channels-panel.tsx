@@ -120,7 +120,7 @@ export function ChannelsPanel({
 					{/* master-detail */}
 					<div className="flex flex-wrap items-start gap-4">
 						<div className="min-w-[290px] flex-1 overflow-hidden rounded-xl border border-border/60 bg-background shadow-sm">
-							<div className="px-4 py-3 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground/70">
+							<div className="px-4 py-3 font-mono text-ui-3xs uppercase tracking-[0.14em] text-muted-foreground/70">
 								Configured channels
 							</div>
 							{rows.length === 0 ? (
@@ -212,10 +212,10 @@ function ChannelRow({
 		>
 			<ChannelTile type={channel.type} active={channel.is_verified} />
 			<span className="min-w-0 flex-1">
-				<span className="block truncate font-medium text-[13px]">
+				<span className="block truncate font-medium text-ui-md">
 					{channel.name}
 				</span>
-				<span className="truncate font-mono text-[10px] text-muted-foreground">
+				<span className="truncate font-mono text-ui-2xs text-muted-foreground">
 					{targetOf(channel)}
 				</span>
 				<ClassificationChips
@@ -365,7 +365,7 @@ function ChannelDetail({
 						/>
 					</div>
 				</div>
-				<StatusBadge {...channelBadge(channel)} className="flex-none text-[10px]" />
+				<StatusBadge {...channelBadge(channel)} className="flex-none text-ui-2xs" />
 			</div>
 
 			{/* meta */}
@@ -381,7 +381,7 @@ function ChannelDetail({
 			{/* config */}
 			<div className="space-y-4 border-b border-border/60 p-5">
 				<div className="flex items-center gap-1.5">
-					<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+					<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 						{meta.credential === "email"
 							? "Recipients"
 							: meta.credential === "routingKey"
@@ -507,7 +507,7 @@ function ChannelDetail({
 			{/* used by */}
 			<div className="space-y-3 border-b border-border/60 p-5">
 				<div className="flex items-center gap-2">
-					<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+					<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 						Used by
 					</span>
 					<button
@@ -628,11 +628,11 @@ function ChannelTile({
 function MetaCell({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 	return (
 		<div className="min-w-[120px] flex-1 border-r border-border/60 px-5 py-3 last:border-r-0">
-			<div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+			<div className="font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 				{k}
 			</div>
 			<div
-				className={cn("mt-1.5 truncate text-[13px]", mono && "font-mono text-[11.5px]")}
+				className={cn("mt-1.5 truncate text-ui-md", mono && "font-mono text-ui-xs")}
 			>
 				{v}
 			</div>

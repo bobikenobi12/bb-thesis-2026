@@ -117,7 +117,7 @@ func regEnv(t *testing.T, status int, body map[string]any) func(args ...string) 
 	t.Cleanup(func() { registerRunnerName, registerCloudIdentity = prevName, prevID })
 	registerRunnerName, registerCloudIdentity = "", ""
 	return func(args ...string) error {
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		return rootCmd.Execute()
 	}
 }
@@ -184,7 +184,7 @@ func TestRunnerRegisterCmd(t *testing.T) {
 		isolatedHome(t) // no credentials
 		t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 		run := func(args ...string) error {
-			rootCmd.SetArgs(args)
+			execRootArgs(args)
 			return rootCmd.Execute()
 		}
 		exited, code, err := connInvoke(t, run, "runner", "register", "box")

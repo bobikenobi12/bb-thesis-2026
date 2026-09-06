@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
 )
 
@@ -252,7 +253,7 @@ func WaitAdmissionWebhooksServable(budget *webhookWaitBudget, stdout, stderr io.
 		time.Sleep(admissionWebhookPollInterval)
 	}
 	return fmt.Errorf("admission webhook(s) still not servable after %s: %s — a resource created next may be refused by its admission controller (this is the addon-harbor / ingress-nginx x509 failure)",
-		time.Since(started).Round(time.Second), strings.Join(last, ", "))
+		format.Duration(time.Since(started)), strings.Join(last, ", "))
 }
 
 // webhookKubectl is the seam this gate reads the cluster through. A package variable rather than a

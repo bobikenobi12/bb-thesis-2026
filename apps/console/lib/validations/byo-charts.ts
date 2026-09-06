@@ -40,15 +40,9 @@ export function isPlausibleChartRepoUrl(url: string): boolean {
 export const CHART_SOURCES = ["git", "oci"] as const;
 export type ChartSource = (typeof CHART_SOURCES)[number];
 
-/** RFC1123-ish slug for a chart's addon_id, derived from its display name. */
-export function chartSlug(raw: string): string {
-	const s = raw
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9-]+/g, "-")
-		.replace(/^-+|-+$/g, "");
-	return s || "chart";
-}
+// `chartSlug` lives in lib/validations/names.ts, beside the ONE slugifier and the add-on id's
+// length budget. The copy that was here had no cap at all, and its output becomes an ArgoCD
+// Application name via `argocd.AddOnAppName` ("addon-"+id) — a name Kubernetes bounds at 63.
 
 /**
  * The attach form. Optional fields carry their defaults at the EDGE (`ref` → `HEAD`/`*`,

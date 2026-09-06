@@ -119,9 +119,18 @@ tier_separation:
       [
         tests/integration/cli-project-create.test.ts,
         tests/lib/queries/fabric-placement.test.ts,
+        tests/lib/queries-projects-specs.test.ts,
+        tests/integration/cli-config-duplicate-name.test.ts,
       ]
-    symbols: [insertProjectWithDefaultFabric, planFabricPlacement]
-    reason: The project + default-fabric + hierarchy insert as one real transaction, plus the pure placement decision — unit-tested because needing Postgres to reach the fan-out is why an unprovisionable `shared` Fabric went unnoticed.
+    symbols:
+      [
+        insertProjectWithDefaultFabric,
+        planFabricPlacement,
+        environmentSpecProblem,
+        isProjectNameTaken,
+        ProjectNameTakenError,
+      ]
+    reason: The project + default-fabric + hierarchy insert as one real transaction, plus the pure placement decision — unit-tested because needing Postgres to reach the fan-out is why an unprovisionable `shared` Fabric went unnoticed. `environmentSpecProblem` is the fan-out's name validation, exported and driven as a pure function (#3665) so that its agreement with `environmentMatrixSchema` is a test rather than a claim — the two disagreeing turned a bad env name into a 500. `isProjectNameTaken` and `ProjectNameTakenError` are the two ends of one mapping (#3145) — the predicate that recognises the unique violation drizzle wraps, and the error both write paths raise in its place. Driven against the real index, because a test matching the thrown message passed for the wrong reason while the production mapping never fired.
 
   - path: lib/queries/runner-usage.ts
     suite:

@@ -245,7 +245,7 @@ export async function deployRunner(params: {
 	// Defense-in-depth: the existing runner that will run this deploy must belong
 	// to the caller's org (claim_next_job blocks execution; this blocks enqueue).
 	if (params.assignedRunnerId)
-		await assertRunnerInOrg(getServiceDb(), params.assignedRunnerId, actor.orgId);
+		await assertRunnerInOrg(getServiceDb(), params.assignedRunnerId, actor.orgId, actor.userId);
 	const owner = actor.userId;
 	const { token: runnerToken, hash: tokenHash } = generateRunnerToken();
 
@@ -269,6 +269,7 @@ export async function deployRunner(params: {
 			.insert(runners)
 			.values({
 				user_id: owner,
+				org_id: actor.orgId,
 				name: params.name,
 				operator: "self",
 				provisioning: "deployed",
@@ -292,6 +293,8 @@ export async function deployRunner(params: {
 			.insert(jobs)
 			.values(signedJob({
 				user_id: owner,
+				// Keep lifecycle state, quota, evidence, and visibility in the active tenant.
+				org_id: actor.orgId,
 				cloud_identity_id: params.cloudIdentityId,
 				job_type: "DEPLOY_RUNNER",
 				initiated_by: "user",
@@ -434,7 +437,7 @@ export async function destroyRunner(
 	// Defense-in-depth: the existing runner that will run this destroy must belong
 	// to the caller's org (claim_next_job blocks execution; this blocks enqueue).
 	if (assignedRunnerId)
-		await assertRunnerInOrg(getServiceDb(), assignedRunnerId, actor.orgId);
+		await assertRunnerInOrg(getServiceDb(), assignedRunnerId, actor.orgId, actor.userId);
 	const owner = actor.userId;
 	const { runner, deployConfig, identity } = await fetchDeployedRunner(
 		actor,
@@ -458,6 +461,8 @@ export async function destroyRunner(
 			.insert(jobs)
 			.values(signedJob({
 				user_id: owner,
+				// Keep lifecycle state, quota, evidence, and visibility in the active tenant.
+				org_id: actor.orgId,
 				cloud_identity_id: runner.cloud_identity_id!,
 				job_type: "DESTROY_RUNNER",
 				initiated_by: "user",
@@ -520,6 +525,8 @@ export async function updateRunner(runnerId: string) {
 			.insert(jobs)
 			.values(signedJob({
 				user_id: owner,
+				// Keep lifecycle state, quota, evidence, and visibility in the active tenant.
+				org_id: actor.orgId,
 				cloud_identity_id: runner.cloud_identity_id!,
 				job_type: "UPDATE_RUNNER",
 				initiated_by: "user",

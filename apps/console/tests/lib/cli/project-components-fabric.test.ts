@@ -24,7 +24,9 @@ const FABRIC_ID = "22222222-2222-4222-8222-222222222222";
 const PROJ_ID = "33333333-3333-4333-8333-333333333333";
 
 /** The env row the Fabric lookup returns; null models an env not yet linked to a Fabric. */
-let envRow: { fabric_id: string | null } | undefined;
+let envRow:
+	| { fabric_id: string | null; placement_mode: "dedicated" | "namespace" }
+	| undefined;
 /** What the insert was actually asked to write, and what it would write ON CONFLICT. */
 let captured: {
 	values?: Record<string, unknown>;
@@ -63,7 +65,7 @@ const { insertProjectComponent } = await import("@/lib/cli/project-components");
 describe("insertProjectComponent — Fabric linkage", () => {
 	beforeEach(() => {
 		captured = {};
-		envRow = { fabric_id: FABRIC_ID };
+		envRow = { fabric_id: FABRIC_ID, placement_mode: "dedicated" };
 	});
 
 	it("stamps the environment's fabric_id onto a cluster row", async () => {
@@ -87,22 +89,40 @@ describe("insertProjectComponent — Fabric linkage", () => {
 	});
 
 	it("leaves fabric_id unset when the environment is not linked to a Fabric yet", async () => {
-		envRow = { fabric_id: null };
+		envRow = { fabric_id: null, placement_mode: "dedicated" };
 		await insertProjectComponent("cluster", PROJ_ID, ENV_ID, "", {
 			cluster_version: "1.35",
 		});
 		// Fail open rather than invent one: a transitional env the backfill has not reached still
 		// resolves through resolveServingCluster's env-key fallback.
-		expect(captured.values?.fabric_id).toBeUndefined();
-		expect(captured.conflictSet).not.toHaveProperty("fabric_id");
+		expect(captured.values?.fabric_id).toBeNull();
+		expect(captured.conflictSet?.fabric_id).toBeNull();
 	});
 
-	it("does not overwrite a fabric_id the caller supplied", async () => {
+	it("does not claim the shared Fabric for a namespace environment", async () => {
+		envRow = { fabric_id: FABRIC_ID, placement_mode: "namespace" };
+		await insertProjectComponent("cluster", PROJ_ID, ENV_ID, "", {
+			cluster_version: "1.35",
+		});
+		expect(captured.values?.fabric_id).toBeUndefined();
+		expect(captured.conflictSet?.fabric_id).toBeNull();
+	});
+
+	it("uses the dedicated environment's authoritative Fabric over caller input", async () => {
 		const explicit = "44444444-4444-4444-8444-444444444444";
 		await insertProjectComponent("cluster", PROJ_ID, ENV_ID, "", {
 			fabric_id: explicit,
 		});
-		expect(captured.values?.fabric_id).toBe(explicit);
+		expect(captured.values?.fabric_id).toBe(FABRIC_ID);
+	});
+
+	it("drops an explicit fabric_id for a namespace environment", async () => {
+		envRow = { fabric_id: FABRIC_ID, placement_mode: "namespace" };
+		await insertProjectComponent("cluster", PROJ_ID, ENV_ID, "", {
+			fabric_id: FABRIC_ID,
+		});
+		expect(captured.values?.fabric_id).toBeUndefined();
+		expect(captured.conflictSet?.fabric_id).toBeNull();
 	});
 
 	it("does not add fabric_id to a table that has no such column", async () => {

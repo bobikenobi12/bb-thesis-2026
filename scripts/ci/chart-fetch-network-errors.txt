@@ -8,7 +8,13 @@
 # question — is this a fetch failure or a render failure? — and answer it identically:
 #
 #   scripts/ci/tofu-test-retry-fetch.sh              `tofu test` on infra/templates/project/hetzner
-#   apps/console/scripts/check-addon-charts-render.mjs   `helm template` over 18 specs, 17 hosts
+#   apps/console/scripts/check-addon-charts-render.mjs   `helm template` over every generated spec,
+#                                                        and `helm repo add` over every distinct
+#                                                        repo behind them (its --reachability pass)
+#
+# The spec and host counts used to be written here and were three specs and five hosts out of date
+# by the time anybody read them; the sets are derived from the generated fixtures, so the numbers
+# belong in that script's output rather than in a comment nothing recomputes.
 #
 # One is bash, the other node. Two copies of a classifier is two copies that drift, and the drift is
 # silent in the direction that matters: the copy nobody updated keeps retrying a failure the other
@@ -28,6 +34,11 @@
 # The bar for adding a line: it must be produced by the TRANSPORT, never by a chart, a template or a
 # provider deciding something is wrong. When in doubt, leave it out — a real failure reported once is
 # cheaper than a real failure reported three times as somebody else's outage.
+#
+# That bar carries more weight since #3961: the sibling file chart-repo-outages.txt can excuse a
+# repository that is down, and it excuses ONLY the shapes listed here. Widen this list and you widen
+# what an outage entry is allowed to hide — a moved repo, a deleted chart version — so the two
+# deliberate exclusions below are load-bearing in a second way now.
 #
 # Matching is case-insensitive in both consumers.
 

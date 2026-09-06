@@ -12,14 +12,13 @@ import {
 	CLI_DEVICE_RATE_LIMIT,
 	DEVICE_CODE_TTL_MS,
 	checkDeviceCodeBinding,
-	cliDeviceRateLimitKey,
 	deviceCodeDeadline,
 	deviceCodeExpiresAt,
 	isDeviceCodeExpired,
 	isValidDeviceCode,
 	isValidUserCode,
-	trustedClientIp,
 } from "@/lib/auth/cli-device-code";
+import { cliDeviceRateLimitKey, trustedClientIp } from "@/lib/auth/trusted-ip";
 
 /** A device_code in the shape `alethia login` mints (uuid.New()). */
 const HYG_CLI_AUTHFLOW_DEVICE_CODE = "2f1c8c1e-7a4b-4d2e-9a3f-0b5c6d7e8f90";

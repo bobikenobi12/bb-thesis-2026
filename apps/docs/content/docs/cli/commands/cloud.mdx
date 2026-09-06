@@ -16,16 +16,31 @@ the **active organization** — the cloud identity must belong to it.
 
 ## `alethia cloud inventory`
 
-Show the discovered networking + regions for a cloud identity.
+Show the discovered networking + regions for a connected cloud account.
 
 ```bash
-alethia cloud inventory <cloud-identity-id>
-alethia cloud inventory <cloud-identity-id> -o json
+# Name the account by its provider
+alethia cloud inventory aws
+alethia cloud inventory gcp -o json
+
+# Or omit the argument for a picker over your connections
+alethia cloud inventory
 ```
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `<cloud-identity-id>` | Yes | The connected cloud identity's id (from `alethia connector` / the console). |
+| `[provider]` | No | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. Omit for a picker. A cloud-identity id is still accepted. |
+
+<Callout type="info">
+**No id to copy.** This command used to take a bare `<cloud-identity-id>` — an opaque token
+you had to copy out of another command's output before you could run it. Naming the provider
+does the lookup for you, and omitting the argument shows a picker. An id a script already
+holds keeps working, byte for byte: an id is a lookup key, so nothing here rewrites one.
+
+Under `--no-input` there is no picker to show, so the argument is required and the refusal
+says which providers are valid. If two accounts are connected for the same provider, the
+command reports the ambiguity and lists their ids rather than guessing.
+</Callout>
 
 Renders a **Networks** table (network id, name, region, CIDR, default), a **Subnets** table
 (subnet id, name, region, AZ, CIDR, public), and a **Regions** line. Add `-o json` for the full

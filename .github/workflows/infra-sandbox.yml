@@ -19,6 +19,22 @@ on:
     paths:
       - 'infra/sandbox/**'
 
+# A superseded run is not evidence about the head of the branch, and while it keeps a runner it is
+# denying one to the run that is. `ci.yml` and `addon-render-determinism.yml` have carried this
+# since they were written; these seven did not, and the gap only became expensive when the queue
+# started landing PRs faster than a run takes to finish.
+#
+# MEASURED 2026-09-02 19:2xZ, with the dev queue draining: 48 runs queued against 2 in progress,
+# and the single largest group was 23 runs headed `dev` — the standing `dev → staging` promotion
+# PR #3562, which re-triggers every `pull_request` workflow on EVERY merge into dev. `CI` had
+# already cancelled its own superseded runs and showed 1; these seven each showed a full stack.
+#
+# Scoped to `github.ref`, so this only ever cancels an OLDER run of the SAME workflow on the SAME
+# PR or branch — the ordinary "I pushed again" case. It cannot cancel a run for a different ref.
+concurrency:
+  group: infra-sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -61,5 +77,11 @@ jobs:
           done
       - name: env-registry self-test (allocation, cap, reuse, fail-safe idle)
         run: bash scripts/box/env-registry.sh --self-test
+      # `bash -n` above parses seed_decision; it never CALLS it. Without this step the
+      # 14-cell matrix — the whole argument for trusting a decision a real env can only
+      # exercise a few cells of affordably — runs nowhere, and the next edit that inverts
+      # a branch or reorders the two `case` blocks merges green.
+      - name: env-mode self-test (the seed/empty/restart decision matrix)
+        run: bash scripts/box/env-mode.sh --self-test
       - name: guard-runtime self-test (blocks and, more importantly, allows)
         run: bash .claude/hooks/guard-runtime.sh --self-test

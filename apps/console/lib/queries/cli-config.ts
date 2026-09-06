@@ -3,7 +3,7 @@
 
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Db, Tx } from "@/lib/db";
 import type {
 	CloudProvider,
@@ -15,6 +15,7 @@ import {
 	projectEnvironments,
 	projects,
 } from "@/lib/db/schema";
+import { pickDefaultEnvironment } from "@/lib/queries/default-environment";
 import { readEnvComponents } from "@/lib/queries/project-components-read";
 import type {
 	ClusterAdmin,
@@ -174,38 +175,59 @@ export async function getCliConfig(
 	db: Executor,
 	opts: { userId: string; projectName: string; envId?: string },
 ): Promise<CliProjectConfig | null> {
-	// ORDER BY is load-bearing here, not tidiness. `project_name` carries NO uniqueness constraint
-	// — the only unique on `projects` is (org_id, slug) — and duplicates are the DESIGNED behaviour
-	// of the create path: insertProjectWithDefaultFabric de-duplicates the SLUG via pickFreeSlug and
-	// then inserts project_name verbatim, so two projects called "api" get slugs `api` and `api-2`
-	// with the same name. updateProjectName allows renaming one onto another for the same reason
-	// (it keeps the slug stable on purpose).
+	// ORDER BY is load-bearing here, and #3145 changed WHY.
 	//
-	// An unordered LIMIT 1 over a non-unique filter has no defined result in Postgres: which row
-	// comes back can change between identical calls after a plan change or a row rewrite. This
-	// resolver backs three authenticated CLI routes, so that meant `alethia project get api` could
-	// silently return a DIFFERENT project's region, cluster endpoint, DNS zone and apps repo — and a
-	// different one next time. For a provisioning tool, quietly reading the wrong project is worse
-	// than an error.
+	// It used to be the whole defence. `project_name` carried no uniqueness constraint, duplicates
+	// were the DESIGNED behaviour of the create path (insertProjectWithDefaultFabric de-duplicated
+	// the SLUG via pickFreeSlug and inserted project_name verbatim, so two projects called "api"
+	// got slugs `api` and `api-2` with the same name), and updateProjectName let one be renamed
+	// onto another. An unordered LIMIT 1 over a non-unique filter has no defined result in
+	// Postgres, so `alethia project get api` could silently return a DIFFERENT project's region,
+	// cluster endpoint, DNS zone and apps repo — and a different one next time. #2663 imposed a
+	// total order to stop that, and deliberately left the CONTRACT open.
 	//
-	// A total order fixes the nondeterminism. Whether a genuine ambiguity should instead FAIL and
-	// name both slugs is a CLI-contract decision, tracked in #2663 and deliberately not taken here.
+	// Migration 0150 closed it at the source: `projects_org_id_project_name_key` is UNIQUE on
+	// (org_id, lower(project_name)), both write paths now refuse a taken name, and the repair kept
+	// the OLDEST row's name — this expression's own tie-break — so every name that resolved to a
+	// project before the migration resolves to the same project after it.
+	//
+	// The order stays, and is no longer redundant, because THIS resolver filters on `user_id` and
+	// not `org_id` (the route records it: "Still scoped by user_id (community-correct; threaded to
+	// org in 4.5)"). A per-org unique does not make a per-USER lookup single-row: one person in two
+	// orgs can legitimately own two projects of the same name, and this is what decides which they
+	// get. Threading the org through is the remaining half, and it is a route-signature change in
+	// `apps/console/app/api/cli/**` — another lane's scope.
 	const [project] = await db
 		.select()
 		.from(projects)
 		.where(
 			and(
 				eq(projects.user_id, opts.userId),
-				eq(projects.project_name, opts.projectName),
+				// CASE-INSENSITIVE, matching `projects_org_id_project_name_key` — UNIQUE on
+				// (org_id, lower(project_name)) — and matching `resolveCliProject`, the OTHER CLI
+				// front door. `alethia project get` does not go through that one: it hits
+				// `GET /api/cli/configurations/by-project-name/{name}`, which lands here. Leaving
+				// this exact while that one folded case made the two doors disagree about the same
+				// name — every authoring command resolving `Api` at any casing while
+				// `alethia project get api` answered 404. That split is what this programme exists
+				// to close, so it is closed on both sides or neither.
+				sql`lower(${projects.project_name}) = lower(${opts.projectName})`,
 			),
 		)
 		.orderBy(asc(projects.created_at), asc(projects.id))
 		.limit(1);
 	if (!project) return null;
 
-	// The same defect, in the same function: `envs[0]` is the fallback when no environment is
-	// flagged default, and it was being taken from an unordered select. Ordered for the same reason
-	// — a fallback that picks an arbitrary environment can pick a different one next time.
+	// The `?? envs[0]` fallback that used to stand here is gone (#4127). It existed because the
+	// schema guaranteed only AT MOST one default (the partial unique index is `(project_id) WHERE
+	// is_default`), so zero defaults was legal and an arbitrary row had to stand in. The rows were
+	// repaired by migration 0150 and `project_environments_one_default_check` in programmables.sql
+	// now refuses the state at COMMIT, so a project with environments always has a default —
+	// `pickDefaultEnvironment` reports the violation instead of laundering it into an answer that
+	// looks like every other answer this function returns.
+	//
+	// The ORDER BY stays: it is what `envId`-less callers and migration 0150 agree on as "the
+	// oldest environment", and the CLI's own duplicate-name resolution reads the same way.
 	const envs = await db
 		.select()
 		.from(projectEnvironments)
@@ -213,7 +235,7 @@ export async function getCliConfig(
 		.orderBy(asc(projectEnvironments.created_at), asc(projectEnvironments.id));
 	const env = opts.envId
 		? envs.find((e) => e.id === opts.envId)
-		: (envs.find((e) => e.is_default) ?? envs[0]);
+		: pickDefaultEnvironment(project.id, envs);
 	if (!env) return null;
 
 	const identity = project.cloud_identity_id

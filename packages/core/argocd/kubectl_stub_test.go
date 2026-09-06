@@ -44,8 +44,9 @@ type stubAnswer struct {
 
 // kubectlStub is a recording `kubectl` on PATH for the lifetime of one test.
 type kubectlStub struct {
-	dir     string
-	logPath string
+	dir          string
+	logPath      string
+	manifestPath string
 }
 
 // newKubectlStub installs a `kubectl` shim first on PATH. Rules are matched in order against the
@@ -54,10 +55,21 @@ func newKubectlStub(t *testing.T, defaultExit int, rules ...stubRule) *kubectlSt
 	t.Helper()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "calls.log")
+	manifestPath := filepath.Join(dir, "applied.yaml")
 
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")
 	fmt.Fprintf(&b, "printf '%%s\\n' \"$*\" >> %s\n", shellSingleQuote(logPath))
+	// Record the BYTES of every manifest applied through `-f <file>`. Asserting on argv proves an
+	// apply happened; asserting on the file proves WHAT was applied — and for a path whose entire
+	// job is to write the right credential into a Secret, those are different claims. The file is a
+	// temp file the caller deletes on return, so it has to be captured here or not at all.
+	fmt.Fprintf(&b, `prev=""
+for a in "$@"; do
+  if [ "$prev" = "-f" ] && [ -f "$a" ]; then cat "$a" >> %s; fi
+  prev="$a"
+done
+`, shellSingleQuote(manifestPath))
 	if len(rules) > 0 {
 		b.WriteString("case \"$*\" in\n")
 		for i, r := range rules {
@@ -97,7 +109,7 @@ func newKubectlStub(t *testing.T, defaultExit int, rules ...stubRule) *kubectlSt
 		t.Fatalf("write kubectl stub: %v", err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return &kubectlStub{dir: dir, logPath: logPath}
+	return &kubectlStub{dir: dir, logPath: logPath, manifestPath: manifestPath}
 }
 
 // calls returns every recorded kubectl invocation, in order.
@@ -113,6 +125,17 @@ func (s *kubectlStub) calls() []string {
 		}
 	}
 	return out
+}
+
+// appliedManifests returns the concatenated bytes of every manifest applied through `kubectl -f`.
+// Empty when nothing was applied — which a test asserting on content must distinguish from "the
+// content is absent", since both would otherwise read as a passing Contains() check.
+func (s *kubectlStub) appliedManifests() string {
+	body, err := os.ReadFile(s.manifestPath)
+	if err != nil {
+		return ""
+	}
+	return string(body)
 }
 
 // calledWith reports whether any recorded invocation contains the given substring.

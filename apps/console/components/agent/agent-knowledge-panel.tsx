@@ -23,10 +23,24 @@ import {
 import { KNOWLEDGE_LIMIT } from "@/lib/ai/knowledge-limits";
 import type { KnowledgeDoc } from "@/types/jsonb.types";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { Input } from "@repo/ui/input";
 import { ScrollArea } from "@repo/ui/scroll-area";
 import { Textarea } from "@repo/ui/textarea";
 import { cn } from "@repo/ui/utils";
+
+/**
+ * Density tuning for `@repo/ui/empty`'s `EmptyState` inside the knowledge panel.
+ *
+ * The shared component is sized for a page — `p-6 md:p-12` around a `text-lg` headline over a
+ * `text-sm/relaxed` line. This panel's copy is a 13px headline over a 12px line, so BOTH slots
+ * are tuned: tuning only the title leaves the description at 14px, larger than the headline it
+ * sits under. The border is not in here because it belongs to the boxed docs affordance, not to
+ * the transient loading line — which otherwise renders at a different scale from the state it
+ * flashes before.
+ */
+const KNOWLEDGE_EMPTY =
+	"gap-3 p-8 md:p-8 [&_[data-slot=empty-title]]:text-ui-md [&_[data-slot=empty-title]]:font-normal [&_[data-slot=empty-description]]:text-xs";
 
 /** "2.1k" / "840" — knowledge size reads as a budget, so it's always a bare figure. */
 function size(n: number): string {
@@ -197,12 +211,12 @@ export function AgentKnowledgePanel({
 				</div>
 				<div className="ml-auto flex items-center gap-2">
 					{!loading && !canEdit ? (
-						<span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+						<span className="flex items-center gap-1 text-ui-xs text-muted-foreground">
 							<Lock className="h-3 w-3" />
 							Read-only
 						</span>
 					) : (
-						<span className="text-[11px] text-muted-foreground">
+						<span className="text-ui-xs text-muted-foreground">
 							{state === "saving"
 								? "Saving…"
 								: state === "saved"
@@ -224,9 +238,7 @@ export function AgentKnowledgePanel({
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="mx-auto max-w-[760px] space-y-7 p-5">
 					{loading ? (
-						<div className="py-16 text-center text-sm text-muted-foreground">
-							Loading…
-						</div>
+						<EmptyState className={KNOWLEDGE_EMPTY} title="Loading…" />
 					) : (
 						<>
 							{/* Read-only notice: this member can't edit the shared knowledge. */}
@@ -243,7 +255,7 @@ export function AgentKnowledgePanel({
 
 							{/* ── Instructions ──────────────────────────────────────── */}
 							<section className="space-y-2">
-								<div className="vx-eyebrow text-[9px]">Instructions</div>
+								<div className="vx-eyebrow text-ui-3xs">Instructions</div>
 								<p className="text-xs text-muted-foreground">
 									How Elench should behave in{" "}
 									{projectId ? "this project" : "org chats"}. Rides every turn.
@@ -270,10 +282,10 @@ export function AgentKnowledgePanel({
 							{/* ── Knowledge documents ───────────────────────────────── */}
 							<section className="space-y-2">
 								<div className="flex items-baseline justify-between gap-2">
-									<div className="vx-eyebrow text-[9px]">Knowledge</div>
+									<div className="vx-eyebrow text-ui-3xs">Knowledge</div>
 									<span
 										className={cn(
-											"font-mono text-[10px]",
+											"font-mono text-ui-2xs",
 											over ? "text-foreground" : "text-muted-foreground",
 										)}
 									>
@@ -300,20 +312,20 @@ export function AgentKnowledgePanel({
 								</div>
 
 								{docs.length === 0 && !editing && (
-									<div className="flex flex-col items-center gap-2 border border-dashed border-border py-10 text-center">
-										<FileText className="h-4 w-4 text-muted-foreground" />
-										<div className="text-[13px] text-foreground">
-											{canEdit
+									<EmptyState
+										className={cn(KNOWLEDGE_EMPTY, "border border-border")}
+										icon={<FileText />}
+										title={
+											canEdit
 												? "No knowledge yet."
-												: `No knowledge set for this ${projectId ? "project" : "organization"}.`}
-										</div>
-										{canEdit && (
-											<p className="max-w-[320px] text-xs text-muted-foreground">
-												Add what Elench should always know. It can already read
-												your live infrastructure on its own.
-											</p>
-										)}
-									</div>
+												: `No knowledge set for this ${projectId ? "project" : "organization"}.`
+										}
+										description={
+											canEdit
+												? "Add what Elench should always know. It can already read your live infrastructure on its own."
+												: undefined
+										}
+									/>
 								)}
 
 								{docs.length > 0 && (
@@ -328,11 +340,11 @@ export function AgentKnowledgePanel({
 												<span className="min-w-0 flex-1">
 													<span
 														title={d.title}
-														className="block truncate text-[13px] font-medium text-foreground"
+														className="block truncate text-ui-md font-medium text-foreground"
 													>
 														{d.title}
 													</span>
-													<span className="block font-mono text-[10px] text-muted-foreground">
+													<span className="block font-mono text-ui-2xs text-muted-foreground">
 														{size(d.content.length)} · {relTime(d.updated_at)}
 													</span>
 												</span>
@@ -383,7 +395,7 @@ export function AgentKnowledgePanel({
 											className="rounded-none text-sm"
 										/>
 										<div className="flex items-center justify-between">
-											<span className="font-mono text-[10px] text-muted-foreground">
+											<span className="font-mono text-ui-2xs text-muted-foreground">
 												{size(editing.content.length)}
 											</span>
 											<span className="flex items-center gap-1.5">
@@ -433,7 +445,7 @@ export function AgentKnowledgePanel({
 										onClick={() => setDerivedOpen((o) => !o)}
 										className="flex w-full items-center gap-1.5 text-left"
 									>
-										<span className="vx-eyebrow text-[9px]">
+										<span className="vx-eyebrow text-ui-3xs">
 											Already known · auto-derived
 										</span>
 										<ChevronDown
@@ -454,10 +466,10 @@ export function AgentKnowledgePanel({
 													key={`${r.label}-${i}`}
 													className="flex gap-4 px-3 py-2"
 												>
-													<dt className="w-40 flex-none text-[12px] text-muted-foreground">
+													<dt className="w-40 flex-none text-ui-sm text-muted-foreground">
 														{r.label || "—"}
 													</dt>
-													<dd className="min-w-0 flex-1 break-words font-mono text-[11px] text-foreground">
+													<dd className="min-w-0 flex-1 break-words font-mono text-ui-xs text-foreground">
 														{r.value}
 													</dd>
 												</div>

@@ -88,21 +88,26 @@ type fakeClient struct {
 	err error // returned by every method when non-nil
 
 	// recorded calls
-	invitedEmail      string
-	invitedRole       string
-	removedMember     string
-	createdName       string
-	deletedTeam       string
-	createdChType     string
-	createdChCfg      map[string]interface{}
-	deletedChannel    string
-	verifiedChID      string
-	createdRuleN      string
-	createdRulePat    []string
-	createdRuleCh     []string
-	createdRuleSev    string
-	deletedRule       string
-	activityLimit     int
+	invitedEmail   string
+	invitedRole    string
+	removedMember  string
+	createdName    string
+	deletedTeam    string
+	createdChType  string
+	createdChCfg   map[string]interface{}
+	deletedChannel string
+	verifiedChID   string
+	createdRuleN   string
+	createdRulePat []string
+	createdRuleCh  []string
+	createdRuleSev string
+	deletedRule    string
+	activityLimit  int
+	// The promotion list call's arguments. `promotion get`'s picker narrows by the SAME --env the
+	// list command uses, and a picker showing a different set from the list beside it is a second
+	// opinion about what the project contains — so the narrowing has to be observable.
+	promoProject      string
+	promoEnv          string
 	createdRoleN      string
 	createdRoleKey    []string
 	deletedRole       string
@@ -537,6 +542,7 @@ func (f *fakeClient) GetProjectIacSource(project, env string) (*api.IacSource, e
 }
 
 func (f *fakeClient) GetProjectPromotions(project, env string) ([]api.Promotion, error) {
+	f.promoProject, f.promoEnv = project, env
 	return f.promotions, f.err
 }
 

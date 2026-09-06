@@ -263,7 +263,7 @@ export function AddonConfigSheet({
         <div key={path} className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor={path}>{f.label}</Label>
-            <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
               {set ? "Set" : "Unset"}
             </span>
           </div>
@@ -317,7 +317,7 @@ export function AddonConfigSheet({
                 )}
               </SheetTitle>
               <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline" className="text-[10px] uppercase">
+                <Badge variant="outline" className="text-ui-2xs uppercase">
                   Free · OSS
                 </Badge>
                 <span>{item.license}</span>
@@ -339,7 +339,7 @@ export function AddonConfigSheet({
                   <div key={req} className="flex items-start gap-2">
                     <Badge
                       variant="outline"
-                      className="shrink-0 text-[10px] uppercase"
+                      className="shrink-0 text-ui-2xs uppercase"
                     >
                       {h.label}
                     </Badge>
@@ -359,7 +359,7 @@ export function AddonConfigSheet({
             <div className="flex items-start gap-2 pt-2">
               <Badge
                 variant={compat.status === "fail" ? "destructive" : "outline"}
-                className="shrink-0 text-[10px] uppercase"
+                className="shrink-0 text-ui-2xs uppercase"
               >
                 {compat.status === "fail" ? "Incompatible" : "Unverified"}
               </Badge>

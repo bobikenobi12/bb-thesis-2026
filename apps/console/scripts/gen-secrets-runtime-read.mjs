@@ -17,7 +17,7 @@
 // This one is about to churn — #1620 adds a saasSecretStore hook to infisical, and with a hand list
 // the canvas goes on hiding Infisical until somebody remembers to edit it.
 //
-// Run: `pnpm -F console gen:secrets-runtime-read` (from apps/console).
+// Run: `pnpm -C apps/console run gen:secrets-runtime-read` (from apps/console).
 
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -85,7 +85,7 @@ const out = `// SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // registers \`saasSecretStore\` (credential-based ESO ClusterSecretStore) or \`keylessSecretStore\`
 // (cross-account, the cluster's own workload identity). Registering one IS the definition; there is
 // no separate declaration to keep in sync.
-// Run \`pnpm -F console gen:secrets-runtime-read\` to regenerate.
+// Run \`pnpm -C apps/console run gen:secrets-runtime-read\` to regenerate.
 
 /** Whether a cluster can resolve secrets from this store, keyed by connector slug.
  *

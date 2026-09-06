@@ -66,7 +66,8 @@ Version is injected at build time (`apps/cli/internal/version/version.go`).
 Ships via GoReleaser (`apps/cli/.goreleaser.yml`) cross-platform, plus a multi-stage alpine
 image (`apps/cli/Dockerfile`).
 
-**Environment:** `ALETHIA_WEB_ORIGIN` (required, no default) · `ALETHIA_RUNNER_OPERATOR`
+**Environment:** `ALETHIA_WEB_ORIGIN` (optional; defaults to `https://alethialabs.io`) ·
+`ALETHIA_NO_UPDATE_CHECK` (disables the daily interactive release notice) · `ALETHIA_RUNNER_OPERATOR`
 (`managed` | `self`; legacy `ALETHIA_RUNNER_MODE` still maps) · `ALETHIA_RUNNER_ID` /
 `ALETHIA_RUNNER_TOKEN` · `ALETHIA_STORAGE_*`.
 

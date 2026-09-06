@@ -474,7 +474,9 @@ func TestRunRolesList(t *testing.T) {
 	if err := runRolesList(&fakeClient{roles: sampleRoles()}, &buf, "table"); err != nil {
 		t.Fatalf("runRolesList: %v", err)
 	}
-	for _, want := range []string{"owner", "deployers", ui.SymbolDefault, "2"} {
+	// "●" and not ui.SymbolDefault: the Builtin column is ui.YesNo, which stopped answering with
+	// the "this is the default one" badge when #3660 put booleans on the status vocabulary.
+	for _, want := range []string{"owner", "deployers", "●", "2"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("roles missing %q:\n%s", want, buf.String())
 		}
@@ -680,11 +682,17 @@ func TestRenderSsoProviderJSON(t *testing.T) {
 }
 
 func TestYesNo(t *testing.T) {
-	if yesNo(true) != ui.SymbolDefault {
-		t.Errorf("yesNo(true) = %q", yesNo(true))
+	// `◆ / —` until #3660. The "no" arm was the EMPTY-VALUE SENTINEL, so a channel that is switched
+	// off and one whose `enabled` field never arrived printed the same cell; a boolean now borrows
+	// the two tiers that already mean present-and-active and present-and-inert.
+	if ui.YesNo(true) != "●" {
+		t.Errorf("ui.YesNo(true) = %q, want the active dot", ui.YesNo(true))
 	}
-	if yesNo(false) != ui.SymbolDash {
-		t.Errorf("yesNo(false) = %q", yesNo(false))
+	if ui.YesNo(false) != "◌" {
+		t.Errorf("ui.YesNo(false) = %q, want the disabled tier's dotted outline", ui.YesNo(false))
+	}
+	if ui.YesNo(false) == ui.SymbolDash {
+		t.Error("ui.YesNo(false) is the empty-value sentinel — 'no' and 'we could not read this' must not be one cell")
 	}
 }
 
@@ -718,11 +726,11 @@ func TestRunConfigShowJSON(t *testing.T) {
 }
 
 func TestOrDash(t *testing.T) {
-	if orDash("x") != "x" {
+	if ui.OrDash("x") != "x" {
 		t.Errorf("orDash passthrough failed")
 	}
-	if orDash("") != ui.SymbolDash {
-		t.Errorf("orDash empty should yield the dash glyph, got %q", orDash(""))
+	if ui.OrDash("") != ui.SymbolDash {
+		t.Errorf("orDash empty should yield the dash glyph, got %q", ui.OrDash(""))
 	}
 }
 
@@ -737,7 +745,9 @@ func TestRenderProjects(t *testing.T) {
 	if err := renderProjects(&buf, "table", configs); err != nil {
 		t.Fatalf("renderProjects: %v", err)
 	}
-	for _, want := range []string{"web", "production", "AWS", "eu-west-1", "$42/mo"} {
+	// `$42.00/mo`, not `$42/mo`: #3659 moved this cell onto format.MonthlyRate, whose Estimate
+	// register keeps the minor units above one unit. The old `%.0f` was the half-to-even defect.
+	for _, want := range []string{"web", "production", "AWS", "eu-west-1", "$42.00/mo"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("projects missing %q:\n%s", want, buf.String())
 		}

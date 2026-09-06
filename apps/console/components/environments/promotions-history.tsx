@@ -5,8 +5,9 @@
 // Recent promotions — a compact history row per promotion (source → target, when, status). The
 // in-flight one is flagged Active with a View into the detail overlay.
 
+import { formatRelative } from "@repo/format";
 import { Button } from "@repo/ui/button";
-import { formatDistanceToNow, parseISO } from "date-fns";
+import { SectionHeading } from "@repo/ui/section-heading";
 import type { PromotionRowView } from "./environments-view";
 import { promoStatus, StatusDot } from "./env-ui";
 
@@ -28,9 +29,7 @@ export function PromotionsHistory({
 }) {
 	return (
 		<section>
-			<h2 className="m-0 mb-3 font-display text-[15px] font-semibold tracking-tight text-text-primary">
-				Promotions
-			</h2>
+			<SectionHeading className="mb-3" level={2} title="Promotions" />
 			<div className="overflow-hidden rounded-lg border bg-surface shadow-sm">
 				{promotions.slice(0, 8).map((p) => {
 					const status = promoStatus(p.status);
@@ -43,25 +42,25 @@ export function PromotionsHistory({
 							<StatusDot tier={status.tier} className="shrink-0" />
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center gap-2.5">
-									<span className="font-mono text-[13px] text-text-primary">
+									<span className="font-mono text-ui-md text-text-primary">
 										{envName(p.source_environment_id)} → {envName(p.target_environment_id)}
 									</span>
-									<span className="text-[11px] text-text-tertiary">
-										{formatDistanceToNow(parseISO(p.created_at), { addSuffix: true })}
+									<span className="text-ui-xs text-text-tertiary">
+										{formatRelative(p.created_at)}
 									</span>
 									{active && (
-										<span className="rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+										<span className="rounded-full border px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 											Active
 										</span>
 									)}
 								</div>
 								{p.error_message && (
-									<div className="mt-0.5 font-mono text-[11px] text-text-tertiary">
+									<div className="mt-0.5 font-mono text-ui-xs text-text-tertiary">
 										{p.error_message}
 									</div>
 								)}
 							</div>
-							<span className="shrink-0 rounded-full border px-2 py-px font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+							<span className="shrink-0 rounded-full border px-2 py-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 								{status.label}
 							</span>
 							{active && (

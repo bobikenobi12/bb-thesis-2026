@@ -36,6 +36,7 @@ import { CurrencyToggle } from "@/components/billing/currency-toggle";
 import { authClient } from "@/lib/auth/client";
 import { track } from "@/lib/analytics/track";
 import { useLivePlanPrice } from "@/lib/billing/use-live-plan-price";
+import { billingIntentErrorMessage } from "@/lib/billing/intent-error";
 import { useWorkspaceStore } from "@/lib/stores/use-workspace-store";
 import { type SupportedCurrency, planMeta } from "@repo/plan-catalog";
 import { Button } from "@repo/ui/button";
@@ -54,42 +55,6 @@ interface UpgradeOrgSheetProps {
 	onOpenChange: (open: boolean) => void;
 	/** Slug of the org being upgraded — used to route to its billing on the upsell. */
 	orgSlug: string;
-}
-
-/**
- * The customer-facing sentence for a failed billing intent.
- *
- * `createSubscriptionIntent` is a SERVER ACTION, and in a production build Next.js replaces a
- * thrown error's message with a framework digest before it reaches the client. The old code did
- * `e instanceof Error ? e.message : "Couldn't start the upgrade."` — but a rejected server action
- * IS an Error, so the friendly fallback could never fire, and the upgrade sheet rendered:
- *
- *   Minified React error #441; visit https://react.dev/errors/441 for the full message…
- *
- * to a customer trying to pay us. A framework internal is never a billing explanation, so an
- * unrecognised failure gets the product sentence and the detail goes to the console instead.
- *
- * A message is only shown through when the server deliberately produced one — our own actions
- * throw plain, already-customer-safe strings, and those are worth keeping (they say things like
- * which currency is unsupported). React/Next internals are recognised and dropped.
- */
-export function billingIntentMessage(e: unknown): string {
-	const FALLBACK =
-		"Couldn't start the upgrade. Billing may not be configured on this deployment — try again, or contact support if it persists.";
-	if (!(e instanceof Error) || !e.message) return FALLBACK;
-	const m = e.message;
-	// Framework-generated text: a minified React error, a Next.js server-action digest, or the
-	// generic production message. None of these describe anything the reader can act on.
-	if (
-		/Minified React error/i.test(m) ||
-		/react\.dev\/errors/i.test(m) ||
-		/An error occurred in the Server Components render/i.test(m) ||
-		/Failed to find Server Action/i.test(m) ||
-		/^\s*$/.test(m)
-	) {
-		return FALLBACK;
-	}
-	return m;
 }
 
 /**
@@ -131,6 +96,10 @@ export function UpgradeOrgSheet({ open, onOpenChange, orgSlug }: UpgradeOrgSheet
 		createSubscriptionIntent("team", selected ? { currency: selected } : undefined)
 			.then((intent) => {
 				if (!active) return;
+				if ("error" in intent) {
+					setError(intent.error);
+					return;
+				}
 				setClientSecret(intent.clientSecret);
 				setCurrency(intent.currency);
 			})
@@ -139,7 +108,7 @@ export function UpgradeOrgSheet({ open, onOpenChange, orgSlug }: UpgradeOrgSheet
 				// Keep the real cause where an engineer can read it, and show the customer a
 				// sentence about the product.
 				console.error("[upgrade] createSubscriptionIntent failed", e);
-				setError(billingIntentMessage(e));
+				setError(billingIntentErrorMessage(e));
 			});
 		return () => {
 			active = false;
@@ -241,7 +210,7 @@ export function UpgradeOrgSheet({ open, onOpenChange, orgSlug }: UpgradeOrgSheet
 					>
 						{!error && (
 							<div className="mb-3 flex items-center justify-between">
-								<span className="text-[12px] text-text-secondary">Billing currency</span>
+								<span className="text-ui-sm text-text-secondary">Billing currency</span>
 								<CurrencyToggle
 									value={currency}
 									onChange={setSelected}
@@ -251,7 +220,7 @@ export function UpgradeOrgSheet({ open, onOpenChange, orgSlug }: UpgradeOrgSheet
 						)}
 						{error ? (
 							<div className="space-y-3">
-								<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-[12.5px] text-text-secondary">
+								<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-ui-sm text-text-secondary">
 									{error}
 								</p>
 								<Button

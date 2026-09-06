@@ -139,13 +139,12 @@ async function callAuth(path: string, body: unknown): Promise<Response> {
 	const origin =
 		process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
 		"http://localhost:3000";
+	const forwardedHeaders = new Headers(h);
+	forwardedHeaders.set("content-type", "application/json");
 	const res = await auth.handler(
 		new Request(`${origin}/api/auth${path}`, {
 			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				cookie: h.get("cookie") ?? "",
-			},
+			headers: forwardedHeaders,
 			body: JSON.stringify(body),
 		}),
 	);

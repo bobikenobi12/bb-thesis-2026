@@ -41,18 +41,9 @@ import {
 	CLASSIFICATION_TEMPLATES,
 	type ClassificationTemplate,
 } from "./classification-templates";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { InfoHint, Spinner } from "./classification-ui";
 import { RESOURCE_KIND_LABELS } from "./resource-kind-labels";
-
-/** Lowercases + hyphenates a label into a slug candidate. */
-function slugify(input: string): string {
-	return input
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 64);
-}
 
 /** Create / edit a dimension. Controlled via `open` / `onOpenChange`. */
 export function DimensionEditorSheet({
@@ -143,7 +134,7 @@ export function DimensionEditorSheet({
 	const addStaged = () => {
 		const label = addLabel.trim();
 		if (!label) return;
-		const value = slugify(label);
+		const value = slugifyOrEmpty(label);
 		if (staged.some((s) => s.value === value)) {
 			setAddLabel("");
 			return;
@@ -180,10 +171,10 @@ export function DimensionEditorSheet({
 				className="flex w-[min(480px,96vw)] flex-col gap-0 p-0 sm:max-w-none"
 			>
 				<SheetHeader className="border-b p-5">
-					<SheetTitle className="font-display text-[17px] font-semibold tracking-tight">
+					<SheetTitle className="font-display text-ui-xl font-semibold tracking-tight">
 						{isEdit ? "Edit dimension" : "New dimension"}
 					</SheetTitle>
-					<SheetDescription className="text-[12.5px]">
+					<SheetDescription className="text-ui-sm">
 						A named axis (e.g. Environment, Team) with a set of allowed values.
 					</SheetDescription>
 				</SheetHeader>
@@ -196,7 +187,7 @@ export function DimensionEditorSheet({
 						{/* optional: start from a template (create only) */}
 						{!isEdit && (
 							<div>
-								<div className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-tertiary">
+								<div className="mb-2 font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-tertiary">
 									Start from a template
 									<span className="ml-1.5 normal-case tracking-normal text-text-disabled">
 										optional
@@ -211,7 +202,7 @@ export function DimensionEditorSheet({
 												templateKey === t.key ? clearTemplate() : applyTemplate(t)
 											}
 											className={cn(
-												"rounded-[2px] border px-2.5 py-1 text-[12px] transition-colors",
+												"rounded-[2px] border px-2.5 py-1 text-ui-sm transition-colors",
 												templateKey === t.key
 													? "border-ring bg-surface-muted text-text-primary"
 													: "border-border-strong text-text-secondary hover:bg-surface-muted",
@@ -233,7 +224,7 @@ export function DimensionEditorSheet({
 								onChange={(e) => {
 									form.setValue("label", e.target.value);
 									if (!isEdit && !form.formState.dirtyFields.key) {
-										form.setValue("key", slugify(e.target.value));
+										form.setValue("key", slugifyOrEmpty(e.target.value));
 									}
 								}}
 							/>
@@ -269,7 +260,7 @@ export function DimensionEditorSheet({
 
 						<div className="flex items-center justify-between gap-4 rounded-md border p-3">
 							<div className="flex items-center gap-1.5">
-								<div className="text-[12.5px] font-medium">Allow multiple values</div>
+								<div className="text-ui-sm font-medium">Allow multiple values</div>
 								<InfoHint>
 									Off: a resource holds one value on this axis (assigning a new one
 									replaces the old). On: a resource may carry several (e.g. a service
@@ -290,7 +281,7 @@ export function DimensionEditorSheet({
 									Which resource kinds can carry this dimension. Leave all unchecked to
 									apply everywhere; otherwise it only appears on the kinds you pick.
 								</InfoHint>
-								<span className="ml-auto font-mono text-[10.5px] text-text-tertiary">
+								<span className="ml-auto font-mono text-ui-2xs text-text-tertiary">
 									{appliesTo.length === 0 ? "All resources" : `${appliesTo.length} kinds`}
 								</span>
 							</div>
@@ -303,7 +294,7 @@ export function DimensionEditorSheet({
 											type="button"
 											onClick={() => toggleKind(kind)}
 											className={cn(
-												"rounded-[2px] border px-2 py-1 text-[11.5px] transition-colors",
+												"rounded-[2px] border px-2 py-1 text-ui-xs transition-colors",
 												on
 													? "border-ring bg-surface-muted text-text-primary"
 													: "border-border-strong text-text-tertiary hover:bg-surface-muted",
@@ -319,7 +310,7 @@ export function DimensionEditorSheet({
 						{/* staged values (create only) */}
 						{!isEdit && (
 							<div>
-								<div className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-tertiary">
+								<div className="mb-2 font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-tertiary">
 									Values
 									<span className="ml-1.5 normal-case tracking-normal text-text-disabled">
 										{staged.length === 0 ? "add now or after" : `${staged.length} staged`}
@@ -330,7 +321,7 @@ export function DimensionEditorSheet({
 										{staged.map((v) => (
 											<span
 												key={v.value}
-												className="inline-flex items-center gap-1.5 rounded-[2px] border bg-surface-sunken px-2 py-1 text-[12px]"
+												className="inline-flex items-center gap-1.5 rounded-[2px] border bg-surface-sunken px-2 py-1 text-ui-sm"
 											>
 												{v.label}
 												<button
@@ -358,7 +349,7 @@ export function DimensionEditorSheet({
 											}
 										}}
 										placeholder="Add a value — press Enter"
-										className="h-8 text-[12.5px]"
+										className="h-8 text-ui-sm"
 									/>
 									<Button
 										type="button"
@@ -372,7 +363,7 @@ export function DimensionEditorSheet({
 										Add
 									</Button>
 								</div>
-								<p className="mt-2 text-[11px] text-text-tertiary">
+								<p className="mt-2 text-ui-xs text-text-tertiary">
 									You can edit and reorder values after creating.
 								</p>
 							</div>

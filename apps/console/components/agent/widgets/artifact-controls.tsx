@@ -96,7 +96,7 @@ export function SaveArtifactButton({
                 ? "Save widget as artifact"
                 : "Save dashboard as artifact"
             }
-            className="h-5 gap-1 rounded-none px-1 text-[10px] text-muted-foreground hover:text-foreground"
+            className="h-5 gap-1 rounded-none px-1 text-ui-2xs text-muted-foreground hover:text-foreground"
             disabled={widgets.length === 0}
           >
             <BookmarkPlus className="h-3 w-3" />
@@ -113,7 +113,7 @@ export function SaveArtifactButton({
         // That is exactly what --z-overlay-nested names (packages/brand/src/tokens.css).
         className="z-[var(--z-overlay-nested)] w-[240px] rounded-none p-2"
       >
-        <div className="vx-eyebrow pb-1.5 text-[9px]">
+        <div className="vx-eyebrow pb-1.5 text-ui-3xs">
           {kind === "widget"
             ? "Save widget as artifact"
             : "Save dashboard as artifact"}
@@ -128,7 +128,7 @@ export function SaveArtifactButton({
           }}
         />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-ui-2xs text-muted-foreground">
             {state === "error"
               ? "Save failed (name taken?)"
               : state === "saved"
@@ -137,7 +137,7 @@ export function SaveArtifactButton({
           </span>
           <Button
             size="sm"
-            className="h-6 rounded-none px-2 text-[11px]"
+            className="h-6 rounded-none px-2 text-ui-xs"
             onClick={() => void save()}
             disabled={!name.trim() || state === "saving"}
           >
@@ -186,7 +186,7 @@ export function ArtifactBrowser({ threadId }: { threadId: string | null }) {
             variant="ghost"
             size="sm"
             aria-label="Browse artifacts"
-            className="h-5 gap-1 rounded-none px-1 text-[10px] text-muted-foreground hover:text-foreground"
+            className="h-5 gap-1 rounded-none px-1 text-ui-2xs text-muted-foreground hover:text-foreground"
           >
             <FolderOpen className="h-3 w-3" />
             Artifacts
@@ -200,13 +200,13 @@ export function ArtifactBrowser({ threadId }: { threadId: string | null }) {
         // fullscreen dialog so the grid can't intercept clicks on artifact rows.
         className="z-[var(--z-overlay-nested)] w-[260px] rounded-none p-2"
       >
-        <div className="vx-eyebrow pb-1.5 text-[9px]">Saved artifacts</div>
+        <div className="vx-eyebrow pb-1.5 text-ui-3xs">Saved artifacts</div>
         {items === null ? (
-          <div className="py-3 text-center text-[11px] text-muted-foreground">
+          <div className="py-3 text-center text-ui-xs text-muted-foreground">
             Loading…
           </div>
         ) : items.length === 0 ? (
-          <div className="py-3 text-center text-[11px] text-muted-foreground">
+          <div className="py-3 text-center text-ui-xs text-muted-foreground">
             Nothing saved yet — pin widgets, then “Save as artifact”.
           </div>
         ) : (
@@ -221,11 +221,11 @@ export function ArtifactBrowser({ threadId }: { threadId: string | null }) {
               >
                 <span
                   title={a.name}
-                  className="min-w-0 flex-1 truncate text-[12px] text-foreground"
+                  className="min-w-0 flex-1 truncate text-ui-sm text-foreground"
                 >
                   {a.name}
                 </span>
-                <span className="flex-none font-mono text-[9px] uppercase text-muted-foreground">
+                <span className="flex-none font-mono text-ui-3xs uppercase text-muted-foreground">
                   {a.kind} · {a.spec.widgets.length}
                 </span>
               </button>

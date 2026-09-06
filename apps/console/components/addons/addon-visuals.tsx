@@ -149,7 +149,7 @@ export function AddonCompatBadge({
 	}
 	return (
 		<span
-			className="shrink-0 border border-dashed border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+			className="shrink-0 border border-dashed border-border px-1.5 py-0.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground"
 			title={compat.note}
 		>
 			Unverified

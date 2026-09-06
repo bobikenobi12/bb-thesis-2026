@@ -66,11 +66,15 @@ resource "azurerm_application_gateway" "this" {
   # Gateway-scoped: every listener AGIC creates inherits it, including ones that do not exist yet.
   # A per-listener firewall_policy_id would have been attached to the placeholder listener below
   # and then thrown away the first time AGIC rewrote the listener set.
-  firewall_policy_id = local.app_gateway_waf_attached ? module.azure_waf[0].policy_id : null
+  # `null`, not `""`, and the difference is measured: the schema marks `firewall_policy_id`
+  # OPTIONAL, so null reads as "no policy attached" while "" would be an invalid resource id. The
+  # sibling `subnet_id` below is REQUIRED and takes "" for the same reason inverted — a null there
+  # fails the plan with "Missing required argument" (#3509).
+  firewall_policy_id = local.app_gateway_waf_attached && try(module.azure_waf[0].policy_id, null) != null ? module.azure_waf[0].policy_id : null
 
   gateway_ip_configuration {
     name      = "appgw-ip-config"
-    subnet_id = module.vnet[0].application_gateway_subnet_id
+    subnet_id = try(module.vnet[0].application_gateway_subnet_id, null) != null ? module.vnet[0].application_gateway_subnet_id : ""
   }
 
   frontend_ip_configuration {
@@ -172,7 +176,7 @@ resource "azurerm_federated_identity_credential" "agic" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.agic[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   # Must match the namespace + ServiceAccount the AGIC Application creates
   # (infra/templates/argocd/azure-application-gateway-ingress.yaml: destination.namespace `agic`,
   # and `fullnameOverride: ingress-azure`, which is what fixes the chart's otherwise

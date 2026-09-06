@@ -1120,7 +1120,7 @@ func RunDeployV2(ctx context.Context, params DeployParams) (_ *PlanResult, retEr
 
 		// An in-cluster Harbor (a Hetzner `registry` node) needs credentials nothing else provides:
 		// unlike ECR / Artifact Registry / ACR there is no node identity to authenticate with. Seed
-		// the admin password (once — see EnsureHarborAdminSecret), pre-create the pull Secret so the
+		// Harbor credentials (once — see EnsureHarborSecret), pre-create the pull Secret so the
 		// bootstrap Job needs no name-unscopable `create` right, then apply the Job that mints a
 		// project-scoped PULL robot from INSIDE the cluster, which is the only place Harbor's API
 		// answers.
@@ -1129,6 +1129,18 @@ func RunDeployV2(ctx context.Context, params DeployParams) (_ *PlanResult, retEr
 		// must not fail an otherwise-healthy cluster. The Job retries on its own, and the next deploy
 		// re-runs this — which is a no-op when the credential already works.
 		credentialInClusterRegistries(ctx, vc, stdout, stderr)
+
+		// An in-cluster RabbitMQ (a Hetzner `queue` node) needs its password and erlang cookie to
+		// exist BEFORE its Application syncs, because the chart now only READS them (#3304). This
+		// runs ahead of both EnsureAddOnSecrets and ApplyAddOnsInWaves below, which is the ordering
+		// that matters — a queue whose Secret arrives late is a StatefulSet stuck at
+		// CreateContainerConfigError until the next reconcile.
+		// STOPS the deploy on one error only — see the function. The ordering above is why: this runs
+		// ahead of ApplyAddOnsInWaves, so refusing here is what keeps an Application whose
+		// `auth.existingSecret` names a Secret we could not write from reaching the cluster at all.
+		if err := credentialInClusterQueues(vc, stdout, stderr); err != nil {
+			return nil, err
+		}
 
 		// A pluggable container-registry connector's dockerconfigjson imagePullSecret is seeded
 		// HERE, post-apply, over the authenticated kubeconfig — NOT in tofu, whose kubernetes
@@ -1272,7 +1284,9 @@ func RunDeployV2(ctx context.Context, params DeployParams) (_ *PlanResult, retEr
 			// the knob could not have known it. Mutating vc.AddOns rather than the rendered output
 			// also means writeAddOnGitOps below writes the resolved value into the customer's repo,
 			// which is correct and free.
-			argocd.ResolveAddOnCloudIdentity(vc.AddOns, facts, stdout, stderr)
+			if err := argocd.ResolveAddOnCloudIdentity(vc.AddOns, facts, stdout, stderr); err != nil {
+				return nil, fmt.Errorf("external-dns identity resolution failed: %w", err)
+			}
 
 			addonDir, addonErr := argocd.RenderManagedAddOns(vc.AddOns, facts.Labels)
 			if addonErr != nil {
@@ -1349,6 +1363,19 @@ func RunDeployV2(ctx context.Context, params DeployParams) (_ *PlanResult, retEr
 				stdout,
 				stderr,
 			)
+			// Make each in-cluster RabbitMQ's BROKER accept the password its Secret holds (#3590).
+			//
+			// HERE, and both bounds are load-bearing. AFTER WaitAddOnsHealthy, because there is
+			// nothing to exec into until the broker is Ready — before the wait this would skip on
+			// every deploy and defer the repair forever. BEFORE ReadDataEndpoints, because that read
+			// is what PUBLISHES the Secret to the console as the queue's credential: converging
+			// first is the difference between publishing a password that works and publishing the
+			// one this issue is about.
+			//
+			// It is a no-op on a queue whose broker already accepts it, which is every queue created
+			// after #3304 — this exists for the ones created before it.
+			convergeInClusterQueuePasswords(ctx, vc, stdout, stderr)
+
 			// In-cluster data services (Hetzner database/cache/queue) are ArgoCD Applications, so
 			// they have no tofu output carrying a connection string — the console showed NO endpoint
 			// at all ("endpoint discovery is chart-specific and deferred"). Now that they've
@@ -1481,8 +1508,17 @@ func installArgoCD(ctx context.Context, vc *types.ProjectConfig, outputs map[str
 	// Returned UNWRAPPED. Four of the check's six states proceed (see argocd/version_preflight.go);
 	// the two that stop are deliberate refusals, not failures, and prefixing them with "failed to
 	// install ArgoCD" is how a refusal gets misread as a broken chart.
-	if err := preflightArgoVersion(ctx, stdout); err != nil {
+	decision, err := preflightArgoVersion(ctx, stdout)
+	if err != nil {
 		return err
+	}
+	// SKIP means proceed with the deploy having applied NOTHING to ArgoCD — a live ArgoCD newer than
+	// our pin that helm cannot name a release for, where `helm upgrade --install` would either adopt
+	// objects it does not own or pass the pin to --version, which is the downgrade (#3521). Returning
+	// nil here is deliberate: this is not a failure, and the decision's own message has already said
+	// on stdout exactly which values went unapplied.
+	if decision.SkipChartInstall {
+		return nil
 	}
 
 	// Repo URL + chart version are config-driven (env override, current literals as defaults) and
@@ -1501,10 +1537,19 @@ func installArgoCD(ctx context.Context, vc *types.ProjectConfig, outputs map[str
 		return fmt.Errorf("failed to pre-seed the argocd-redis secret: %w", err)
 	}
 
+	// The chart version comes from the DECISION, not straight from the pin. They are the same for
+	// every verdict but DOWNGRADE_AVOIDED, where the cluster already runs a newer in-window ArgoCD
+	// and the override is the chart helm reports for it — so this deploy's values are applied while
+	// the version does not move (#3521). Read off the decision rather than re-resolved here so the
+	// version installed and the version the operator was just told about cannot drift apart.
+	chartVersion := argocd.ResolvedArgoChartVersion()
+	if decision.InstallChartVersion != "" {
+		chartVersion = decision.InstallChartVersion
+	}
 	installCmd := fmt.Sprintf(
 		"helm upgrade --install argo-cd argo/argo-cd --namespace argocd --create-namespace --version %s"+
 			" --set redisSecretInit.enabled=false --wait --timeout %s",
-		utils.ShellQuote(argocd.ResolvedArgoChartVersion()),
+		utils.ShellQuote(chartVersion),
 		utils.ShellQuote(argocd.ResolvedArgoInstallTimeout()))
 
 	// Scratch space for a per-cloud values FILE (GKE's, below). Created unconditionally so the
@@ -1529,6 +1574,21 @@ func installArgoCD(ctx context.Context, vc *types.ProjectConfig, outputs map[str
 		return fmt.Errorf("failed to write the ArgoCD probe values: %w", wErr)
 	}
 	installCmd += " -f " + utils.ShellQuote(probesPath)
+
+	// An explicit resource REQUEST for argocd-repo-server — unconditional for the same reason and in
+	// the same place. The chart ships `resources: {}`, which is a QoS class, not an absence of
+	// opinion: with no request the container runs at the cgroup CPU-share floor and sits first in the
+	// node's eviction ranking, so it loses every contention decision to the kube-system pods that do
+	// carry requests. See argocd.InstallResourceValues for the evidence (#3855) and for why the
+	// magnitude is deliberately the smallest that changes the class.
+	//
+	// A SECOND file rather than more keys in the first: both set `repoServer`, helm deep-merges
+	// values files, and one file per whole idea keeps each one's doc comment true.
+	resourcesPath := filepath.Join(valuesDir, "argocd-resources.yaml")
+	if wErr := os.WriteFile(resourcesPath, []byte(argocd.InstallResourceValues()), 0o600); wErr != nil {
+		return fmt.Errorf("failed to write the ArgoCD resource values: %w", wErr)
+	}
+	installCmd += " -f " + utils.ShellQuote(resourcesPath)
 
 	if vc.DNS.Enabled && vc.DNS.DomainName != "" {
 		// FAIL CLOSED on a domain that is not a domain. `vc.DNS.DomainName` is free-text project
@@ -1834,6 +1894,62 @@ func credentialInClusterRegistries(ctx context.Context, vc *types.ProjectConfig,
 			fmt.Fprintf(stderr, "Warning: in-cluster registry %s credentials skipped: %v\n", reg.Name, err)
 		}
 	}
+}
+
+// convergeInClusterQueuePasswords makes each in-cluster RabbitMQ's running broker accept the
+// password its credential Secret holds (#3590).
+//
+// The reconciliation runs the OTHER WAY ROUND from credentialInClusterQueues above, and that is the
+// whole point. On a queue deployed before #3304 the broker still accepts the password from its very
+// first boot — `definitions.enabled` is false, so `RABBITMQ_DEFAULT_PASS` is the only thing that
+// ever set it, and RabbitMQ honours that only while the Mnesia database is empty — while ArgoCD's
+// selfHeal rewrote the Secret on every reconcile. The value the broker accepts was overwritten long
+// ago and cannot be recovered, so the Secret cannot be made to match the broker. The broker is made
+// to match the Secret.
+//
+// Non-fatal per queue, like the registry and add-on paths: a queue whose broker is not reachable yet
+// must not fail an otherwise-healthy cluster. The next deploy re-runs this, and it is a no-op for
+// every queue whose broker already accepts its Secret.
+// It takes `ctx` for the reason its two siblings do — `credentialInClusterRegistries` and
+// `bootstrapInClusterVault` both carry one. `WaitAddOnsHealthy` returns immediately on `ctx.Done()`,
+// so a cancelled or timed-out deploy falls STRAIGHT THROUGH to this step; without a context to
+// consult it would then shell out per queue against a broker that may never answer.
+func convergeInClusterQueuePasswords(ctx context.Context, vc *types.ProjectConfig, stdout, stderr io.Writer) {
+	for _, q := range argocd.HetznerQueues(vc, stderr) {
+		if err := argocd.ConvergeQueuePassword(ctx, q, stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "Warning: in-cluster queue %s broker password not reconciled: %v\n", q.Name, err)
+		}
+	}
+}
+
+// credentialInClusterQueues mints each in-cluster RabbitMQ's password and erlang cookie, once
+// (#3304). A no-op on every cloud but Hetzner, which carries the `queue` kind as a chart instead of
+// a managed queue service.
+//
+// Non-fatal per queue, like the registry and add-on paths: one queue that cannot be credentialled
+// must not fail an otherwise-healthy cluster. Its Application reports the missing Secret, and the
+// next deploy re-runs this — which is a no-op for every queue already holding credentials.
+func credentialInClusterQueues(vc *types.ProjectConfig, stdout, stderr io.Writer) error {
+	for _, q := range argocd.HetznerQueues(vc, stderr) {
+		err := argocd.EnsureQueueCredentialSecret(q, stdout, stderr)
+		if err == nil {
+			continue
+		}
+		// ONE failure is not like the others. "Could not determine whether this queue already has
+		// live credentials" is not "not ready yet" — it is an unknown standing directly in front of
+		// the destructive branch, and proceeding applies an Application whose `auth.existingSecret`
+		// names a Secret this deploy failed to write. A restart then reads a credential that does
+		// not match the running broker, which is the partition this path exists to prevent.
+		//
+		// Everything else keeps the non-fatal convention deliberately: a queue that cannot be
+		// credentialled yet reports the missing Secret on its own Application, and the next deploy
+		// retries — a no-op for every queue already holding credentials.
+		if argocd.QueueLiveStateUnknown(err) {
+			return fmt.Errorf("in-cluster queue %s: %w", q.Name, err)
+		}
+		fmt.Fprintf(stderr, "Warning: in-cluster queue %s credentials skipped: %v\n", q.Name, err)
+	}
+	return nil
 }
 
 // bootstrapInClusterVault delivers Hetzner's `secret` kind: the Job that initialises, unseals and

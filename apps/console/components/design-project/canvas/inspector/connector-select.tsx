@@ -211,7 +211,7 @@ export function ConnectorSelect({
 							<span className="flex items-center gap-2">
 								{nativeOption.label}
 								{nativeOption.description ? (
-									<span className="vx-eyebrow text-[10px] text-muted-foreground">
+									<span className="vx-eyebrow text-ui-2xs text-muted-foreground">
 										{nativeOption.description}
 									</span>
 								) : null}
@@ -228,7 +228,7 @@ export function ConnectorSelect({
 									</span>
 									{provider.name}
 									{reason ? (
-										<span className="vx-eyebrow text-[10px] text-muted-foreground">{reason}</span>
+										<span className="vx-eyebrow text-ui-2xs text-muted-foreground">{reason}</span>
 									) : null}
 								</span>
 							</SelectItem>
@@ -238,7 +238,7 @@ export function ConnectorSelect({
 						<SelectItem value={value}>
 							<span className="flex items-center gap-2">
 								{selected?.name ?? value}
-								<span className="vx-eyebrow text-[10px] text-muted-foreground">
+								<span className="vx-eyebrow text-ui-2xs text-muted-foreground">
 									not connected
 								</span>
 							</span>

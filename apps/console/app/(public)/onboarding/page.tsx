@@ -53,7 +53,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 						<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 							We couldn&apos;t finish setting up your account
 						</h1>
-						<p className="text-[14.5px] leading-[1.55] text-text-secondary">
+					<p className="text-ui-lg leading-[1.55] text-text-secondary">
 							Your sign-in worked, but we couldn&apos;t create your organization.
 							This is on us, not you. Reload to try again — if it keeps happening,
 							contact support and we&apos;ll fix it from our side.

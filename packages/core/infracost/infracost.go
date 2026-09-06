@@ -246,6 +246,24 @@ func (i *InfracostCLI) RunInfracost(planFile string, env []string) (*CostBreakdo
 	}
 
 	if breakdown.Summary != nil {
+		// DELIBERATELY NOT migrated to packages/core/format — #3768.
+		//
+		// DiffMonthly is a DELTA and is negative whenever a plan makes the estimate cheaper.
+		// format.MonthlyRate takes an ABSOLUTE cost: it treats `<= 0` as one case and clamps it to
+		// zero in both registers, so a $40/mo saving would render `$0.00/mo` — a real result
+		// silently replaced by the one that reads as "no change". There is no credit register in
+		// `format` to reach for instead; giving one a shape is a product decision (a `-$40.00/mo`?
+		// a `$40.00/mo saved`?) and that is what #3768 tracks.
+		//
+		// Migrating only Monthly and leaving Diff hand-rolled is worse than leaving both: it puts a
+		// grouped, JS-rounded number beside an ungrouped, half-to-even one INSIDE ONE SENTENCE,
+		// where the two are read against each other. So both stay as they are until #3768 lands,
+		// and this comment is what makes that a decision rather than a site nobody noticed.
+		//
+		// The `$` is likewise a standing USD assumption, not a rendering choice: breakdown.Currency
+		// is parsed (types.go) but nothing configures infracost's currency and nothing reads the
+		// field, and provisioner's ceiling compares Summary.TotalMonthly straight against a
+		// ALETHIA_COST_CEILING_MONTHLY_USD figure.
 		fmt.Printf("Cost Summary — Monthly: $%.2f, Diff: $%.2f (%d resources with cost, %d free)\n",
 			breakdown.Summary.TotalMonthly,
 			breakdown.Summary.DiffMonthly,

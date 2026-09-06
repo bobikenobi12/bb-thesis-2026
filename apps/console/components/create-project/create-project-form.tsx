@@ -96,7 +96,7 @@ export function CreateProjectForm({
 						>
 							<Users className="size-3.5" />
 							Collaborate
-							<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+							<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 								Pro
 							</span>
 						</button>
@@ -113,7 +113,7 @@ export function CreateProjectForm({
 							onChange={(e) => setPrompt(e.target.value)}
 							rows={2}
 							placeholder="Ask the design agent to design your infrastructure — e.g. an EKS cluster for an AI inference API, with a Postgres + pgvector store…"
-							className="min-h-0 resize-none border-0 bg-transparent p-0 pt-1 text-[15px] shadow-none focus-visible:ring-0"
+							className="min-h-0 resize-none border-0 bg-transparent p-0 pt-1 text-ui-lg shadow-none focus-visible:ring-0"
 							onKeyDown={(e) => {
 								if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
 									e.preventDefault();
@@ -123,7 +123,7 @@ export function CreateProjectForm({
 						/>
 					</div>
 					<div className="flex items-center justify-between px-4 pb-3">
-						<span className="font-mono text-[10px] text-muted-foreground">
+						<span className="font-mono text-ui-2xs text-muted-foreground">
 							⌘ + ⏎
 						</span>
 						<Button
@@ -180,7 +180,7 @@ export function CreateProjectForm({
 function ColHead({ children }: { children: React.ReactNode }) {
 	return (
 		<div className="flex items-center gap-3">
-			<span className="text-[13px] font-semibold tracking-tight">{children}</span>
+			<span className="text-ui-md font-semibold tracking-tight">{children}</span>
 			<span className="h-px flex-1 bg-border" />
 		</div>
 	);

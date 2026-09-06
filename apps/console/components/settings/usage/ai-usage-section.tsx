@@ -19,6 +19,7 @@ import {
 import { CreditPackDialog } from "@/components/billing/credit-pack-dialog";
 import { UpgradeAiSheet } from "@/components/billing/upgrade-ai-sheet";
 import { AiSpendLimits } from "@/components/settings/usage/ai-spend-limits";
+import { count } from "@/components/settings/usage/usage-primitives";
 import { SettingsSection } from "@/components/settings/settings-ui";
 import {
 	isNearAiLimit,
@@ -44,11 +45,11 @@ function PctMeter({
 	return (
 		<div className="border-r border-border px-6 py-4 last:border-r-0">
 			<div className="mb-[9px] flex items-baseline justify-between">
-				<span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+				<span className="font-mono text-ui-2xs uppercase tracking-[0.1em] text-text-tertiary">
 					{label}
 				</span>
 				<span
-					className={`text-[12.5px] ${atLimit ? "font-semibold text-text-primary" : "text-text-secondary"}`}
+					className={`text-ui-sm ${atLimit ? "font-semibold text-text-primary" : "text-text-secondary"}`}
 				>
 					{pct}%
 				</span>
@@ -59,7 +60,7 @@ function PctMeter({
 					style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
 				/>
 			</div>
-			<div className="mt-2 font-mono text-[10px] text-text-tertiary">
+			<div className="mt-2 font-mono text-ui-2xs text-text-tertiary">
 				{atLimit ? "At limit · " : ""}
 				{sub}
 			</div>
@@ -113,17 +114,17 @@ export function AiUsageSection() {
 				<div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
 					<div className="flex flex-col gap-0.5">
 						<div className="flex items-baseline gap-2">
-							<span className="font-display text-[15px] font-semibold text-text-primary">
+							<span className="font-display text-ui-lg font-semibold text-text-primary">
 								{meta ? meta.name : <Skeleton className="h-4 w-20" />}
 							</span>
 							{meta && (
-								<span className="font-mono text-[11px] text-text-secondary">
+								<span className="font-mono text-ui-xs text-text-secondary">
 									· {aiPrice.label}
 								</span>
 							)}
 						</div>
 						{meta && (
-							<span className="text-[11.5px] text-text-tertiary">
+							<span className="text-ui-xs text-text-tertiary">
 								{meta.tagline}
 							</span>
 						)}
@@ -133,7 +134,7 @@ export function AiUsageSection() {
 							<button
 								type="button"
 								onClick={() => setCreditsOpen(true)}
-								className="inline-flex items-center gap-1 text-[12.5px] text-text-secondary transition-colors hover:text-text-primary"
+								className="inline-flex items-center gap-1 text-ui-sm text-text-secondary transition-colors hover:text-text-primary"
 							>
 								Buy credits
 								<ArrowUpRight size={13} />
@@ -143,7 +144,7 @@ export function AiUsageSection() {
 							<button
 								type="button"
 								onClick={() => setUpgradeOpen(true)}
-								className="inline-flex items-center gap-1 rounded-md border border-border-strong px-2.5 py-1 text-[12px] text-text-primary transition-colors hover:bg-surface-muted"
+								className="inline-flex items-center gap-1 rounded-md border border-border-strong px-2.5 py-1 text-ui-sm text-text-primary transition-colors hover:bg-surface-muted"
 							>
 								<Zap size={12} />
 								Upgrade AI plan
@@ -176,10 +177,10 @@ export function AiUsageSection() {
 
 				{/* purchased top-up balance — paid tiers (or a leftover balance) only */}
 				{showBalance && (
-					<div className="flex items-center justify-between border-t border-border bg-surface-sunken px-6 py-3 text-[12px] text-text-tertiary">
+					<div className="flex items-center justify-between border-t border-border bg-surface-sunken px-6 py-3 text-ui-sm text-text-tertiary">
 						<span>Top-up credits never expire and stack on your plan.</span>
 						<span className="font-mono text-text-secondary">
-							{ai.purchasedBalance.toLocaleString()} credits
+							{count(ai.purchasedBalance)} credits
 						</span>
 					</div>
 				)}

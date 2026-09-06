@@ -8,9 +8,8 @@ Every row is something a user can **choose**. Every cell is whether that cloud c
 this enforces is already in `CLAUDE.md`: a per-cloud change covers all clouds in the same pass, and a
 cloud that cannot is an **explicit documented exclusion, never a silent gap**.
 
-Deliberately finer-grained than [`provisioning-e2e-parity.md`](./provisioning-e2e-parity.md), whose
-single "All kinds (11)" column is the granularity that let Azure MySQL hide: the kind was present, the
-*variant* was not.
+Deliberately finer-grained than the proof grid derived in [`PROGRAMME.md`](../../PROGRAMME.md), whose
+single "all kinds" granularity is what let Azure MySQL hide: the kind was present, the *variant* was not.
 
 Legend: 🟡 implemented, not yet proven on a real apply · ✅ real-apply proof in the e2e ledger ·
 🚫 offered but unbuildable (tracking issue in the cell) · ⚠️ carried only as a branch guard — the
@@ -130,8 +129,8 @@ proof · 🚫 data-bearing but **not** in `day2StatefulTypes` — the gate would
 ? not evaluable from template text (the type is inside an external module; only a real plan shows it)
 
 As with day 1, **no cell goes ✅ from here.** The proof is a real apply recorded in
-[`demos/proofs/provisioning-e2e-log.md`](../../demos/proofs/provisioning-e2e-log.md) and promoted in
-[`provisioning-e2e-parity.md`](./provisioning-e2e-parity.md).
+[`demos/proofs/provisioning-e2e-log.md`](../../demos/proofs/provisioning-e2e-log.md) and promoted into the
+generated half of [`PROGRAMME.md`](../../PROGRAMME.md).
 
 | Offer | Cloud | Backing resource | Day-2 | Note |
 |---|---|---|:---:|---|
@@ -215,4 +214,4 @@ above with an issue; a ⚠️ cell in neither list fails the build.
 
 ---
 
-Regenerate with `pnpm -F console check:offer-parity -- --matrix`. CI runs the guard on every PR.
+Regenerate with `pnpm -C apps/console run check:offer-parity -- --matrix`. CI runs the guard on every PR.

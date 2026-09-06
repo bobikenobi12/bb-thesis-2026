@@ -21,7 +21,7 @@ module "memorystore_valkey" {
   shard_count    = var.memorystore_valkey_shard_count
   replica_count  = var.memorystore_valkey_replica_count
 
-  network_self_link = var.provision_network ? module.vpc_network[0].network_self_link : var.network_id
+  network_self_link = try(module.vpc_network[0].network_self_link, null) != null ? module.vpc_network[0].network_self_link : var.network_id
 
   labels = local.gcp_default_labels
 }

@@ -6,7 +6,7 @@ import { Skeleton } from "@repo/ui/skeleton";
 /** Skeleton for the Environments view — a header + a few env rows + the create button. */
 export default function EnvironmentsLoading() {
 	return (
-		<div className="mx-auto max-w-3xl space-y-10">
+		<div className="mx-auto max-w-4xl space-y-10">
 			<div className="space-y-2">
 				<Skeleton className="h-6 w-40" />
 				<Skeleton className="h-4 w-80" />

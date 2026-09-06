@@ -28,8 +28,15 @@ collection auto-attached):
 
 - `owner` — Hobby (free) org owner. `{ page, orgSlug, orgId, userId, guard, perf }`.
 - `team` — Pro (card-less trial) org owner. Same shape. Use for billing/seats/paid-only surfaces.
-- `member` — invited member (reduced perms). **Not yet available** — skip specs needing it with
-  `test.skip(!process.env.HAVE_MEMBER, "member persona pending")` and note it in the catalog.
+- `member` — invited member (reduced perms), in the **`team` persona's org**. Same shape plus
+  `role`. Built by `e2e/global-setup.ts` through the product's own `organization/invite-member` →
+  `accept-invitation` endpoints (#3633), so it needs no gate: use it directly. The old
+  `test.skip(!process.env.HAVE_MEMBER, …)` guard is **gone and must not come back** — an unset
+  variable turned every permission denial it protected into a green skip. If the persona could not
+  be built the fixture throws, which is the correct verdict.
+  Before trusting a member-denial result, read `flows/_persona-integrity.spec.ts`: a member with no
+  access renders the org 404 everywhere, so a denial only counts where the **owner of the same org**
+  sees something different.
 
 Route model: org-scope = `/${orgSlug}/~/<page>` (connectors, runners, jobs, alerts, agent, clusters,
 usage, settings/{general,billing,members,teams,roles,access,sso,activity}); project-scope =

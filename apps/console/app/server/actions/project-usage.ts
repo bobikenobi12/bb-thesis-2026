@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { currentActor } from "@/lib/authz/guard";
 import { getOrgBilling } from "@/lib/billing/queries";
+import { effectiveBillingPeriodStart } from "@/lib/billing/period";
 import {
 	aiCreditsSeriesByProject,
 	sumCreditsByProject,
@@ -59,9 +60,11 @@ async function currentPeriod(
 ): Promise<{ from: Date; to: Date; periodEnd: Date }> {
 	const billing = await getOrgBilling(orgId).catch(() => null);
 	const now = new Date();
-	const from =
-		billing?.currentPeriodStart ??
-		new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const from = effectiveBillingPeriodStart(
+		billing?.currentPeriodStart,
+		billing?.currentPeriodEnd,
+		now,
+	);
 	return { from, to: now, periodEnd: billing?.currentPeriodEnd ?? now };
 }
 

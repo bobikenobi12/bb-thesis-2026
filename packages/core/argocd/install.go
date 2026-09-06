@@ -844,15 +844,15 @@ func clusterSecretStoreRenderSet(facts *InfraFacts) map[string]bool {
 	// render conditions — a store whose identity fact disappeared (or that belongs to another
 	// cloud) stops rendering and would otherwise be orphaned in a permanently-broken state.
 	esoStores := map[string]bool{
-		"secretstore-aws":     facts.Provider == "aws" && facts.IRSAExternalSecretsArn != "",
-		"secretstore-gcp":     facts.Provider == "gcp" && facts.GCPExternalSecretsSA != "",
-		"secretstore-azure":   facts.Provider == "azure" && facts.AzureExternalSecretsClient != "" && facts.AzureKeyVaultURI != "",
-		"secretstore-alibaba": facts.Provider == "alibaba" && facts.AlibabaExternalSecretsRoleArn != "",
+		PerCloudSecretStoreName("aws"):     facts.Provider == "aws" && facts.IRSAExternalSecretsArn != "",
+		PerCloudSecretStoreName("gcp"):     facts.Provider == "gcp" && facts.GCPExternalSecretsSA != "",
+		PerCloudSecretStoreName("azure"):   facts.Provider == "azure" && facts.AzureExternalSecretsClient != "" && facts.AzureKeyVaultURI != "",
+		PerCloudSecretStoreName("alibaba"): facts.Provider == "alibaba" && facts.AlibabaExternalSecretsRoleArn != "",
 		// The in-cluster Vault store (#2432). It belongs to THIS family, not the pluggable-SaaS one:
 		// it is Hetzner's secret store, implemented in-cluster because the cloud sells none. Naming
 		// it secretstore-vault would have put it in AllSaaSStoreNames()' reap set and had it deleted
 		// on every deploy without a vault CONNECTOR selected — see HetznerSecretStoreName.
-		HetznerSecretStoreName: facts.Provider == "hetzner" && facts.HetznerInClusterVault,
+		PerCloudSecretStoreName("hetzner"): facts.Provider == "hetzner" && facts.HetznerInClusterVault,
 	}
 	// Pluggable SaaS stores (cloud-agnostic): exactly one can render per deploy, so enumerate every
 	// name the template knows and mark all but the current one for reaping — switching the connector

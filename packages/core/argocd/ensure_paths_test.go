@@ -737,9 +737,16 @@ func TestReadSecretRefPrefersTheApplicationCredential(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			newKubectlStub(t, 0, stubRule{Match: "get secret -n data", Stdout: tc.stdout})
+			// SCOPED TO THE SELECTOR UNDER TEST. readSecretRef now issues two lookups, and a rule
+			// matching the bare "get secret -n data" answers BOTH — so the runner-seeded lookup
+			// would fire first, return, and this table would prove the `-app` preference and the
+			// helm-release skip on the wrong branch while reporting success.
+			newKubectlStub(t, 0,
+				stubRule{Match: "alethia.io/addon-secret=", Stdout: `{"items":[]}`},
+				stubRule{Match: "app.kubernetes.io/instance=", Stdout: tc.stdout},
+			)
 			var stderr bytes.Buffer
-			if got := readSecretRef("addon-db-primary", "data", &stderr); got != tc.want {
+			if got := readSecretRef("addon-db-primary", "data", "db-primary", &stderr); got != tc.want {
 				t.Errorf("readSecretRef() = %q, want %q", got, tc.want)
 			}
 		})

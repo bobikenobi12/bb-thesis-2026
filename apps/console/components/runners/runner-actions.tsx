@@ -107,7 +107,7 @@ export function RunnerVersion({ runner }: { runner: RunnerRow }) {
                   <button type="button">
                     <Badge
                       variant="outline"
-                      className="gap-1 cursor-pointer border-border bg-muted py-0 text-[10px] text-muted-foreground hover:bg-muted/80"
+                      className="gap-1 cursor-pointer border-border bg-muted py-0 text-ui-2xs text-muted-foreground hover:bg-muted/80"
                     >
                       <ArrowUpCircle className="h-3 w-3" />v
                       {latestRelease.version}

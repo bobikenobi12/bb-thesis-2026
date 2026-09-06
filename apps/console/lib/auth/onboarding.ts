@@ -10,7 +10,8 @@ import { asc, eq } from "drizzle-orm";
 import { ensureMemberGrant } from "@/lib/authz/grants";
 import { getServiceDb } from "@/lib/db";
 import { member, organization, user } from "@/lib/db/schema";
-import { pickFreeSlug, RESERVED_SLUGS, slugify } from "@/lib/routing";
+import { pickFreeSlug, RESERVED_SLUGS } from "@/lib/routing";
+import { slugify } from "@/lib/utils/slugify";
 
 interface NewUser {
 	id: string;
@@ -49,7 +50,7 @@ export async function provisionPrimaryOrg(u: NewUser): Promise<void> {
 	const taken = await db
 		.select({ slug: organization.slug })
 		.from(organization);
-	const slug = pickFreeSlug(slugify(handle) || "org", [
+	const slug = pickFreeSlug(slugify(handle, "org"), [
 		...taken.map((r) => r.slug),
 		...RESERVED_SLUGS,
 	]);

@@ -56,6 +56,13 @@ nothing scheduled the reap. `pnpm env:timer` now does (launchd, every 30 min, af
 idle minutes), and the session banner warns once the box has been up 12h. Neither
 replaces `pnpm env:reap --now` when you finish for the day.
 
+Reaping deletes the box for **everyone** on it, so `env:reap` lists every environment it is
+about to destroy and then refuses if another instance's env was touched in the last 60
+minutes (`--now` is not a way around that) or if your own is still live (`--include-mine`
+says you meant both). `pnpm env:reap --dry-run` shows the verdict without touching anything.
+Ownership is the instance identity from `scripts/lib/wt-lease.sh`, not `user@host` — see
+`scripts/lib/env-owner.sh` and #3841 for why that distinction cost a live environment.
+
 Idle floor is **~EUR 0.72/mo**: the Primary IP (0.50) plus two snapshots
 (~15 GB at 0.0143/GB). Note snapshots grow with what is on disk — 3.84 GB fresh, 12 GB
 once envs, `node_modules` and the Playwright browsers have accumulated.

@@ -1,0 +1,6 @@
+{
+  "address": "azurerm_kubernetes_cluster.main",
+  "type": "azurerm_kubernetes_cluster",
+  "attributes": ["default_node_pool[0].tags"],
+  "reason": "computed_attribute"
+}

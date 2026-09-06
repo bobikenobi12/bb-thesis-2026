@@ -18,4 +18,22 @@ provider: azure
 # than installed to run without one (#3469).
 workloadIdentity: 00000000-0000-0000-0000-000000000000
 
+# THE IDENTITY ON ITS OWN IS NOT ENOUGH ON AZURE, and this is the one thing that surprises people.
+#
+# ExternalDNS's Azure provider reads /etc/kubernetes/azure.json BEFORE it applies any flag, and
+# `useWorkloadIdentityExtension` — without which it authenticates as the node's kubelet identity
+# instead of your managed identity — exists ONLY in that file. A workload-identity AKS cluster lays
+# no such file down, so a valid client id with these three left blank installs a controller that
+# exits in its provider constructor and CrashLoops, while nothing on the add-on page says why.
+#
+# So they are REQUIRED and refused at configure time when missing (#3589). Alethia assembles the
+# file from them and mounts it; NOTHING in it is a credential — no client secret, ever, which is
+# what keeps the path keyless.
+#
+# The tenant is the Entra ID directory the managed identity belongs to; the subscription and the
+# resource group are the DNS ZONE's, which need not be the cluster's.
+azureTenantId: 00000000-0000-0000-0000-000000000000
+azureSubscriptionId: 00000000-0000-0000-0000-000000000000
+azureResourceGroup: example-dns-rg
+
 domainFilter: example.com

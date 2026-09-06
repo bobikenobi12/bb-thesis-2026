@@ -6,10 +6,9 @@
 // provider glyph + name, cloud, region, status, environment count, add-ons, estimated cost,
 // last-deploy time, and the shared actions menu.
 
-import { formatDistanceToNow } from "date-fns";
 import { Box } from "lucide-react";
 import Link from "next/link";
-import { formatMonthlyRate } from "@repo/format";
+import { formatMonthlyRate, formatRelative } from "@repo/format";
 import { ProviderIcon } from "@repo/ui/provider-icon";
 import { StatusBadge } from "@repo/ui/status-badge";
 import { TableCell, TableRow } from "@repo/ui/table";
@@ -65,7 +64,7 @@ export function ProjectRow({
 					) : (
 						<Box className="size-4 shrink-0 text-muted-foreground" />
 					)}
-					<span className="truncate font-display text-[13px] font-medium text-foreground group-hover/row:underline">
+					<span className="truncate font-display text-ui-md font-medium text-foreground group-hover/row:underline">
 						{project.project_name}
 					</span>
 				</Link>
@@ -73,28 +72,26 @@ export function ProjectRow({
 			<TableCell className="text-muted-foreground">
 				{provider ? (PROVIDER_LABEL[provider] ?? provider.toUpperCase()) : "—"}
 			</TableCell>
-			<TableCell className="font-mono text-[11px] text-muted-foreground">
+			<TableCell className="font-mono text-ui-xs text-muted-foreground">
 				{project.region || "—"}
 			</TableCell>
 			<TableCell>
 				<StatusBadge status={project.status} />
 			</TableCell>
-			<TableCell className="font-mono text-[11px] text-muted-foreground">
+			<TableCell className="font-mono text-ui-xs text-muted-foreground">
 				{project.environments_count}
 			</TableCell>
-			<TableCell className="font-mono text-[11px] text-muted-foreground">
+			<TableCell className="font-mono text-ui-xs text-muted-foreground">
 				{project.addons_count}
 			</TableCell>
-			<TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+			<TableCell className="text-right font-mono text-ui-xs text-muted-foreground">
 				{project.estimated_monthly_cost
 					? formatMonthlyRate(project.estimated_monthly_cost)
 					: "—"}
 			</TableCell>
-			<TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+			<TableCell className="text-right font-mono text-ui-xs text-muted-foreground">
 				{project.last_deployed_at
-					? formatDistanceToNow(new Date(project.last_deployed_at), {
-							addSuffix: true,
-						})
+					? formatRelative(project.last_deployed_at)
 					: "Never"}
 			</TableCell>
 			<TableCell className="text-right">

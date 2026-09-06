@@ -18,13 +18,17 @@
 // flows stay open so a user invited into someone else's PAID org can still participate.
 
 import { auth } from "@/lib/auth";
+import { trustedIpFailure } from "@/lib/auth/trusted-ip";
 import { getEntitlements } from "@/lib/authz/entitlements";
 import { currentActor } from "@/lib/authz/guard";
 import { toNextJsHandler } from "better-auth/next-js";
 
 const handlers = toNextJsHandler(auth);
 
-export const { GET } = handlers;
+/** Serves Better Auth GET routes after verifying the trusted client-IP contract. */
+export function GET(request: Request): Promise<Response> | Response {
+	return trustedIpFailure(request) ?? handlers.GET(request);
+}
 
 /**
  * Organization-plugin actions that *consume* the paid TEAMS feature (manage teams,
@@ -66,6 +70,9 @@ function upgradeRequired(action: string): Response {
 }
 
 export async function POST(req: Request): Promise<Response> {
+	const ingressFailure = trustedIpFailure(req);
+	if (ingressFailure) return ingressFailure;
+
 	const action = gatedOrgAction(new URL(req.url).pathname);
 	if (action) {
 		// Resolve the caller's scope; if there's no session, fall through and let

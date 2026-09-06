@@ -87,7 +87,7 @@ function RowAction({
 			onClick={onClick}
 			disabled={disabled}
 			className={cn(
-				"rounded-sm px-2 py-1 text-[12px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+				"rounded-sm px-2 py-1 text-ui-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
 				destructive
 					? "text-destructive hover:bg-destructive/10"
 					: "text-text-secondary hover:bg-surface-sunken hover:text-text-primary",
@@ -213,7 +213,7 @@ export function PaymentMethodsCard() {
 							<Skeleton className="h-10 w-full" />
 						</div>
 					) : cards.length === 0 ? (
-						<p className="px-[22px] py-6 text-[12.5px] text-text-tertiary">
+						<p className="px-[22px] py-6 text-ui-sm text-text-tertiary">
 							No saved cards — add one to keep your subscription active.
 						</p>
 					) : (
@@ -231,24 +231,24 @@ export function PaymentMethodsCard() {
 									)}
 								>
 									<div className="flex min-w-0 items-center gap-3">
-										<span className="text-[13px] font-medium text-text-primary">
+										<span className="text-ui-md font-medium text-text-primary">
 											{formatBrand(card.brand)}
 										</span>
-										<span className="font-mono text-[12.5px] text-text-secondary">
+										<span className="font-mono text-ui-sm text-text-secondary">
 											•••• {card.last4}
 										</span>
-										<span className="font-mono text-[11.5px] text-text-tertiary">
+										<span className="font-mono text-ui-xs text-text-tertiary">
 											exp {formatExpiry(card.expMonth, card.expYear)}
 										</span>
 										{card.isDefault && (
-											<Badge className="px-2 py-[2px] font-mono text-[9.5px] uppercase tracking-[0.1em]">
+											<Badge className="px-2 py-[2px] font-mono text-ui-3xs uppercase tracking-[0.1em]">
 												Default
 											</Badge>
 										)}
 										{isBackup && (
 											<Badge
 												variant="outline"
-												className="border-border-strong px-2 py-[2px] font-mono text-[9.5px] uppercase tracking-[0.1em] text-text-secondary"
+												className="border-border-strong px-2 py-[2px] font-mono text-ui-3xs uppercase tracking-[0.1em] text-text-secondary"
 											>
 												Backup {rank + 1}
 											</Badge>

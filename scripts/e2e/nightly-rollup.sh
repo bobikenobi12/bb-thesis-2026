@@ -102,6 +102,15 @@ summary_for() {
 	return 1
 }
 
+# jobs_payload — normalize the GitHub API's two valid shapes into one object. Plain `gh api`
+# returns `{jobs:[...]}`; `gh api --paginate --slurp` returns `[{jobs:[...]}, ...]`. Keeping the
+# normalization here means every reader below consumes the same complete job list and a future
+# pagination change cannot make one reader disagree with another.
+jobs_payload() {
+	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || return 1
+	jq -c 'if type == "array" then {jobs: [.[].jobs[]?]} else . end' "$JOBS_JSON"
+}
+
 # gate_off_bundle <summary-path> <run_id> — is this `outcome:skipped` bundle PROVABLY the
 # workflow's gate-off proof, or is it a leg that DIED before the harness ever started? (#1922)
 #
@@ -163,16 +172,15 @@ gate_off_bundle() {
 # ask, and the caller must NOT infer whether the gate was enabled.
 job_exists() {
 	local want="$1"
-	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || { echo unknown; return; }
-	jq -e '(.jobs // []) | length > 0' "$JOBS_JSON" >/dev/null 2>&1 || { echo unknown; return; }
-	if ! jq -e --arg pre "$PROVISION_JOB_PREFIX" \
-		'[(.jobs // [])[] | select(.name | startswith($pre))] | length > 0' "$JOBS_JSON" >/dev/null 2>&1; then
+	jobs_payload | jq -e '(.jobs // []) | length > 0' >/dev/null 2>&1 || { echo unknown; return; }
+	if ! jobs_payload | jq -e --arg pre "$PROVISION_JOB_PREFIX" \
+		'[(.jobs // [])[] | select(.name | startswith($pre))] | length > 0' >/dev/null 2>&1; then
 		echo unknown
 		return
 	fi
-	if jq -e --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" \
+	if jobs_payload | jq -e --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" \
 		'[(.jobs // [])[] | select((.name | startswith($pre)) and (.name | endswith("(" + $p + ")")))] | length > 0' \
-		"$JOBS_JSON" >/dev/null 2>&1; then
+		 >/dev/null 2>&1; then
 		echo yes
 	else
 		echo no
@@ -203,14 +211,13 @@ job_exists() {
 # must not report it as one.
 teardown_outcome() {
 	local want="$1" concl
-	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || { echo unknown; return; }
-	concl="$(jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" --arg step "$TEARDOWN_STEP_PREFIX" '
+	concl="$(jobs_payload | jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" --arg step "$TEARDOWN_STEP_PREFIX" '
 		[ (.jobs // [])[]
 		  | select((.name | startswith($pre)) and (.name | endswith("(" + $p + ")")))
 		  | (.steps // [])[]
 		  | select(.name | startswith($step))
 		] | first | if . == null then "missing" else (.conclusion // "") end
-	' "$JOBS_JSON" 2>/dev/null || echo missing)"
+	' 2>/dev/null || echo missing)"
 	case "$concl" in
 	missing) echo unknown ;;
 	"" | null | cancelled) echo UNSWEPT ;;
@@ -222,10 +229,9 @@ teardown_outcome() {
 # jobs_payload_is_broken: jobs exist but none is a provision leg ⇒ the display name moved and the
 # cross-check is dead. Loud, because a silent degrade here is the whole bug.
 jobs_payload_is_broken() {
-	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || return 1
-	jq -e '(.jobs // []) | length > 0' "$JOBS_JSON" >/dev/null 2>&1 || return 1
-	jq -e --arg pre "$PROVISION_JOB_PREFIX" \
-		'[(.jobs // [])[] | select(.name | startswith($pre))] | length == 0' "$JOBS_JSON" >/dev/null 2>&1
+	jobs_payload | jq -e '(.jobs // []) | length > 0' >/dev/null 2>&1 || return 1
+	jobs_payload | jq -e --arg pre "$PROVISION_JOB_PREFIX" \
+		'[(.jobs // [])[] | select(.name | startswith($pre))] | length == 0' >/dev/null 2>&1
 }
 
 # in_list <space-separated list> <item> — membership, the one shape this file's accumulators use.
@@ -265,12 +271,11 @@ in_list() {
 # rather than reusing the "no bundle" wording for it.
 job_conclusion() {
 	local want="$1" c
-	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || { echo unknown; return; }
-	c="$(jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" '
+	c="$(jobs_payload | jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" '
 		[ (.jobs // [])[]
 		  | select((.name | startswith($pre)) and (.name | endswith("(" + $p + ")")))
 		] | first | if . == null then "" else (.conclusion // "") end
-	' "$JOBS_JSON" 2>/dev/null || echo "")"
+	' 2>/dev/null || echo "")"
 	case "$c" in
 	"" | null) echo unknown ;;
 	*) echo "$c" ;;
@@ -288,15 +293,14 @@ job_conclusion() {
 # already).
 failed_steps() {
 	local want="$1"
-	[ -n "${JOBS_JSON:-}" ] && [ -r "${JOBS_JSON:-}" ] || return 0
-	jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" '
+	jobs_payload | jq -r --arg pre "$PROVISION_JOB_PREFIX" --arg p "$want" '
 		[ (.jobs // [])[]
 		  | select((.name | startswith($pre)) and (.name | endswith("(" + $p + ")")))
 		  | (.steps // [])[]
 		  | select((.conclusion // "") == "failure")
 		  | .name
 		] | join(", ")
-	' "$JOBS_JSON" 2>/dev/null || true
+	' 2>/dev/null || true
 }
 
 # ── derivation ─────────────────────────────────────────────────────────────────────────────────
@@ -493,7 +497,11 @@ derive() {
 	# makes this a tracker rather than a firehose.
 	local dim dim_label
 	dim="${E2E_DIMENSION:-floor}"
-	dim_label="$(dimension_label "$dim")"
+	# `|| return $?` because this script runs under `set -uo pipefail` and NOT `-e`: without it, a
+	# refusal from dimension_label leaves `dim_label` empty and the filer renders
+	# `e2e nightly: aws RED ()` — a title that dedups every unknown dimension onto ONE issue, which
+	# is the collision the refusal exists to prevent, wearing a different name (#4084).
+	dim_label="$(dimension_label "$dim")" || return $?
 
 	# The coverage issue deliberately gets NO dimension suffix. It reports which clouds are unwired,
 	# which is a property of the repo's gate variables and identical on both crons; suffixing it would
@@ -952,12 +960,24 @@ run_self_test() {
 		MATRIX_RESULT=success RUN_URL=http://x derive 2>&1 | grep -c 'existence cross-check is DEAD' || true)"
 	_a "1" "$warn" "a renamed provision job warns loudly instead of silently degrading"
 
-	# 11. LEDGER rows come from the same discovery, so the parity ledger cannot lose a run the table
+	# 11. `gh api --paginate --slurp` returns an ARRAY of page objects. The three readers must see
+	#     the same complete list, not just the first page or an unreadable multi-document stream.
+	c="$tmp/paginated"
+	write_summary "$c/proofs/e2e-proof-aws-777/2026-08-25T060000Z" aws "nightly-777-1" success applied
+	printf '%s\n' '[{"jobs":[{"name":"Provision + verify + teardown (real cloud) (aws)","conclusion":"success","steps":[{"name":"Guaranteed teardown (scope-locked cloud sweep)","conclusion":"success"}]}]},{"jobs":[{"name":"Nightly verdict rollup (5-cloud table + dedup issue)","conclusion":"success"}]}]' >"$c/jobs.json"
+	_a "|hetzner gcp azure alibaba|1" "$(CASE_MATRIX=success _derive "$c")" \
+		"a slurped two-page jobs payload is normalized for every reader"
+	_a "success" "$(JOBS_JSON="$c/jobs.json" job_conclusion aws)" \
+		"the normalized payload still drives the job-conclusion reader"
+	_a "done" "$(JOBS_JSON="$c/jobs.json" teardown_outcome aws)" \
+		"the normalized payload still drives the teardown reader"
+
+	# 12. LEDGER rows come from the same discovery, so the parity ledger cannot lose a run the table
 	#     reported. Run 30341785056 appended nothing while showing a real aws failure.
 	_a "aws	FAIL	aws: verdict for nightly-777-1	e2e-proof-aws-777" \
 		"$(head -1 "$tmp/flat/out/ledger.tsv")" "ledger row is emitted for the leg the table reports"
 
-	# 12. #1755 — THE DEDUP KEY MUST SEPARATE THE TWO DIMENSIONS. The same cloud red on the floor and
+	# 13. #1755 — THE DEDUP KEY MUST SEPARATE THE TWO DIMENSIONS. The same cloud red on the floor and
 	#     on the full bar has to produce two DIFFERENT titles, because the filer dedups on an exact
 	#     title match. Both fixtures are identical apart from the dimension: on 2026-08-02 the floor
 	#     (ArgoCD install) and the full bar (five apply-stage defects) collapsed into one issue and
@@ -979,6 +999,42 @@ run_self_test() {
 	_a "e2e nightly: aws RED (full-bar)" "$t_full" "a full-bar red is titled (full-bar)"
 	_a "differ" "$([ "$t_floor" != "$t_full" ] && echo differ || echo COLLIDE)" \
 		"the two dimensions cannot dedup onto one issue"
+
+	# …and the same separation for `cli-demo`, which is where #1755's fix silently stopped holding.
+	# `cli-demo` reached DIMENSIONS, FULL_EXCLUDES and its own fidelity arm but never dimension_label's
+	# enumerated case, so it fell through to `floor` — and since the title IS the dedup key, a cli-demo
+	# red and a genuine floor red on one cloud landed on ONE issue. #4086 was filed as
+	# "hetzner RED (floor)" for a cli-demo console build failure that never touched a cloud, sending
+	# every reader to the provisioning spine. A fixture per dimension is what makes that visible.
+	local t_cli
+	c="$tmp/dim-cli-demo"
+	write_summary "$c/proofs/e2e-proof-aws-777/s" aws "nightly-777-1" failure
+	write_jobs "$c/jobs.json" aws
+	CASE_DIMENSION=cli-demo _derive "$c" >/dev/null
+	t_cli="$(cat "$c/out/issue-red-aws.title")"
+	_a "e2e nightly: aws RED (cli-demo)" "$t_cli" "a cli-demo red is titled (cli-demo), not (floor) (#4086)"
+	_a "differ" "$([ "$t_cli" != "$t_floor" ] && echo differ || echo COLLIDE)" \
+		"a cli-demo red cannot dedup onto the floor's issue"
+
+	# …and a dimension nobody has heard of must STOP the filer, not render `RED ()`. That title is a
+	# dedup key too, so every unknown dimension would collide onto one issue — the same failure in a
+	# different costume. This script is `set -uo pipefail` without `-e`, so the refusal only
+	# propagates because the caller asks for it.
+	c="$tmp/dim-unknown"
+	write_summary "$c/proofs/e2e-proof-aws-777/s" aws "nightly-777-1" failure
+	write_jobs "$c/jobs.json" aws
+	# `derive` is driven DIRECTLY here, not through `_derive`: that harness discards the exit code
+	# (it runs derive in a subshell and then unconditionally sources state.env), so asserting through
+	# it would measure the harness and pass for the wrong reason.
+	_a "no" "$( (PROOFS_DIR="$c/proofs" OUT_DIR="$c/out" JOBS_JSON="$c/jobs.json" RUN_ID=777 \
+		MATRIX_RESULT=failure RUN_URL="http://x" E2E_DIMENSION=no-such-dimension \
+		derive >/dev/null 2>&1) && echo yes || echo no)" \
+		"an unknown dimension stops the filer instead of titling a red '()'"
+	_a "absent" "$([ -f "$c/out/issue-red-aws.title" ] && echo PRESENT || echo absent)" \
+		"...and no red title is written at all"
+
+	# Back to the full-bar case — the state.env assertions below read `$c`.
+	c="$tmp/dim-full"
 
 	# The dimension reaches state.env so the ledger step reuses it instead of re-deriving (#1755).
 	# shellcheck disable=SC1091

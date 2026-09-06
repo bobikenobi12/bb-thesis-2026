@@ -4,7 +4,7 @@
 // Generates a lexical search index over the docs (apps/docs/content/docs) so elench (the AI) can GROUND
 // its answers about connectors / architecture / how-to in the real documentation instead of improvising.
 // Chunks each MDX page by heading and writes a committed JSON the search_docs tool imports. Run via
-// `pnpm -F console gen:docs-index` (wired into build/dev). Lexical now; an embedding index can swap in later.
+// `pnpm -C apps/console run gen:docs-index` (wired into build/dev). Lexical now; an embedding index can swap in later.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";

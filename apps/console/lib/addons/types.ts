@@ -189,8 +189,35 @@ export interface AddOnDef<Schema extends z.ZodTypeAny = z.ZodTypeAny> {
 	 * Secret, but the username is an ordinary knob). Called only when a Secret is being
 	 * seeded (some secret field has a stored value); returns data-key → literal value.
 	 * MUST NOT return credential material — this rides the config snapshot.
+	 *
+	 * PAIRED, and that is the whole contract: a username with no password beside it is not a Secret
+	 * worth seeding. Data the chart needs whether or not any credential exists goes through
+	 * `requiredSecretData` below instead.
 	 */
 	secretStaticData?: (config: z.infer<Schema>) => Record<string, string>;
+	/**
+	 * NON-secret Secret data the chart needs IN ITS OWN RIGHT — enough, on its own, to make the
+	 * runner seed this add-on's Secret even when no secret-typed knob has a stored value (#3589).
+	 *
+	 * WHY IT IS NOT `secretStaticData`. That hook answers "what else belongs in the Secret we are
+	 * already seeding" — it is meaningless without the credential beside it, and making a non-empty
+	 * return sufficient on its own would hand grafana and minio a Secret holding nothing but an
+	 * admin USERNAME on every install that never set a password. This one answers a different
+	 * question: "does this chart need a Secret at all, credential or no".
+	 *
+	 * THE MEASURED CASE. external-dns's azure provider reads `/etc/kubernetes/azure.json` before it
+	 * applies any flag, and `useWorkloadIdentityExtension` — the key that stops it authenticating as
+	 * the node's kubelet identity — exists in no flag anywhere in v0.15.0. So the chart needs a FILE
+	 * at a path, which no Helm value can express, and the file holds four identifiers and no
+	 * credential. Until this existed the marketplace add-on could not be given one by any
+	 * combination of values the console offered: an azure customer with a perfectly valid managed
+	 * identity got a controller that CrashLoops in its constructor.
+	 *
+	 * MUST NOT return credential material, for exactly the reason `secretStaticData` must not: the
+	 * value rides the DEPLOY job's config snapshot, which is persisted in Postgres. A real
+	 * credential belongs in a `secret`-typed field, which never travels this way.
+	 */
+	requiredSecretData?: (config: z.infer<Schema>) => Record<string, string>;
 	/**
 	 * The Pod Security Standards level this add-on's OWN namespace must allow (#2837).
 	 *
@@ -276,13 +303,16 @@ export interface AddOnSecretRef {
 	secretName: string;
 	/** Namespace the Secret lives in — the add-on's install namespace. */
 	namespace: string;
-	/** Data keys the runner must populate (= the secret-typed field keys with stored values). */
+	/** Data keys the runner must populate (= the secret-typed field keys with stored values).
+	 * May be EMPTY: an add-on whose chart needs only non-secret data out of a Secret still gets one
+	 * seeded (#3589), and the runner tolerates the shape (`EnsureAddOnSecrets`). */
 	keys: string[];
 	/**
-	 * NON-secret constants that must live in the SAME Secret because the chart reads a
-	 * paired key from it (grafana's `userKey`, minio's `rootUser`). Derived from the def's
-	 * `secretStaticData` hook; snapshot-safe by declaration — a def must never route a
-	 * credential through here. A colliding fetched value wins runner-side.
+	 * NON-secret constants that must live in the SAME Secret because the chart reads them from it —
+	 * a paired key beside a credential (grafana's `userKey`, minio's `rootUser`), or a whole config
+	 * FILE the chart mounts (external-dns's `azure.json`). Derived from the def's
+	 * `secretStaticData` and `requiredSecretData` hooks, merged; snapshot-safe by declaration — a
+	 * def must never route a credential through either. A colliding fetched value wins runner-side.
 	 */
 	staticData?: Record<string, string>;
 }

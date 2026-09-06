@@ -63,13 +63,13 @@ func TestRunProtectionListError(t *testing.T) {
 
 // gateGlyph / intOrDash / floatOrDash render nil limits and off-gates as the dash glyph.
 func TestProtectionCellHelpers(t *testing.T) {
-	if gateGlyph(false) != ui.SymbolDash || gateGlyph(true) != ui.SymbolSuccess {
+	if ui.GateGlyph(false) != ui.SymbolDash || ui.GateGlyph(true) != ui.SymbolSuccess {
 		t.Error("gateGlyph glyphs wrong")
 	}
-	if intOrDash(nil) != ui.SymbolDash || intOrDash(iptr(5)) != "5" {
+	if ui.IntOrDash(nil) != ui.SymbolDash || ui.IntOrDash(iptr(5)) != "5" {
 		t.Error("intOrDash wrong")
 	}
-	if floatOrDash(nil) != ui.SymbolDash || floatOrDash(f64(1.5)) != "$1.50" {
+	if ui.FloatOrDash(nil) != ui.SymbolDash || ui.FloatOrDash(f64(1.5)) != "$1.50" {
 		t.Error("floatOrDash wrong")
 	}
 }

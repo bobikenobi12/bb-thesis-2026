@@ -5,17 +5,26 @@
 // billable membership. Invites land AFTER checkout (the create-org sheet), so the seat
 // count grows over time — `syncOrgSeats` is called from the org plugin's member
 // lifecycle hooks (afterAddMember / afterRemoveMember / afterUpdateMemberRole) to
-// reconcile the quantity (prorated). Billable = every active member except `viewer`
-// (viewers are free, matching the plan catalog). Hosted-only; no-op without Stripe.
+// reconcile the quantity (prorated). Billable = every active member whose role does not
+// resolve to `viewer` (viewers are free, matching the plan catalog). Hosted-only; no-op
+// without Stripe.
 
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, notInArray } from "drizzle-orm";
+import { storedRolesFor } from "@/lib/authz/org-access-control";
 import { isStripeConfigured } from "@/lib/billing/config";
 import { getOrgBilling } from "@/lib/billing/queries";
 import { getStripe } from "@/lib/billing/stripe";
 import { getServiceDb } from "@/lib/db";
 import { member } from "@/lib/db/schema";
 
-/** Count of an org's billable seats: active members whose role isn't `viewer`. */
+// The free roles, by what they GRANT rather than by how they are spelled. `viewer` is not the
+// only string that means viewer: better-auth writes its own built-in `member` (the column
+// default, and what an invite sent with the plugin's default carries), which `toPdpRole` resolves
+// to the read-only bundle. Comparing the raw string would bill that person a paid seat for access
+// they do not have — the two halves of the product disagreeing about one word.
+const FREE_ROLES = storedRolesFor("viewer");
+
+/** Count of an org's billable seats: active members whose role isn't a free (viewer) one. */
 export async function countBillableSeats(orgId: string): Promise<number> {
 	const [row] = await getServiceDb()
 		.select({ n: count() })
@@ -24,7 +33,7 @@ export async function countBillableSeats(orgId: string): Promise<number> {
 			and(
 				eq(member.organizationId, orgId),
 				eq(member.status, "active"),
-				ne(member.role, "viewer"),
+				notInArray(member.role, FREE_ROLES),
 			),
 		);
 	return row?.n ?? 0;

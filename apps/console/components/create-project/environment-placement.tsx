@@ -137,7 +137,7 @@ export function EnvironmentPlacement({
 				const items = CATALOG.filter((c) => c.group === group);
 				return (
 					<div key={group} className="space-y-2.5">
-						<div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+						<div className="font-mono text-ui-2xs uppercase tracking-[0.16em] text-muted-foreground">
 							{group}
 						</div>
 						<div className="space-y-2.5">
@@ -160,11 +160,11 @@ export function EnvironmentPlacement({
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="font-mono text-[15px] text-foreground">
+												<span className="font-mono text-ui-lg text-foreground">
 													{t.name}
 												</span>
 												{t.required && (
-													<span className="shrink-0 rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
+													<span className="shrink-0 rounded-full border px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
 														Default
 													</span>
 												)}
@@ -174,7 +174,7 @@ export function EnvironmentPlacement({
 												label={
 													spec?.lifecycle === "ephemeral" ? "Ephemeral" : "Draft"
 												}
-												className="mt-1.5 text-[11px]"
+												className="mt-1.5 text-ui-xs"
 											/>
 										</div>
 										<Select

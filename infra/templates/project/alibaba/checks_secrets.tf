@@ -26,7 +26,7 @@ check "ack_rrsa_provider_present" {
     #
     # What the note got right, and still holds: the `try()` cannot hide a rename, because the
     # surrounding `length(trimspace(…)) > 0` fails the check on "" just as loudly.
-    condition     = !var.provision_ack || length(trimspace(try(module.cluster[0].rrsa_oidc_provider_arn, ""))) > 0
+    condition     = !var.provision_ack || length(trimspace(try(module.cluster[0].rrsa_oidc_provider_arn, null) != null ? module.cluster[0].rrsa_oidc_provider_arn : "")) > 0
     error_message = "ACK RRSA (workload identity) did not report an OIDC provider ARN — in-cluster components can't assume RAM roles."
   }
 }

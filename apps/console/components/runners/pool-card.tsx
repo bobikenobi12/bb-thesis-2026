@@ -17,6 +17,7 @@ import {
 	AlertDialogTitle,
 } from "@repo/ui/alert-dialog";
 import { Card } from "@repo/ui/card";
+import { EmptyState } from "@repo/ui/empty";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -37,7 +38,7 @@ export interface PoolCardActions {
 	onDelete?: () => void;
 }
 
-const MONO_LABEL = "font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground";
+const MONO_LABEL = "font-mono text-ui-3xs uppercase tracking-[0.12em] text-muted-foreground";
 
 /** One capacity slot: filled (online), hatched (online+busy), or dashed (missing vs target). */
 function CapacitySegment({ kind }: { kind: "on" | "busy" | "miss" }) {
@@ -64,7 +65,7 @@ function Tally({ tally, strike }: { tally: { key: string; count: number; flagged
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1.5 border bg-muted px-2 py-0.5 font-mono text-[10.5px] text-foreground",
+				"inline-flex items-center gap-1.5 border bg-muted px-2 py-0.5 font-mono text-ui-2xs text-foreground",
 				tally.flagged ? "border-dashed text-muted-foreground" : "border-border",
 				tally.flagged && strike && "line-through decoration-border",
 			)}
@@ -105,7 +106,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 					<div className="flex items-center gap-2">
 						<span className="truncate text-sm font-semibold tracking-tight text-foreground">{label}</span>
 						{!pool.enabled && (
-							<span className="shrink-0 border border-border bg-muted px-1.5 font-mono text-[8.5px] uppercase tracking-[0.1em] text-muted-foreground">
+							<span className="shrink-0 border border-border bg-muted px-1.5 font-mono text-ui-3xs uppercase tracking-[0.1em] text-muted-foreground">
 								Paused
 							</span>
 						)}
@@ -119,7 +120,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 							pool.degraded ? "bg-foreground ring-2 ring-inset ring-background" : "bg-foreground",
 						)}
 					/>
-					<span className={cn("font-mono text-[9.5px] uppercase tracking-[0.1em]", pool.degraded ? "text-foreground" : "text-muted-foreground")}>
+					<span className={cn("font-mono text-ui-3xs uppercase tracking-[0.1em]", pool.degraded ? "text-foreground" : "text-muted-foreground")}>
 						{pool.degraded ? "Degraded" : "Healthy"}
 					</span>
 					{showMenu && (
@@ -194,7 +195,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 							<CapacitySegment key={i} kind={kind} />
 						))}
 					</div>
-					<div className="font-mono text-[10px] text-muted-foreground">{noteBits.join("  ·  ")}</div>
+					<div className="font-mono text-ui-2xs text-muted-foreground">{noteBits.join("  ·  ")}</div>
 				</div>
 
 				{/* rollout */}
@@ -203,10 +204,10 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 						<span className={MONO_LABEL}>
 							{pool.targetVersion ? `Rollout → ${pool.targetVersion}` : "Rollout"}
 						</span>
-						<span className="font-mono text-[11px] text-muted-foreground tabular-nums">{pool.rolloutPct}%</span>
+						<span className="font-mono text-ui-xs text-muted-foreground tabular-nums">{pool.rolloutPct}%</span>
 					</div>
 					{pool.fullyRolled || !pool.targetVersion ? (
-						<div className="font-mono text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+						<div className="font-mono text-ui-2xs uppercase tracking-[0.06em] text-muted-foreground">
 							{liveTotal > 0 && pool.targetVersion
 								? `All ${liveTotal} on ${pool.targetVersion}`
 								: "No version target set"}
@@ -234,7 +235,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 							{pool.versions.length ? (
 								pool.versions.map((v) => <Tally key={v.key} tally={v} />)
 							) : (
-								<span className="font-mono text-[10.5px] text-muted-foreground">—</span>
+								<span className="font-mono text-ui-2xs text-muted-foreground">—</span>
 							)}
 						</div>
 					</div>
@@ -244,7 +245,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 							{pool.locDist.length ? (
 								pool.locDist.map((l) => <Tally key={l.key} tally={l} strike />)
 							) : (
-								<span className="font-mono text-[10.5px] text-muted-foreground">—</span>
+								<span className="font-mono text-ui-2xs text-muted-foreground">—</span>
 							)}
 						</div>
 					</div>
@@ -253,7 +254,7 @@ export function PoolCard({ pool, economics, canManage, onEdit, onToggle, onDelet
 
 			{/* economics footer (manager-only; month-to-date) */}
 			{economics && (
-				<div className="flex items-center gap-3 border-t border-border bg-muted/40 px-4 py-2 font-mono text-[10px] text-muted-foreground">
+				<div className="flex items-center gap-3 border-t border-border bg-muted/40 px-4 py-2 font-mono text-ui-2xs text-muted-foreground">
 					<span>{economics.provisionedHours.toFixed(1)}h</span>
 					<span aria-hidden>·</span>
 					{/* Month-to-date SPEND, not a monthly rate — an amount, so it takes formatMoney,
@@ -290,12 +291,15 @@ export function PoolCardSkeleton() {
 /** Empty state shown in the pools sidebar when no warm pools are configured. */
 export function PoolsEmpty() {
 	return (
-		<Card className="items-center gap-3 px-6 py-12 text-center">
-			<h3 className="text-sm font-semibold tracking-tight text-foreground">No runner pools configured</h3>
-			<p className="max-w-[42ch] text-xs leading-relaxed text-muted-foreground">
-				Once a target cloud is connected, the controller provisions a warm pool of runners here and keeps it sized to demand.
-			</p>
-			<span className={MONO_LABEL}>Connect a cloud in Settings to begin</span>
-		</Card>
+		<EmptyState
+			className="border border-border bg-card"
+			// `level={3}` keeps the outline rung the hand-rolled `<h3>` had: this heads the pools
+			// region of the runners page, so demoting it to `EmptyTitle`'s default `<div>` would
+			// take an entry out of the document outline.
+			level={3}
+			title="No runner pools configured"
+			description="Once a target cloud is connected, the controller provisions a warm pool of runners here and keeps it sized to demand."
+			action={<span className={MONO_LABEL}>Connect a cloud in Settings to begin</span>}
+		/>
 	);
 }

@@ -217,12 +217,22 @@ type ProjectObservabilityConfig struct {
 type ProjectRepositoriesConfig struct {
 	AppsDestinationRepo string `json:"apps_destination_repo"`
 	// AppsPath is the subpath within AppsDestinationRepo that a PLACED environment's ArgoCD
-	// Application syncs — the per-tier Kustomize overlay ("overlays/dev") that makes a
-	// namespace/vcluster placement deliver its own tier instead of the whole repository.
+	// Application syncs — the per-tier Kustomize overlay ("overlays/dev") that makes a placed
+	// environment deliver its own tier instead of the whole repository.
 	//
 	// EMPTY MEANS THE REPOSITORY ROOT: unset renders `path: '.'`, byte-identical to every deploy
-	// that predates this field, so no existing tenant's Application moves. Ignored on the
-	// `dedicated` path, which discovers overlays through the apps-overlays ApplicationSet instead.
+	// that predates this field, so no existing tenant's Application moves.
+	//
+	// IT APPLIES ON ALL THREE PLACEMENT MODES, `dedicated` included. This comment used to say the
+	// dedicated path ignored it, and that was true of the defect rather than of the field: the
+	// value was read only by the namespace and vcluster paths, so a dedicated environment
+	// delivered the repo root no matter what it declared. infra/templates/argocd/user-apps.yaml
+	// renders `path` from this value with no placement branch.
+	//
+	// Naming a path also turns overlay DISCOVERY off — user-apps-overlays.yaml renders only when
+	// this is empty, because a glob anchored at the repo root would adopt the very overlays the
+	// named path is placing, and both Applications would claim the same Deployments with
+	// selfHeal: true. So the two are alternatives, not layers: an explicit path, or discovery.
 	AppsPath string `json:"apps_path,omitempty"`
 }
 

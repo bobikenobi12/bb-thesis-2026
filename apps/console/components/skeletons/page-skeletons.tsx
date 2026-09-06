@@ -68,27 +68,3 @@ export function PanelSkeleton({ lines = 4 }: { lines?: number }) {
 		</div>
 	);
 }
-
-/** A responsive grid of card placeholders. */
-export function CardGridSkeleton({
-	count = 6,
-	minWidth = "238px",
-	height = "h-32",
-}: {
-	count?: number;
-	minWidth?: string;
-	height?: string;
-}) {
-	return (
-		<div
-			className="grid gap-3"
-			style={{
-				gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}, 1fr))`,
-			}}
-		>
-			{Array.from({ length: count }, (_, i) => (
-				<Skeleton key={i} className={`${height} w-full rounded-lg`} />
-			))}
-		</div>
-	);
-}

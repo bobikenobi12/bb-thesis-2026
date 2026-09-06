@@ -159,6 +159,49 @@ func TestWaitClusterReadyCommandFlows(t *testing.T) {
 			t.Fatalf("WaitClusterReady error = %v", err)
 		}
 	})
+
+	t.Run("the no-Ready-node budget is spelled the way the banner spells it", func(t *testing.T) {
+		// THE ARM ABOVE CANNOT CATCH THIS. It passes timeout=0, and `0s` is the same string under
+		// format.Duration and Duration.String() — so it is green whichever renderer that message
+		// uses, and it stayed green while this line rendered the budget raw.
+		//
+		// 90s is the cheapest budget where the two spellings actually differ: `1m 30s` against
+		// `1m30s`. The context is cancelled rather than the budget shortened, because the value
+		// being ASSERTED is the one being RENDERED — shrinking the timeout to make the test fast
+		// would change the string under test, which is how this arm lost its teeth in the first
+		// place. pollUntil evaluates its check, then the deadline, then ctx: so readyz still
+		// passes on its first probe and only the node phase falls through to the cancelled ctx.
+		executeCommandWithOutput = func(command, _ string, _ []string) (string, error) {
+			switch command {
+			case "kubectl get --raw=/readyz":
+				return "ok", nil
+			case "kubectl get nodes -o json":
+				return `{"items":[{"status":{"conditions":[{"type":"Ready","status":"False"}]}}]}`, nil
+			default:
+				return "", nil
+			}
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		var banner strings.Builder
+		err := WaitClusterReady(ctx, 90*time.Second, true, &banner)
+		if err == nil {
+			t.Fatal("expected the node phase to fail")
+		}
+		if !strings.Contains(err.Error(), "within 1m 30s") {
+			t.Errorf("the budget must be spelled the product's way; got: %v", err)
+		}
+		if strings.Contains(err.Error(), "1m30s") {
+			t.Errorf("Duration.String() spelling is back in the node message: %v", err)
+		}
+		// The point is not the spelling in isolation — it is that ONE RUN cannot print the same
+		// configured value two ways. Assert the banner and the failure agree, which is the property
+		// the comment above WaitClusterReady claims and which no single-message check protects.
+		if !strings.Contains(banner.String(), "timeout 1m 30s") {
+			t.Errorf("banner disagrees with the failure message: %q", banner.String())
+		}
+	})
 }
 
 func TestWaitPodToAPIServerCommandFlows(t *testing.T) {

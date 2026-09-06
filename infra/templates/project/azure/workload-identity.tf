@@ -22,7 +22,7 @@ resource "azurerm_federated_identity_credential" "external_dns" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.external_dns[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:external-dns:external-dns-sa"
 }
 
@@ -42,7 +42,7 @@ resource "azurerm_federated_identity_credential" "cert_manager" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.external_dns[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:cert-manager:cert-manager"
 }
 
@@ -59,8 +59,8 @@ resource "azurerm_federated_identity_credential" "external_dns_addon" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.external_dns[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
-  subject             = "system:serviceaccount:external-dns:addon-external-dns-sa"
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
+  subject             = "system:serviceaccount:external-dns:addon-external-dns"
 }
 
 # DNS Zone Contributor over the resource group so external-dns (and cert-manager's DNS01
@@ -114,7 +114,7 @@ resource "azurerm_federated_identity_credential" "external_secrets" {
   resource_group_name = local.external_secrets_adopted ? var.external_secrets_identity_resource_group : azurerm_resource_group.main.name
   parent_id           = local.external_secrets_identity_id
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:external-secrets-operator:external-secrets-operator-sa"
 }
 

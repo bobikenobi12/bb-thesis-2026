@@ -32,11 +32,11 @@ import { cn } from "@repo/ui/utils";
  * absent rather than borrowing the look of a real one.
  */
 function Status({ v }: { v: string | null | undefined }) {
-	return <StatusBadge status={v ?? "—"} className="text-[10px]" />;
+	return <StatusBadge status={v ?? "—"} className="text-ui-2xs" />;
 }
 
-const TH = "vx-eyebrow h-auto py-2 text-[9px]";
-const TD = "py-1.5 text-[12px]";
+const TH = "vx-eyebrow h-auto py-2 text-ui-3xs";
+const TD = "py-1.5 text-ui-sm";
 
 /** Hairline table shell. */
 export function Shell({ children }: { children: ReactNode }) {

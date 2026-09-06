@@ -80,7 +80,7 @@ on:
           - alibaba
         default: hetzner
       region:
-        description: "Cloud region/location override (blank ⇒ the per-provider cheap default: hetzner nbg1, aws us-east-1, gcp europe-west3, azure westeurope, alibaba eu-central-1). hetzner: nbg1/fsn1/hel1."
+        description: "Cloud region/location override (blank ⇒ the per-provider cheap default: hetzner nbg1, aws us-east-1, gcp europe-west3-a, azure westeurope, alibaba eu-central-1). hetzner: nbg1/fsn1/hel1. NOTE gcp takes a ZONE: a bare region makes the GKE cluster regional, which multiplies every node count by the zone count AND skips the capacity preflight."
         type: string
         default: ""
       dimension:
@@ -309,7 +309,7 @@ jobs:
     # 180 → 195 (fabric 275 → 290) with the managed teardown window's 30m → 45m, measured on
     # aws/floor run 33155063965. Same rule as every other move here: the ladder rung moved, so its
     # outermost backstop moves with it, and the offline guard is what said so.
-    timeout-minutes: ${{ vars.E2E_FABRIC_DEMO != '' && 290 || 195 }}
+    timeout-minutes: ${{ vars.E2E_FABRIC_DEMO != '' && 300 || 205 }}
     # Serialize PER PROVIDER: never let two nightly runs provision into the SAME shared
     # cloud account at once — but let DIFFERENT providers run concurrently (they share no
     # account, and serializing them would stretch the nightly to the sum of every cloud).
@@ -490,7 +490,7 @@ jobs:
           case "$PROVIDER" in
             hetzner) DEFAULT_REGION="nbg1" ;;
             aws)     DEFAULT_REGION="us-east-1" ;;
-            gcp)     DEFAULT_REGION="europe-west3" ;;
+            gcp)     DEFAULT_REGION="europe-west3-a" ;;
             azure)   DEFAULT_REGION="westeurope" ;;
             alibaba) DEFAULT_REGION="eu-central-1" ;;
             *) echo "::error::unknown provider '$PROVIDER'"; exit 1 ;;
@@ -635,7 +635,66 @@ jobs:
           case "$PROVIDER" in
             hetzner) SHAPE="" ;;
             aws)     SHAPE='{"instance_types":["t3.large"],"node_min_size":1,"node_max_size":2,"node_desired_size":1,"node_disk_size_gb":20,"provider_config":{"enable_karpenter":true}}'; NET='{"single_nat_gateway":true}' ;;
-            gcp)     SHAPE='{"instance_types":["e2-small"],"node_min_size":1,"node_max_size":2,"node_desired_size":1,"node_disk_size_gb":20}' ;;
+            # RESHAPED FOR #3855 — FEWER, BIGGER NODES. The axis that matters is PER NODE, not total.
+            #
+            # History, because the numbers only read correctly with it: a node pool's
+            # initial_node_count and autoscaling min/max are PER ZONE, and gcp used to run REGIONAL
+            # (europe-west3 = 3 zones), so the declared 1/2/1 was really delivering 3/6/3. #3566 made
+            # the location zonal and restated 3/6/3 so the numbers became literal at exactly the cost
+            # already proven — the location fix, tested alone. Its comment then reserved this change:
+            # "Shrinking the floor is a separate change with its own evidence: ArgoCD's fit in
+            # ~800-900Mi of allocatable has never been measured." It still has not been measured, and
+            # this does NOT shrink the floor to fit that unmeasured number — it retires the question
+            # by making the largest schedulable slot BIGGER than any of the three it replaces.
+            #
+            # The evidence #3566 asked for is #3855: two nightlies on the SAME sha (33605830312 and
+            # 33731101952) both died at `argocd-ready` with `addon-byo-e2e` never completing ONE
+            # manifest render — a kube-dns timeout resolving `argo-cd-argocd-repo-server` the first
+            # night, repo-server's own gRPC DeadlineExceeded the second. In the same runs aws
+            # (t3.large, 8 GiB) and azure (Standard_D2s_v3, 8 GiB) passed the SAME assertion on the
+            # SAME BYO chart — each on ONE node. gcp is the only cloud whose floor node is under
+            # 4 GiB, and the only one whose floor is red.
+            #
+            # Per node, from GKE's published reservation formula (25% of the first 4 GiB of memory
+            # plus a 100 MiB eviction threshold; a flat 1060 mCPU on every E2 SHARED-CORE type):
+            #
+            #   was    3 x e2-small   2 GiB ea.  ~1436 MiB allocatable per node, ~800-900 Mi once
+            #                                    the GKE system DaemonSets are placed — three times
+            #   now    1 x e2-medium  4 GiB      ~2972 MiB allocatable, ~2.4 GiB after the same
+            #                                    DaemonSets, which are now placed ONCE
+            #
+            # Per-node CPU does not move at all: e2-small and e2-medium both have 2 shared cores and
+            # both pay the same flat 1060 mCPU reservation, so allocatable stays ~940m either way.
+            # The reshape is therefore ~2x the memory in the slot that matters, at no CPU cost to it.
+            #
+            # Total cluster memory FALLS, 6 GiB -> 4 GiB. Stated, not hidden — and it is the wrong
+            # axis: argocd-repo-server is one pod that must fit on one node, and a ~900 Mi slot is
+            # what it does not fit in. Node count 3 -> 1 also matches aws and azure, which is the
+            # count the floor is green at everywhere it IS green; max 2 stays as their safety valve.
+            # Nothing in the floor path needs a second node: the harness asserts >= 1 Ready node
+            # (HasReadyNode), heavyMinNodes=3 and fabricDemoMinNodes=2 are both gated off here, and
+            # no chart the floor installs (ArgoCD + external-secrets-operator + reloader) sets a
+            # required anti-affinity, a topology spread or a PDB.
+            #
+            # THE COUNTER-EVIDENCE, because it belongs next to the claim. versions.go:146 measured
+            # this pool and recorded that FIVE OF THE SEVEN ArgoCD pods already landed on ONE of the
+            # three e2-smalls — so the 3-node spread was not buying separation, which is the strongest
+            # argument for this reshape and also its warning: the pile-up moves from 5 of 7 to 7 of 7,
+            # onto ONE 20 GB pd-standard disk whose concurrent pull throughput was measured at
+            # ~43 KB/s (run 33156252646). The disk is DELIBERATELY not touched in the same change:
+            # it is the second lever the repo already names, and moving both at once means a green
+            # run cannot say which one did it. If this stays red, the disk is next.
+            #
+            # COST (europe-west3, on-demand list, compute only): e2-small $0.0216/h, e2-medium
+            # $0.0432/h — the E2 shared-core ladder is exactly proportional — so 3 x $0.0216 =
+            # $0.0648/h becomes $0.0432/h, 33% CHEAPER, plus two fewer 20 GB pd-standard disks.
+            # Matching the green clouds' 8 GiB instead means 1 x e2-standard-2 at $0.0863/h: +33%,
+            # a spend increase, and therefore the maintainer's call rather than this change.
+            #
+            # THIS IS NOT A CLAIM THAT #3855 IS FIXED. 4 GiB is still HALF of what aws and azure use,
+            # and no offline check can settle whether ArgoCD converges in it. One paid gcp floor run
+            # is the only honest test.
+            gcp)     SHAPE='{"instance_types":["e2-medium"],"node_min_size":1,"node_max_size":2,"node_desired_size":1,"node_disk_size_gb":20}' ;;
             # Standard_B2s (v1) is NOT offered by AKS on a modern subscription: a real apply fails with
             # "The VM size of Standard_B2s is not allowed in your subscription" — only the v2/v3+
             # generations are served. (`az vm list-skus` disagrees and reports B2s unrestricted; AKS is
@@ -758,7 +817,7 @@ jobs:
 
       - name: Migrate the control-plane database (schema + programmables/RLS + app role)
         if: steps.gate.outputs.run == 'true'
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
 
       # ── AWS: exchange the GitHub OIDC token for the ref-bound `alethia-e2e-nightly` role
       #    (no long-lived keys). Only runs for the aws provider once a maintainer has applied
@@ -1145,16 +1204,38 @@ jobs:
       #    `pnpm install` + `db:migrate` ran above. ──
       - name: cli-demo — build @alethia/ee, then the console
         if: steps.gate.outputs.run == 'true' && env.E2E_DIMENSION == 'cli-demo'
+        # ── THE BUILD NEEDS THE AUTH SETTINGS TOO, AND THAT IS NOT OBVIOUS ──
+        # These were originally given only to the step that STARTS the console, on the reasonable
+        # assumption that a build is not a runtime. It is not true of Next: `next build` collects
+        # page data by EVALUATING each route module, and `/sso/[slug]` pulls `lib/auth/index.ts`,
+        # which builds the better-auth config at module scope. `lib/config/auth.ts:128` then throws
+        # on an absent secret/baseURL and the whole build fails at "Collecting page data".
+        #
+        # That is why `cli-demo` was 0/5 on the proof grid with no cloud ever implicated: its very
+        # first dispatch (hetzner, run 33723313317) died here, before `project apply` and before any
+        # runner — so nothing was ever provisioned and nothing named a cause. See #4088.
+        #
+        # The set below is ci.yml's build smoke (ci.yml:181-187), which is the configuration already
+        # PROVEN to build this console, plus NEXT_PUBLIC_APP_URL to match the start step. The auth
+        # values must stay identical to that step's; GitHub Actions does not support YAML anchors,
+        # so this is a copy, and the two drifting apart is precisely the defect #4088 records.
+        env:
+          BETTER_AUTH_SECRET: e2e-cli-demo-placeholder-secret
+          BETTER_AUTH_URL: http://localhost:3000
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          ALETHIA_STORAGE_ENDPOINT: http://localhost:8333
+          ALETHIA_STORAGE_ACCESS_KEY_ID: e2e
+          ALETHIA_STORAGE_SECRET_ACCESS_KEY: e2e
         run: |
           # ee FIRST, and this ordering is not stylistic. ee/dist is gitignored with no prepare
-          # hook, and `pnpm -F console build` calls the console's own script — bypassing turbo, so
+          # hook, and `pnpm -C apps/console run build` calls the console's own script — bypassing turbo, so
           # `build.dependsOn: ["^build"]` never fires. Without it getEnterprise()'s tolerant require
           # throws and lib/auth/scope.ts falls back to `{ userId, orgId: userId }`, which is how
           # ci.yml's hero job was once VACUOUS (see its note at ci.yml:389). A cli-demo run on a
           # community-scope console would pass while proving the wrong tenancy.
           pnpm -F @alethia/ee build
           test -f ee/dist/index.js || { echo "::error::ee/dist/index.js missing — the console would resolve COMMUNITY scope and this dimension would prove the wrong thing"; exit 1; }
-          pnpm -F console build
+          pnpm -C apps/console run build
 
       - name: cli-demo — seed the org and mint a service token
         if: steps.gate.outputs.run == 'true' && env.E2E_DIMENSION == 'cli-demo'
@@ -1223,7 +1304,7 @@ jobs:
       - name: T2 — real runner provisions a real cloud cluster
         id: t2
         if: steps.gate.outputs.run == 'true'
-        timeout-minutes: ${{ vars.E2E_FABRIC_DEMO != '' && 275 || 180 }}
+        timeout-minutes: ${{ vars.E2E_FABRIC_DEMO != '' && 285 || 190 }}
         working-directory: test/e2e
         env:
           ALETHIA_E2E_PROVIDER: ${{ matrix.provider }}
@@ -1749,8 +1830,8 @@ jobs:
           # this offline on every PR, across every cloud x dimension, and additionally holds these
           # two to being the SAME expressions as the `timeout-minutes:` above — which the
           # "if you change one, change both" instruction asked for and nothing enforced.
-          T2_STEP_CAP_MINUTES: ${{ vars.E2E_FABRIC_DEMO != '' && 275 || 180 }}
-          T2_JOB_CAP_MINUTES: ${{ vars.E2E_FABRIC_DEMO != '' && 290 || 195 }}
+          T2_STEP_CAP_MINUTES: ${{ vars.E2E_FABRIC_DEMO != '' && 285 || 190 }}
+          T2_JOB_CAP_MINUTES: ${{ vars.E2E_FABRIC_DEMO != '' && 300 || 205 }}
           # Where the go-test stream is teed so capture-proof.sh can put the ASSERTIONS in the
           # committed bundle. ALETHIA_E2E_T2_RUNNER_LOG above is the RUNNER's deployment log — a
           # different stream, which carries no `--- PASS` and no A0.x decision lines.
@@ -2135,7 +2216,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -uo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs" --paginate \
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs" --paginate --slurp \
             > "${RUNNER_TEMP}/run-jobs.json" \
             || echo "::warning::could not read this run's job list — the rollup will fall back to proof-presence only."
 

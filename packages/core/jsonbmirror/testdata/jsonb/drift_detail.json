@@ -1,0 +1,6 @@
+{
+  "address": "aws_db_instance.main",
+  "type": "aws_db_instance",
+  "kind": "modified",
+  "attributes": ["backup_retention_period"]
+}

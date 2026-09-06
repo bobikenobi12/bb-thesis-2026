@@ -11,7 +11,7 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "@repo/ui/empty";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { LifeBuoy, SearchX } from "lucide-react";
 import Link from "next/link";
@@ -57,9 +57,9 @@ const NO_ROWS: CaseListItemData[] = [];
  * severity / type refinement runs as a pure predicate over the returned rows (see the
  * header of case-query.ts for why those three are client-side and the bucket is not).
  *
- * Result count lives in the PageHeader's pill, never as prose in the bar. When `seeAll`
- * (the caller holds manage_support) the list is the whole org's cases — the header says so
- * and each foreign row shows its opener.
+ * Result count lives in the page toolbar's pill, never as prose in the bar. When `seeAll`
+ * (the caller holds manage_support) the list is the whole org's cases — the toolbar's line
+ * says so and each foreign row shows its opener.
  */
 export function CaseList({
 	orgSlug,
@@ -120,8 +120,7 @@ export function CaseList({
 
 	return (
 		<div className="space-y-4">
-			<PageHeader
-				title="My cases"
+			<PageToolbar
 				description={
 					seeAll
 						? "Every support case in this organization."

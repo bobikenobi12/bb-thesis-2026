@@ -1,0 +1,28 @@
+{
+  "verdict": "fail",
+  "catalog_version": "elench-controls-0.5.2",
+  "provider": "aws",
+  "controls": [
+    {
+      "id": "LEASTPRIV-001",
+      "title": "IAM policies avoid wildcard administrative grants",
+      "severity": "high",
+      "status": "fail",
+      "frameworks": ["CIS-1.16"],
+      "provider": "aws",
+      "findings": [
+        {
+          "address": "aws_iam_policy.admin",
+          "message": "policy grants Action:* on Resource:*"
+        }
+      ],
+      "coverage": "1 policy body is computed until apply and was not inspected"
+    }
+  ],
+  "summary": {
+    "pass": 7,
+    "fail": 1,
+    "warn": 2,
+    "not_evaluable": 3
+  }
+}

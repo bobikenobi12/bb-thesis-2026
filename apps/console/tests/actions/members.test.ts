@@ -147,6 +147,10 @@ describe("getMembers", () => {
 		// u-2 has neither teams nor a session → empty array + null.
 		expect(linus?.teams).toEqual([]);
 		expect(linus?.lastActiveAt).toBeNull();
+		// …and his stored role is better-auth's own `member`, which the row must report as the
+		// role it GRANTS: the table's role <select> offers owner/admin/operator/viewer, so a raw
+		// `member` matches no option and renders blank.
+		expect(linus?.role).toBe("viewer");
 	});
 });
 

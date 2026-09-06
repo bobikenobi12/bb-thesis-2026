@@ -37,6 +37,7 @@ vi.mock("@/lib/config/auth", () => ({
 	getAuthConfig: vi.fn(() => ({
 		secret: "test-secret",
 		baseURL: "https://app.test",
+		trustedIpHeader: "cf-connecting-ip",
 		providers: {
 			github: { clientId: "gh-id", clientSecret: "gh-sec" },
 			google: { clientId: "g-id", clientSecret: "g-sec" },
@@ -114,6 +115,10 @@ describe("base options", () => {
 	it("keeps email+password disabled and uses uuid id generation", () => {
 		expect(opts.emailAndPassword.enabled).toBe(false);
 		expect(opts.advanced.database.generateId).toBe("uuid");
+	});
+
+	it("passes the configured trusted client-IP header to Better Auth", () => {
+		expect(opts.advanced.ipAddress.ipAddressHeaders).toEqual(["cf-connecting-ip"]);
 	});
 
 	it("ends the plugin chain with nextCookies (must be last to set cookies)", () => {
@@ -260,6 +265,7 @@ describe("provider-absent branch (re-imported with empty providers)", () => {
 		vi.mocked(cfgMod.getAuthConfig).mockReturnValue({
 			secret: "s",
 			baseURL: "https://app.test",
+			trustedIpHeader: "cf-connecting-ip",
 			providers: {},
 		} as never);
 		const mod = await import("@/lib/auth");
@@ -283,6 +289,7 @@ describe("provider-absent branch (re-imported with empty providers)", () => {
 		vi.mocked(cfgMod.getAuthConfig).mockReturnValue({
 			secret: "s",
 			baseURL: "https://app.test",
+			trustedIpHeader: "cf-connecting-ip",
 			providers: {},
 		} as never);
 		const mod = await import("@/lib/auth");
@@ -305,6 +312,7 @@ describe("provider-absent branch (re-imported with empty providers)", () => {
 		vi.mocked(cfgMod.getAuthConfig).mockReturnValue({
 			secret: "s",
 			baseURL: "/relative-only",
+			trustedIpHeader: "cf-connecting-ip",
 			providers: {},
 		} as never);
 		const mod = await import("@/lib/auth");

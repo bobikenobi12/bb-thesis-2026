@@ -67,7 +67,7 @@ export function OAuthConsentForm() {
 				<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 					Nothing to authorize
 				</h1>
-				<p className="text-[15px] text-text-tertiary">
+				<p className="text-ui-lg text-text-tertiary">
 					This page is part of connecting an external app. Start the connection from
 					that app to continue.
 				</p>
@@ -82,7 +82,7 @@ export function OAuthConsentForm() {
 				<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 					Connect an external app
 				</h1>
-				<p className="text-[15px] text-text-tertiary">
+				<p className="text-ui-lg text-text-tertiary">
 					An application
 					{clientId ? (
 						<>

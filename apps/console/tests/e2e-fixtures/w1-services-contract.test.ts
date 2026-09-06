@@ -17,7 +17,7 @@
 //      rename regenerates the fixture and zero-fills the Go decode → the Go test reds. Neither
 //      side can drift silently.
 //
-// Regenerate after an intentional contract change:  UPDATE_FIXTURES=1 pnpm -F console test
+// Regenerate after an intentional contract change:  UPDATE_FIXTURES=1 pnpm -C apps/console run test
 // w1-services-contract
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

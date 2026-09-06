@@ -136,7 +136,7 @@ export function ConnectionTestStatus({
 /** The muted "how your credentials are handled" footnote. Shared. */
 export function InfoNote({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[11px] text-muted-foreground leading-relaxed">
+    <p className="text-ui-xs text-muted-foreground leading-relaxed">
       {children}
     </p>
   );
@@ -153,7 +153,7 @@ function HowItWorks({ children }: { children: ReactNode }) {
         render={
           <button
             type="button"
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <HelpCircle className="size-3.5" />
             How this works
@@ -199,7 +199,7 @@ export function ConnectSheetShell({
         <div className="flex items-center justify-between gap-3">
           <Badge
             variant="secondary"
-            className="h-5 gap-1 px-1.5 font-medium text-[10px]"
+            className="h-5 gap-1 px-1.5 font-medium text-ui-2xs"
           >
             <ShieldCheck className="size-3" />
             {badgeLabel}
@@ -242,7 +242,7 @@ export function MethodTabs({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
-        <span className="font-semibold text-[11px] text-muted-foreground uppercase tracking-wider">
+        <span className="font-semibold text-ui-xs text-muted-foreground uppercase tracking-wider">
           {label}
         </span>
         {help && <FieldHelp title={label}>{help}</FieldHelp>}
@@ -284,7 +284,7 @@ export function Step({
 }) {
   return (
     <div className="flex gap-3.5">
-      <div className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/60 font-medium text-[11px] text-muted-foreground">
+      <div className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/60 font-medium text-ui-xs text-muted-foreground">
         {n}
       </div>
       <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">
@@ -351,7 +351,7 @@ export function StoredNote({
   revoke: ReactNode;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border/40 bg-muted/20 p-3 text-[11px] text-muted-foreground">
+    <div className="grid gap-2 rounded-md border border-border/40 bg-muted/20 p-3 text-ui-xs text-muted-foreground">
       <div className="flex items-start gap-2">
         <Lock className="mt-0.5 size-3.5 shrink-0" />
         <p className="leading-relaxed">

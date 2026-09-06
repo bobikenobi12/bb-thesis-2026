@@ -38,10 +38,11 @@ import {
 	AlertDialogTitle,
 } from "@repo/ui/alert-dialog";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { FacetFilter } from "@repo/ui/facet-filter";
 import { FilterBar, FilterBarReset } from "@repo/ui/filter-bar";
 import { FilterSearch } from "@repo/ui/filter-search";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { Spinner } from "@repo/ui/spinner";
 import { cn } from "@repo/ui/utils";
 import {
@@ -77,13 +78,13 @@ function RailRow({
 		>
 			<span
 				className={cn(
-					"truncate text-[13px] capitalize",
+					"truncate text-ui-md capitalize",
 					active ? "font-medium text-text-primary" : "text-text-secondary",
 				)}
 			>
 				{name}
 			</span>
-			<span className="shrink-0 font-mono text-[10.5px] text-text-tertiary">
+			<span className="shrink-0 font-mono text-ui-2xs text-text-tertiary">
 				{count}
 			</span>
 		</button>
@@ -159,9 +160,8 @@ export function RolesManager({ bootstrap }: { bootstrap: RolesBootstrap }) {
 
 	return (
 		<div>
-			<PageHeader
+			<PageToolbar
 				className="mb-4"
-				title="Roles"
 				description="Built-in roles plus the custom roles this organization defines."
 				count={builtinList.length + custom.length}
 				actions={
@@ -209,11 +209,11 @@ export function RolesManager({ bootstrap }: { bootstrap: RolesBootstrap }) {
 					    unexplained empty "Built-in" heading reads as a broken fetch. */}
 					{showsKind(query, "builtin") && (
 						<>
-							<div className="px-2.5 py-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+							<div className="px-2.5 py-2 font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 								Built-in
 							</div>
 							{builtinList.length === 0 ? (
-								<div className="px-2.5 py-2 text-[11.5px] text-text-tertiary">
+								<div className="px-2.5 py-2 text-ui-xs text-text-tertiary">
 									No matching built-in roles.
 								</div>
 							) : (
@@ -234,11 +234,11 @@ export function RolesManager({ bootstrap }: { bootstrap: RolesBootstrap }) {
 					)}
 					{showsKind(query, "custom") && (
 						<>
-							<div className="px-2.5 py-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+							<div className="px-2.5 py-2 font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 								Custom
 							</div>
 							{custom.length === 0 ? (
-								<div className="px-2.5 py-2 text-[11.5px] text-text-tertiary">
+								<div className="px-2.5 py-2 text-ui-xs text-text-tertiary">
 									{searching ? "No matching custom roles." : "No custom roles yet."}
 								</div>
 							) : (
@@ -266,9 +266,10 @@ export function RolesManager({ bootstrap }: { bootstrap: RolesBootstrap }) {
 							onDelete={() => setDeleting(selected)}
 						/>
 					) : (
-						<div className="px-5 py-16 text-center text-[13px] text-text-tertiary">
-							Select a role to view its permissions.
-						</div>
+						<EmptyState
+							title="No role selected"
+							description="Pick a role from the list to see the permissions it grants."
+						/>
 					)}
 				</div>
 			</div>
@@ -336,15 +337,15 @@ function RoleDetail({
 				<div className="min-w-0">
 					<div className="flex items-center gap-2">
 						<Shield size={15} className="text-text-tertiary" />
-						<span className="text-[15px] font-semibold capitalize text-text-primary">
+						<span className="text-ui-lg font-semibold capitalize text-text-primary">
 							{role.name}
 						</span>
-						<span className="rounded-full border border-border-strong px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-text-secondary">
+						<span className="rounded-full border border-border-strong px-2 py-0.5 font-mono text-ui-3xs uppercase tracking-[0.1em] text-text-secondary">
 							{role.builtin ? "Built-in" : "Custom"}
 						</span>
 					</div>
 					{role.description && (
-						<p className="mt-1.5 text-[12.5px] text-text-secondary">
+						<p className="mt-1.5 text-ui-sm text-text-secondary">
 							{role.description}
 						</p>
 					)}
@@ -373,9 +374,9 @@ function RoleDetail({
 				)}
 			</div>
 			<div className="px-5 py-4">
-				<p className="mb-3 text-[13px] font-medium text-text-primary">
+				<p className="mb-3 text-ui-md font-medium text-text-primary">
 					Permissions{" "}
-					<span className="font-mono text-[11px] font-normal text-text-tertiary">
+					<span className="font-mono text-ui-xs font-normal text-text-tertiary">
 						({role.permissionKeys.length})
 					</span>
 				</p>

@@ -25,36 +25,84 @@ auditable. The CLI code lives in `apps/cli/cmd/login.go`; the control-plane rout
 sequenceDiagram
   participant CLI as alethia login (CLI)
   participant BR as Browser (Console)
+  participant ST as POST /api/auth/cli/start
+  participant RQ as GET /api/auth/cli/request
   participant GEN as POST /api/auth/cli/generate
+  participant DN as POST /api/auth/cli/deny
   participant EX as POST /api/auth/cli/exchange
   participant DB as cli_logins table
-  CLI->>CLI: device_code = new UUID
-  CLI->>BR: open /cli/login?device_code=UUID
+  CLI->>CLI: device_code = new UUID, user_code = 8 chars
+  CLI->>ST: register {device_code, user_code, client, version}
+  ST->>DB: insert pending row (+ requester IP, user agent, deadline)
+  CLI->>BR: open /cli/login?device_code=UUID&user_code=CODE
   CLI->>EX: poll {device_code} every 2s
-  BR->>GEN: approve (requires Better Auth session)
-  GEN->>DB: upsert device_code -> profile_id (+ git token)
-  EX->>DB: lookup approved record
-  EX-->>CLI: 404 while pending
-  EX->>DB: found -> delete record (one-time)
-  EX-->>CLI: 200 { access_token, refresh_token }
-  CLI->>CLI: write ~/.config/alethia/credentials.json
+  BR->>RQ: read the request (requires session)
+  RQ-->>BR: account, requester, scopes, deadline
+  alt user approves
+    BR->>GEN: approve (requires session)
+    GEN->>DB: bind device_code -> profile_id (+ git token)
+    EX->>DB: claim approved row -> delete (one-time)
+    EX-->>CLI: 200 { access_token, refresh_token }
+    CLI->>CLI: write ~/.config/alethia/credentials.json
+  else user refuses
+    BR->>DN: deny (requires session)
+    DN->>DB: set denied_at, clear profile_id + stashed token
+    EX-->>CLI: 403 { error: access_denied }
+  else still deciding
+    EX-->>CLI: 404 while pending
+  end
 `} />
 
 <Steps>
 
 ### Start
-`alethia login` generates a `device_code` (a client-side **UUID**, `uuid.New()`), opens
-`${web-origin}/cli/login?device_code=<uuid>` in the browser, and starts polling.
+`alethia login` generates a `device_code` (a client-side **UUID**, `uuid.New()`) and a `user_code`
+(eight characters from an unambiguous consonant alphabet, printed to the terminal).
+
+### Register the request
+The CLI `POST`s both codes, its own name and version to `/api/auth/cli/start`. The route records a
+pending `cli_logins` row carrying the `user_code`, the requesting IP, the `user-agent`, and a
+deadline for the **decision** window. The insert never overwrites an existing row, because the route
+is unauthenticated by necessity — the terminal has no session yet.
+
+Registration is best-effort on the client: against a control plane that predates the route the CLI
+prints a warning and continues, and the browser then shows less about the request.
+
+### Read the request in the browser
+The CLI opens `${web-origin}/cli/login?device_code=<uuid>&user_code=<code>`. The page
+(`apps/console/app/(private)/cli/login/page.tsx`) requires an authenticated Better Auth session and
+shows the `user_code` from the link.
+
+`GET /api/auth/cli/request` answers with the account that approval would bind, what approval hands
+over, who is asking, and how long is left — every field from the registration rather than from the
+link, so nothing it returns is under the sender's control except the codes, which must match what
+was registered.
+
+<Callout type="warn">
+  **The page does not read that route yet.** The endpoint and the columns behind it ship ahead of
+  the screen that displays them; the richer consent screen is the page rebuild tracked in #3889 and
+  #3631. Until then the browser shows the `user_code` and a generic prompt, and this section
+  describes the route's contract rather than what a user currently sees.
+</Callout>
 
 ### Approve in the browser
-The `/cli/login` page (`apps/console/app/(private)/cli/login/page.tsx`) requires an authenticated
-Better Auth session and `POST`s to `/api/auth/cli/generate`. That route upserts a `cli_logins` row
-binding the `device_code` to `session.user.id`, and best-effort stashes the user's first linked git
-provider token (held transiently in `verification_code`).
+The page `POST`s to `/api/auth/cli/generate`. That route binds the `device_code` to
+`session.user.id`, and best-effort stashes the user's first linked git provider token (held
+transiently in `verification_code`). It refuses a `device_code` that belongs to another account, one
+that was already refused, and a `user_code` that disagrees with the registered one.
+
+### Or refuse it
+"This isn't me" `POST`s to `/api/auth/cli/deny`, which is session-gated and rate-limited exactly like
+`generate` — an unauthenticated version would let anyone terminate someone else's in-flight login.
+The route writes a `denied_at` marker, clears the bound account and anything stashed for it, and the
+refusal is terminal: the same link cannot be approved afterwards.
 
 ### Poll to exchange
 The CLI polls `POST /api/auth/cli/exchange` with `{ device_code }` every 2 seconds. A **404** means
-"pending" (`pollForToken` keeps waiting); any other non-2xx is fatal.
+"pending" (`pollForToken` keeps waiting), a **403** carrying `access_denied` means the user refused
+and the poll stops, a **429** means back off and keep waiting, and any other non-2xx is fatal. The
+claiming delete is narrowed to approved, unrefused rows, so polling neither consumes the pending row
+the browser is reading from nor erases a refusal.
 
 ### Mint and store
 Once the row shows a `profile_id`, `exchange` **deletes the record** (single use) and mints two JWTs
@@ -77,10 +125,14 @@ refresh token is gone or invalid, the CLI re-runs the browser flow.
 <Callout type="warn">
   **Deviations from RFC 8628 (be precise).** Alethia's flow is *modeled on* the device grant but is
   not a literal implementation:
-  <br />• There is **no separate short `user_code` the human types** — the `device_code` is a
-  client-generated UUID passed directly in the browser URL, and approval is a click, not a code entry.
+  <br />• The `user_code` is **compared, not typed**. The CLI mints it, registers it, and prints it;
+  the browser URL carries both codes and approval is a click. The user's job is to check that the code
+  on screen is the one their terminal printed — the server refuses any other.
+  <br />• Both codes are **minted by the client**, not issued by the authorization server. The server
+  binds the pair at registration and refuses a mismatch from then on.
   <br />• Pending status is signalled with **HTTP 404**, not the RFC's `authorization_pending` /
-  `slow_down` token-endpoint errors; the poll interval is a fixed 2s.
+  `slow_down` token-endpoint errors; the poll interval is a fixed 2s. A refusal does use the RFC's
+  `access_denied`, over HTTP 403.
   <br />• The CLI tokens are **HS256 JWTs** with placeholder `iss`/`aud` (`urn:example:issuer` /
   `urn:example:audience`), distinct from the Better Auth web session. See [JWT / JWS](/standards/jose).
 </Callout>

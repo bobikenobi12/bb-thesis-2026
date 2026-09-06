@@ -62,7 +62,7 @@ export function ElenchAskMode() {
         >
           <Pencil className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
           <span className="flex-1">
-            <span className="block text-[13px] font-medium text-foreground">
+            <span className="block text-ui-md font-medium text-foreground">
               Ask before editing
             </span>
             <span className="block text-xs text-muted-foreground">
@@ -83,7 +83,7 @@ export function ElenchAskMode() {
         >
           <ChevronsRight className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
           <span className="flex-1">
-            <span className="block text-[13px] font-medium text-foreground">
+            <span className="block text-ui-md font-medium text-foreground">
               Automatically edit
             </span>
             <span className="block text-xs text-muted-foreground">
@@ -191,7 +191,7 @@ export function ElenchModelButton() {
             >
               <Icon className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
               <span className="flex-1">
-                <span className="block text-[13px] font-medium text-foreground">
+                <span className="block text-ui-md font-medium text-foreground">
                   {m.label}
                 </span>
                 <span className="block text-xs text-muted-foreground">

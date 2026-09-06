@@ -175,21 +175,21 @@ export function PlacementSelector({ value, onChange }: PlacementSelectorProps) {
 						/>
 						<div className="min-w-0 flex-1">
 							<div className="flex items-center gap-2">
-								<span className="text-[13.5px] font-medium text-foreground">
+								<span className="text-ui-md font-medium text-foreground">
 									{template.label}
 								</span>
 								{template.required && (
-									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 										Default
 									</span>
 								)}
 								{spec?.lifecycle === "ephemeral" && (
-									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 										Ephemeral
 									</span>
 								)}
 							</div>
-							<p className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
+							<p className="mt-0.5 truncate text-ui-xs text-muted-foreground">
 								{template.description}
 							</p>
 						</div>
@@ -211,7 +211,7 @@ export function PlacementSelector({ value, onChange }: PlacementSelectorProps) {
 									<SelectItem key={mode} value={mode}>
 										<span className="flex flex-col">
 											<span>{PLACEMENT_META[mode].label}</span>
-											<span className="text-[10px] text-muted-foreground">
+											<span className="text-ui-2xs text-muted-foreground">
 												{PLACEMENT_META[mode].hint}
 											</span>
 										</span>

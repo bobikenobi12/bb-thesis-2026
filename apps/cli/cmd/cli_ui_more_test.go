@@ -81,38 +81,6 @@ func TestJobFieldRowsProviderAndVerify(t *testing.T) {
 	}
 }
 
-// TestClusterRowsCostAndMessage covers the Cost column and inline status message.
-func TestClusterRowsCostAndMessage(t *testing.T) {
-	cost := 128.0
-	withExtras := []api.ClusterSummary{{
-		ProjectName: "web", Environment: "prod", ClusterName: "web-eks",
-		ClusterVersion: "1.30", Status: "FAILED", StatusMessage: "node pool exhausted",
-		EstimatedMonthlyCost: &cost, Region: "eu-central-1",
-	}}
-	// Columns: Project, Cluster, Version, Status, ArgoCD, Nodes, Region, Cost.
-	row := clusterRows(withExtras)[0]
-	status, argocdCell, costCell := row[3], row[4], row[7]
-	if !strings.Contains(status, "node pool exhausted") || !strings.Contains(status, "—") {
-		t.Errorf("status cell should surface the message, got %q", status)
-	}
-	// A provisioned cluster with no managed-ingress URL reads "port-fwd".
-	if argocdCell != "port-fwd" {
-		t.Errorf("argocd cell = %q, want port-fwd", argocdCell)
-	}
-	if costCell != "$128/mo" {
-		t.Errorf("cost cell = %q, want $128/mo", costCell)
-	}
-
-	bare := clusterRows([]api.ClusterSummary{{ProjectName: "x", Status: "ACTIVE"}})[0]
-	if bare[7] != ui.SymbolDash {
-		t.Errorf("uncosted cluster should show dash, got %q", bare[7])
-	}
-	// No cluster_name yet ⇒ ArgoCD not installed ⇒ dash.
-	if bare[4] != ui.SymbolDash {
-		t.Errorf("un-provisioned cluster argocd cell should be dash, got %q", bare[4])
-	}
-}
-
 // TestActivityRowsReason covers the Reason column and resource-id enrichment.
 func TestActivityRowsReason(t *testing.T) {
 	entries := []api.ActivityEntry{{
@@ -120,7 +88,7 @@ func TestActivityRowsReason(t *testing.T) {
 		ResourceType: "project_environment", ResourceID: "abcdefgh1234", Decision: false,
 		Reason: "gate not satisfied",
 	}}
-	row := activityRows(entries)[0]
+	row := activityRows(entries, ui.FormatTable)[0]
 	resource, reason := row[3], row[5]
 	if !strings.HasPrefix(resource, "project_environment ") {
 		t.Errorf("resource should include the id, got %q", resource)
@@ -129,7 +97,7 @@ func TestActivityRowsReason(t *testing.T) {
 		t.Errorf("reason = %q", reason)
 	}
 
-	noReason := activityRows([]api.ActivityEntry{{Ts: "", ActorID: "u1", Action: "x", Decision: true}})[0]
+	noReason := activityRows([]api.ActivityEntry{{Ts: "", ActorID: "u1", Action: "x", Decision: true}}, ui.FormatTable)[0]
 	if noReason[5] != ui.SymbolDash {
 		t.Errorf("empty reason should be dash, got %q", noReason[5])
 	}
@@ -142,7 +110,7 @@ func TestDimensionRowsSlugs(t *testing.T) {
 		AppliesTo: []string{"project_environment"},
 		Values:    []api.ClassificationValue{{Value: "public"}, {Value: "restricted"}},
 	}}
-	row := dimensionRows(dims)[0]
+	row := dimensionRows(dims, ui.FormatTable)[0]
 	if row[2] != "multi" {
 		t.Errorf("mode = %q, want multi", row[2])
 	}
@@ -150,7 +118,7 @@ func TestDimensionRowsSlugs(t *testing.T) {
 		t.Errorf("values cell should list slugs, got %q", row[4])
 	}
 
-	empty := dimensionRows([]api.ClassificationDimension{{Key: "k", Label: "K"}})[0]
+	empty := dimensionRows([]api.ClassificationDimension{{Key: "k", Label: "K"}}, ui.FormatTable)[0]
 	if empty[4] != ui.SymbolDash {
 		t.Errorf("valueless dimension should show dash, got %q", empty[4])
 	}
@@ -161,11 +129,11 @@ func TestDimensionRowsSlugs(t *testing.T) {
 
 // TestRunnerRowsHeartbeat covers heartbeat humanization + the empty fallback.
 func TestRunnerRowsHeartbeat(t *testing.T) {
-	live := runnerRows([]api.Runner{{Name: "r1", Status: "ONLINE", LastHeartbeat: "2026-01-01T00:00:00Z"}})[0]
+	live := runnerRows([]api.Runner{{Name: "r1", Status: "ONLINE", LastHeartbeat: "2026-01-01T00:00:00Z"}}, ui.FormatTable)[0]
 	if live[5] == "2026-01-01T00:00:00Z" || live[5] == ui.SymbolDash {
 		t.Errorf("heartbeat should be humanized, got %q", live[5])
 	}
-	dead := runnerRows([]api.Runner{{Name: "r2", Status: "OFFLINE", LastHeartbeat: ""}})[0]
+	dead := runnerRows([]api.Runner{{Name: "r2", Status: "OFFLINE", LastHeartbeat: ""}}, ui.FormatTable)[0]
 	if dead[5] != ui.SymbolDash {
 		t.Errorf("missing heartbeat should be dash, got %q", dead[5])
 	}

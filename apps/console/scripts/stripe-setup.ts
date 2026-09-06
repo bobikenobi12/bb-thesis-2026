@@ -19,9 +19,9 @@
 //   (Enterprise is invoiced off-Stripe; AI Free + credit packs need no Stripe price.)
 //
 // Usage:
-//   pnpm -F console stripe:setup                 # print the env block
-//   pnpm -F console stripe:setup -- --write-env  # also patch the root .env
-//   STRIPE_SECRET_KEY=sk_live_… pnpm -F console stripe:setup -- --webhook-url=https://alethialabs.io/api/webhooks/stripe
+//   pnpm -C apps/console run stripe:setup                 # print the env block
+//   pnpm -C apps/console run stripe:setup -- --write-env  # also patch the root .env
+//   STRIPE_SECRET_KEY=sk_live_… pnpm -C apps/console run stripe:setup -- --webhook-url=https://alethialabs.io/api/webhooks/stripe
 //
 // TEST → LIVE: re-run with the live secret key (and --webhook-url) to mirror the catalog
 // into live mode; it prints the live price IDs + the new webhook signing secret to set as

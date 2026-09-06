@@ -1,5 +1,19 @@
 # Console QA — flow catalog
 
+> **This file describes what the specs ATTEMPT, not what they do.** It was written on 2026-07-05
+> alongside the specs, and the console has moved under both since. `findings.md` carries the
+> 2026-09-02 run and the per-domain verdict; where the two disagree, the run is right.
+>
+> Domain sections known to describe a console that no longer exists: **navigation-shell** (the
+> sidebar's top level, and `~/agent` — a route that has been deleted), **connectors** (rebuilt on
+> the console filter standard), **projects** (`/~/new` rebuilt), **rbac** (the members stat strip
+> was removed), **alerts** (empty states moved to `EmptyState`). Read those against `findings.md`
+> before believing a case list.
+>
+> **No status claim lives in this file.** One used to — a hand-typed per-spec tally, in a directory
+> `pnpm check:one-board` does not scan — and it was wrong with nothing able to say so. Measured
+> numbers belong in `findings.md`, beside the date and the command that produced them.
+
 Every customer journey mapped per domain (persona → journey → routes → cases incl. negatives/empty/error). Authored into `apps/console/e2e/flows/<domain>.spec.ts` (+ `.negative.spec.ts`). Assembled from the per-domain catalogs.
 
 ## Domains
@@ -44,7 +58,7 @@ Every customer journey mapped per domain (persona → journey → routes → cas
 ### Coverage notes / gaps
 - **member persona** not needed for this domain (no reduced-perm surface here).
 - **Not covered end-to-end** (intentional, per contract): real Stripe charge on the paid (trial-consumed) create-org path, real invite acceptance/delivery, OAuth provider round-trips (redirect off-origin).
-- **Environmental caveat:** the 7 real-signup tests depend on the OTP log seam; they are green when the console is responsive but currently time out because the shared QA console's `send-verification-otp` latency has spiked to ~110s+ under the parallel run (see findings) — an infra condition, not a flow defect.
+- **Environmental caveat:** the 7 real-signup tests depend on the OTP log seam, and that seam has a budget — Better Auth caps issuance at 5 sends / 60s, one shared bucket for the whole install on an env with no trusted IP header (#3789). Several of them time out on a refused send rather than on a changed page. An infra condition, not a flow defect. See `findings.md`.
 
 ---
 
@@ -67,7 +81,7 @@ Every customer journey mapped per domain (persona → journey → routes → cas
 **Negatives / empty / permission (connectors.negative.spec.ts):**
 - Not-enabled managed cloud without platform creds: Azure shows 'Not enabled on this instance' + 'Unavailable' pill + no Connect (self-skips if Azure is seeded-connected in the shared org).
 - Connect-sheet validation: token-cloud too-short token (**test.fixme**, blocked by the empty-sheet bug); api-key second-required-field ('Application Key is required.').
-- Member read-only: skipped (member persona pending, HAVE_MEMBER gate).
+- Member read-only: RUNS. The `member` persona is built by `e2e/global-setup.ts` (#3633); the HAVE_MEMBER gate is gone.
 
 **Not covered end-to-end (by design):** real cloud credential verification, actual OAuth link, actual token-cloud/api-key submit (network verify) — validation stops before server verification per the QA contract.
 
@@ -117,7 +131,7 @@ jobs,clusters,usage}`, `/{org}/{project}/settings/general`.
 
 **Not covered / deferred.** Full staged-change cycle (add node → Pending-changes bar → Discard
 confirm) — canvas nodes lack testids; captured as a nice-to-have in the plan. `member`
-permission-denied paths (persona pending). Real tofu/deploy execution stops at UI per AUTHORING.
+permission-denied paths are unwritten for this domain — the persona exists, the specs do not. Real tofu/deploy execution stops at UI per AUTHORING.
 
 ---
 
@@ -141,7 +155,7 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 
 **Auth:** every describe includes an `expect(page).not.toHaveURL(/login/)` check on a private route.
 
-**Deliberately NOT covered (per AUTHORING):** real tofu plan/apply/destroy, live credential verify, real Stripe, plan-artifact 'Plan tab' (lives in the agent artifact panel, a separate domain — the job-detail page itself only has Config Snapshot / Execution Metadata collapsibles). `member` persona permission-denied paths deferred (persona pending).
+**Deliberately NOT covered (per AUTHORING):** real tofu plan/apply/destroy, live credential verify, real Stripe, plan-artifact 'Plan tab' (lives in the agent artifact panel, a separate domain — the job-detail page itself only has Config Snapshot / Execution Metadata collapsibles). `member` persona permission-denied paths are unwritten for this domain — the persona exists (#3633), the specs do not.
 
 ---
 
@@ -149,7 +163,7 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 
 ## Runners (`/${org}/~/runners`)
 
-**Persona journey.** The runner surface is **entitlement-gated in hosted mode** (this QA console runs `ALETHIA_DEPLOYMENT_MODE=hosted`): the `byoRunners` flag (Pro+) unlocks it. So the **`team`** persona (Pro card-less trial → `byoRunners=true`) drives every interactive flow, while the Hobby **`owner`** persona is deliberately gated and drives the upsell path. In hosted mode managed fleet runners are hidden from tenants and the left-column **Pools** section isn't rendered, so the team org's baseline is 0 runners → deterministic empty states. `member` persona pending (not needed here).
+**Persona journey.** The runner surface is **entitlement-gated in hosted mode** (this QA console runs `ALETHIA_DEPLOYMENT_MODE=hosted`): the `byoRunners` flag (Pro+) unlocks it. So the **`team`** persona (Pro card-less trial → `byoRunners=true`) drives every interactive flow, while the Hobby **`owner`** persona is deliberately gated and drives the upsell path. In hosted mode managed fleet runners are hidden from tenants and the left-column **Pools** section isn't rendered, so the team org's baseline is 0 runners → deterministic empty states. `member` persona not exercised here (no reduced-perm surface on this domain).
 
 ### Routes / components exercised
 - Page: `app/(private)/[org]/~/runners/{page,runners-client}.tsx`
@@ -190,7 +204,7 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 
 ## RBAC / Access-control (org settings)
 
-**Persona → entitlement ladder** (lib/billing/plan.ts): `owner` = Hobby/community (organizations=false, teams/customRoles/sso=Enterprise, canInvite=false → members read-only, Invite = Pro upsell); `team` = Pro card-less trial (organizations=true, canInvite=true while trialing → real invite + manage controls; teams/roles/access/sso stay Enterprise-gated); `member` = reduced-perm invitee (NOT provisioned → negative paths skipped via HAVE_MEMBER).
+**Persona → entitlement ladder** (lib/billing/plan.ts): `owner` = Hobby/community (organizations=false, teams/customRoles/sso=Enterprise, canInvite=false → members read-only, Invite = Pro upsell); `team` = Pro card-less trial (organizations=true, canInvite=true while trialing → real invite + manage controls; teams/roles/access/sso stay Enterprise-gated); `member` = reduced-perm invitee, built by `e2e/global-setup.ts` through the product's own invite → accept endpoints (#3633) and asserted distinct-and-reduced by `flows/_persona-integrity.spec.ts`.
 
 **Journey:** owner opens `/${org}/~/settings/{members,teams,roles,access,sso,general}` → views the RBAC surface → attempts a gated action (invite / create team / create role / register IdP) → either the real flow (Pro invite) or the plan upsell (Pro/Enterprise) → destructive controls confirm-gated.
 
@@ -205,7 +219,7 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 - SSO: Hobby 'Single Sign-On' upsell + no 'Register provider'; Pro still gated.
 - General: profile prefilled (slug field = org slug); name/description/URL fields render; Save changes + Danger zone present; Delete org → confirm alertdialog, Cancel aborts (never confirmed — would break sibling specs); Transfer ownership stub → 'coming soon' toast.
 
-**Negatives (rbac.negative.spec.ts, 4 tests — all skipped, member persona pending / HAVE_MEMBER):** member can view members but cannot invite (authz denial); cannot change another's role; cannot remove a member; cannot delete the org. These assert the server-side PDP (requireAccessAdmin / owner-only) denials the UI otherwise renders optimistically — enable with HAVE_MEMBER=1 once the invited-member persona lands.
+**Negatives (rbac.negative.spec.ts, 4 tests, no longer gated):** member can view members but cannot invite (authz denial); cannot change another's role; cannot remove a member; cannot delete the org. These assert the server-side PDP (requireAccessAdmin / owner-only) denials the UI otherwise renders optimistically. The `HAVE_MEMBER` env gate was deleted in #3633: an unset variable turned all four into green skips.
 
 ---
 
@@ -213,7 +227,7 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 
 ## Alerts domain — e2e catalog
 
-**Persona → journey.** Alerts is a single anchor-scrolled page at `/${org}/~/alerts` with three stacked sections (Policies · Channels · Activity), each a connectors-style header with a Docs link. The whole surface is gated behind the `alerting` entitlement (Pro+). The `team` (Pro trial) persona drives the live CRUD surface; the `owner` (Hobby) persona drives the entitlement upsell. `member` (reduced perms) is pending → skipped.
+**Persona → journey.** Alerts is a single anchor-scrolled page at `/${org}/~/alerts` with three stacked sections (Policies · Channels · Activity), each a connectors-style header with a Docs link. The whole surface is gated behind the `alerting` entitlement (Pro+). The `team` (Pro trial) persona drives the live CRUD surface; the `owner` (Hobby) persona drives the entitlement upsell. `member` (reduced perms) drives the channel-management denial.
 
 **Routes.** `/${org}/~/alerts` (+ `#policies`/`#channels`/`#activity` deep-link anchors). Sidebar drill anchor-scrolls; no tabs. Seeding via `helpers/seed-alerts.ts` (`cleanAlerts`, `seedChannel`, `seedRule`, `seedDelivery`) against the org-scoped alerting tables only (safe under the parallel-agent rule).
 
@@ -230,11 +244,15 @@ permission-denied paths (persona pending). Real tofu/deploy execution stops at U
 **Negatives/empty (alerts.negative.spec.ts):**
 - Entitlement gating (Hobby): shows "Alerts & notifications" upsell + "Available on the Pro plan."; no Add channel / New policy controls; never reaches the Channels heading.
 - Verification failure: webhook to an unreachable host fails verification and is NOT persisted (sheet stays open, inline error).
-- Member permissions: cannot manage channels — SKIPPED (member persona pending, `HAVE_MEMBER`).
+- Member permissions: cannot manage channels — RUNS as of #3633.
 
 **Auth checks:** every gotoAlerts asserts `not.toHaveURL(/\/login/)`.
 
-**Status:** 18/28 green in alerts.spec.ts; the 10 reds are documented test-selector/timing bugs (strict-mode multi-matches from the single-page layout, a Testing-Library API misuse, an unbound channel-picker step, and cold-compile cascade timeouts) — all fixable in-spec, none are app defects. Fixes are enumerated in findings + the plan file; blocked from application this session by plan mode.
+**Where alerts stands** is not stated here any more, and that is the point. This line used to read
+`**Status:** 18/28 …` — a hand-typed per-spec tally, dated July, sitting in a directory
+`pnpm check:one-board` does not scan (its `docs/testing` scope stops short of `apps/console/docs/qa`).
+It was wrong and nothing could tell anyone. Every measured number in this directory now lives in
+`findings.md`, next to the date, the environment and the command that produced it.
 
 ---
 
@@ -269,7 +287,7 @@ Persona journey: an org owner (Hobby = `owner`, Pro trial = `team`) explores the
 - `member` persona unavailable in this run → no reduced-permission Activity/agent denial paths.
 - Real AI send is intentionally out of scope (QA console has no AI_GATEWAY_API_KEY → /api/agent 503).
 - CSV export click-through and multi-page "Load more" need seeded audit rows (covered by unit tests, not e2e here).
-- 4 happy-path tests need the documented test-side selector/timing fixes before the file is green (see plan file); the negative file is authored but not yet run.
+- 4 happy-path tests carry known test-side selector/timing defects (strict-mode collisions from the single-page layout). `findings.md` records what the 2026-09-02 run made of this domain.
 
 ---
 

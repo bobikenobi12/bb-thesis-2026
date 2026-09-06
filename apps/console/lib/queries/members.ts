@@ -15,6 +15,11 @@ import {
 	sql,
 } from "drizzle-orm";
 import type { InvitationRow, MemberRow } from "@/app/server/actions/members";
+import {
+	storedRolesFor,
+	toDisplayRole,
+	toOrgRole,
+} from "@/lib/authz/org-access-control";
 import { getServiceDb } from "@/lib/db";
 import { likeTerm } from "@/lib/db/like";
 import {
@@ -54,6 +59,26 @@ export type MemberRowStatus = (typeof MEMBER_ROW_STATUSES)[number];
 
 /** The role an invitation with no explicit role grants on accept (the action's mapping). */
 const DEFAULT_INVITE_ROLE = "viewer";
+
+/**
+ * The stored `role` spellings a role-facet selection matches — every requested role plus the
+ * aliases that resolve to it (better-auth's own `member` IS a viewer, `toPdpRole`). Rows are
+ * DISPLAYED under the resolved name, so selecting "viewer" must also select the rows stored as
+ * `member`, or the facet would offer a count it cannot then produce.
+ */
+function storedRoleFilter(roles: string[]): string[] {
+	const own = new Set<string>();
+	for (const role of roles) {
+		const narrowed = toOrgRole(role);
+		if (!narrowed) {
+			// Not one of ours (a custom role, or a stale value in the URL) — match it literally.
+			own.add(role);
+			continue;
+		}
+		for (const stored of storedRolesFor(narrowed)) own.add(stored);
+	}
+	return [...own];
+}
 
 /** The Members list's normalized filter query (the `normalizeMembersQuery()` output). */
 export interface MembersQuery {
@@ -138,7 +163,7 @@ export async function queryMembersPage(
 	const memberConditions = [
 		eq(member.organizationId, orgId),
 		statuses ? memberStatusPredicate(statuses) : undefined,
-		roles ? inArray(member.role, roles) : undefined,
+		roles ? inArray(member.role, storedRoleFilter(roles)) : undefined,
 		like
 			? or(ilike(user.name, like), ilike(user.username, like), ilike(user.email, like))
 			: undefined,
@@ -164,7 +189,7 @@ export async function queryMembersPage(
 		eq(invitation.status, "pending"),
 		roles
 			? or(
-					inArray(invitation.role, roles),
+					inArray(invitation.role, storedRoleFilter(roles)),
 					// A null role IS `viewer` once accepted, so the viewer facet must select it.
 					roles.includes(DEFAULT_INVITE_ROLE) ? isNull(invitation.role) : undefined,
 				)
@@ -288,6 +313,9 @@ export async function queryMembersPage(
 			: []
 		: memberRows.map((r) => ({
 				...r,
+				// The role the row GRANTS, not the string better-auth happened to store: the
+				// table's role <select> offers our four, and a raw `member` renders as no option.
+				role: toDisplayRole(r.role),
 				joinedAt: r.joinedAt.toISOString(),
 				teams: teamsByUser.get(r.userId) ?? [],
 				lastActiveAt: lastByUser.get(r.userId) ?? null,
@@ -296,7 +324,7 @@ export async function queryMembersPage(
 	const invitations: InvitationRow[] = inviteRows.map((r) => ({
 		id: r.id,
 		email: r.email,
-		role: r.role ?? DEFAULT_INVITE_ROLE,
+		role: toDisplayRole(r.role ?? DEFAULT_INVITE_ROLE),
 		inviterName: r.inviterName ?? r.inviterEmail ?? "—",
 		createdAt: r.createdAt.toISOString(),
 	}));
@@ -312,10 +340,12 @@ export async function queryMembersPage(
 	}
 	statusCounts.set("pending", facetInvites.length);
 
+	// Faceted under the SAME name the rows display, or an org with one better-auth `member`
+	// would offer two buckets — `viewer` and `member` — that mean one role.
 	const roleCounts = tally(
 		[
-			...universeMembers.map((m) => m.role),
-			...facetInvites.map((i) => i.role ?? DEFAULT_INVITE_ROLE),
+			...universeMembers.map((m) => toDisplayRole(m.role)),
+			...facetInvites.map((i) => toDisplayRole(i.role ?? DEFAULT_INVITE_ROLE)),
 		],
 		(role) => role,
 	);

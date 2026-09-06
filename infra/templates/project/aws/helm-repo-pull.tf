@@ -84,7 +84,7 @@ module "helm_repo_pull" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["${local.helm_repo_pull_ksa_namespace}:${local.helm_repo_pull_ksa_name}"]
     }
   }
@@ -92,5 +92,5 @@ module "helm_repo_pull" {
 
 output "helm_repo_pull_irsa_arn" {
   description = "IRSA role ARN annotating the keyless OCI ECR Helm chart-repo pull refresher KSA (empty unless a keyless ECR chart repo is connected)."
-  value       = try(module.helm_repo_pull[0].iam_role_arn, "")
+  value       = try(module.helm_repo_pull[0].iam_role_arn, null) != null ? module.helm_repo_pull[0].iam_role_arn : ""
 }

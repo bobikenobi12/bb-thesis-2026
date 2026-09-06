@@ -20,11 +20,11 @@ import {
 	runnerBusyKind,
 	type RunnerRow,
 } from "@/components/runners/runner-actions";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelative } from "@repo/format";
 import { Cloud, Server, Star } from "lucide-react";
 import Link from "next/link";
 
-const MONO_LABEL = "font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground";
+const MONO_LABEL = "font-mono text-ui-3xs uppercase tracking-[0.12em] text-muted-foreground";
 
 /** Human label for a runner's operator + provisioning mode. */
 function operatorLabel(runner: RunnerRow): string {
@@ -76,13 +76,13 @@ export function RunnerCard({
 						{runner.is_default && <Star className="h-3 w-3 shrink-0 fill-foreground text-foreground" />}
 					</div>
 					<div className="mt-1 flex min-w-0 items-center gap-1.5">
-						<StatusBadge status={displayStatus(runner)} className="text-[10px]" />
+						<StatusBadge status={displayStatus(runner)} className="text-ui-2xs" />
 						{instanceId && (
-							<span className="truncate font-mono text-[10px] text-muted-foreground">· {instanceId}</span>
+							<span className="truncate font-mono text-ui-2xs text-muted-foreground">· {instanceId}</span>
 						)}
 					</div>
 				</div>
-				<span className="inline-flex shrink-0 items-center gap-1 border border-border bg-muted px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted-foreground">
+				<span className="inline-flex shrink-0 items-center gap-1 border border-border bg-muted px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-[0.08em] text-muted-foreground">
 					<OperatorIcon className="h-3 w-3" />
 					{operatorLabel(runner)}
 				</span>
@@ -119,7 +119,7 @@ export function RunnerCard({
 						{isManaged
 							? `${(runner.provisioned_hours ?? 0).toFixed(1)} h`
 							: runner.last_heartbeat
-								? formatDistanceToNow(new Date(runner.last_heartbeat), { addSuffix: true })
+								? formatRelative(runner.last_heartbeat)
 								: "Never"}
 					</span>
 				</Fact>

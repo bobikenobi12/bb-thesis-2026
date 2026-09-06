@@ -4,7 +4,7 @@
 import { NODE_REGISTRY } from "@/components/design-project/canvas/graph/node-registry";
 import type { NodeKind } from "@/components/design-project/canvas/graph/types";
 import { DB_ENGINES, DEFAULT_REGION, type CloudProviderSlug } from "@/lib/cloud-providers";
-import { slugify } from "@/lib/slug";
+import { slugify } from "@/lib/utils/slugify";
 import { type ProjectFormData, projectFormSchema } from "@/lib/validations/project-form.schema";
 import type { DetectedService } from "@/types/jsonb.types";
 import type { InferredNeed, InferredStack } from "./schema";
@@ -31,7 +31,7 @@ export interface ScanInput {
 /** Canonical slug capped at 25 chars (component/project names stay short), with a
  *  non-empty fallback when the name slugifies away entirely. */
 function shortSlug(name: string, fallback = "app"): string {
-	return slugify(name, 25) || fallback;
+	return slugify(name, fallback, 25);
 }
 
 function repoName(url: string): string {

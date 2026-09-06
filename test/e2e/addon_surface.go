@@ -23,7 +23,7 @@ import (
 // AllCatalogAddOns loads all 18, from the GENERATED per-cloud fixture
 // `fixtures/addon_catalog.<cloud>.json` — which
 // is produced from apps/console/lib/addons/catalog.ts (the SSOT) via the real `resolveAddOnInstall`
-// (`pnpm -F console export:addon-catalog`), and kept honest by catalog-export.test.ts, which reds CI
+// (`pnpm -C apps/console run export:addon-catalog`), and kept honest by catalog-export.test.ts, which reds CI
 // if the fixture drifts from the catalog. Re-typing the chart coordinates here in Go would have gone
 // stale the first time someone bumped a chart — and the drift would only have surfaced as a red
 // nightly against a real cloud.
@@ -70,7 +70,7 @@ func AllCatalogAddOns() ([]types.AddOnInstall, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read add-on catalog fixture: %w (regenerate: pnpm -F console export:addon-catalog)", err)
+		return nil, fmt.Errorf("read add-on catalog fixture: %w (regenerate: pnpm -C apps/console run export:addon-catalog)", err)
 	}
 	var addons []types.AddOnInstall
 	if err := json.Unmarshal(raw, &addons); err != nil {
@@ -78,7 +78,7 @@ func AllCatalogAddOns() ([]types.AddOnInstall, error) {
 	}
 	if len(addons) < expectedCatalogSize {
 		return nil, fmt.Errorf(
-			"add-on catalog fixture holds %d add-ons, expected %d — the full-surface run would be vacuous (regenerate: pnpm -F console export:addon-catalog)",
+			"add-on catalog fixture holds %d add-ons, expected %d — the full-surface run would be vacuous (regenerate: pnpm -C apps/console run export:addon-catalog)",
 			len(addons), expectedCatalogSize,
 		)
 	}
@@ -197,7 +197,7 @@ func CatalogAddOn(id string) (types.AddOnInstall, error) {
 		}
 	}
 	return types.AddOnInstall{}, fmt.Errorf(
-		"add-on %q is not in the catalog fixture (regenerate: pnpm -F console export:addon-catalog)", id)
+		"add-on %q is not in the catalog fixture (regenerate: pnpm -C apps/console run export:addon-catalog)", id)
 }
 
 // expectedCatalogSize mirrors the console's B0.3 SSOT count guard (ADDON_CATALOG.length === 18).

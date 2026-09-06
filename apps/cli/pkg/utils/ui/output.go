@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -20,14 +21,28 @@ const (
 	FormatCSV   = "csv"
 )
 
+// validFormats is the accepted --output set as DATA rather than as switch arms, so that
+// ValidFormat and the test that pins HumanReadable range over the same one thing.
+//
+// A switch cannot be enumerated. While this was a switch, a test asking "every format this file
+// accepts" had to re-type the list and could then only filter its own guesses through
+// ValidFormat — so a fourth format whose spelling was not already guessed left the test green,
+// which is precisely the decay the test was written to prevent.
+var validFormats = []string{FormatTable, FormatJSON, FormatCSV}
+
 // ValidFormat reports whether s is a supported --output value.
 func ValidFormat(s string) bool {
-	switch s {
-	case FormatTable, FormatJSON, FormatCSV:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(validFormats, s)
+}
+
+// HumanReadable reports whether outFmt is a format a PERSON reads, so a row builder knows whether
+// to humanise a cell at all. See Render's doc for the rule this asks about.
+//
+// Phrased as "is this for a person" and not "is this csv" on purpose: the answer a builder needs
+// is about the READER, and a fourth format added to this file gets the human default rather than
+// silently inheriting csv's raw one.
+func HumanReadable(outFmt string) bool {
+	return outFmt != FormatCSV
 }
 
 // TableSpec is the columnar projection of a result set: header titles plus the
@@ -44,6 +59,44 @@ var tableHeaderTextStyle = lipgloss.NewStyle().Foreground(InkMuted).Bold(true)
 // tables used for TTY browsing); `json` marshals the typed records so consumers
 // get whole objects, not just table cells; `csv` writes RFC-4180 rows. An empty
 // format defaults to table; an unknown format is an error.
+//
+// ── THE HOUSE RULE FOR spec.Rows, AND WHY IT IS STATED HERE ─────────────────────
+//
+// CSV CARRIES THE WIRE VALUE. The branch below writes spec.Rows VERBATIM, so every
+// display decision a row builder makes reaches a script: a date becomes
+// `9 Mar 2026, 15:04`, which no longer sorts or parses and has dropped the seconds
+// and the zone; an absent optional becomes `—` (U+2014), which a reader has to
+// special-case where an empty cell already means absent; an amount becomes
+// `$1,234.56/mo`, which stops parsing as a float. `-o json` is unaffected either
+// way — it marshals `records` and never looks at spec.Rows.
+//
+// So a row builder whose cells read differently for a machine TAKES outFmt and
+// decides here, where the format is known, rather than inside a formatter that
+// cannot see it: cost.go's costRows, verify_receipt.go's receiptRows,
+// staged.go's stagedRows, chart.go's chartRows and usage.go's usageRows all do,
+// and config.go dashes inside its table branch alone. HumanReadable below is the
+// question they ask.
+//
+// It is already the DOCUMENTED contract for one command:
+// `apps/docs/content/docs/cli/configuration.mdx` says an unset key "prints as `—`
+// in the table and as an empty string under `-o json` and `-o csv`. The dash is
+// for a person reading a column; a script tests the machine formats for
+// emptiness." That is this rule, and it was true of `config get` alone.
+//
+// The rule lives on Render and not in each of those files because it was enforced
+// three times on whichever PR a reviewer happened to open — #3736 shipped a
+// humanised cell into a shared row builder and was corrected for exactly this —
+// and a rule re-derived per review is a rule that holds wherever review looked.
+// Not every builder is converted, and the list below is the set that was MEASURED, not a closed
+// one — naming a remainder as though it were exhaustive is the same failure mode as the
+// per-review enforcement this paragraph replaces, so check the builder you are editing.
+//
+// Time formatters still humanising unconditionally: RelativeTime in activity.go,
+// connector_list.go and runner_list.go, SmartTime in project_list.go, StampOrDash in token.go.
+// Separately and more widely, the OrDash/StrOrDash/SymbolDash family substitutes U+2014 into
+// rows that reach the CSV branch unconditionally in a dozen more files — addon.go,
+// project_env.go, cloud.go, jobs_list.go, grants.go, clusters_list.go, probes.go, repo.go,
+// fleet.go, promotion.go, project_component.go and classification.go among them.
 func Render(out io.Writer, format string, spec TableSpec, records any) error {
 	switch format {
 	case "", FormatTable:

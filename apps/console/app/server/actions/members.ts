@@ -9,6 +9,7 @@ import {
 } from "@/app/server/actions/billing";
 import { ensureMemberGrant, revokeMemberGrant } from "@/lib/authz/grants";
 import { authorize, currentActor } from "@/lib/authz/guard";
+import { toDisplayRole } from "@/lib/authz/org-access-control";
 import type { BillingPlan } from "@/lib/db/schema/enums";
 import { getServiceDb } from "@/lib/db";
 import {
@@ -136,6 +137,10 @@ export async function getMembers(): Promise<MemberRow[]> {
 
 	return rows.map((r) => ({
 		...r,
+		// The role the row GRANTS, not the string better-auth happened to store. Its own built-in
+		// `member` is our viewer (`toPdpRole`), and the table's role <select> only offers our
+		// four — a raw `member` matches no option and the control renders blank.
+		role: toDisplayRole(r.role),
 		joinedAt: r.joinedAt.toISOString(),
 		teams: teamsByUser.get(r.userId) ?? [],
 		lastActiveAt: lastByUser.get(r.userId) ?? null,
@@ -201,7 +206,9 @@ export async function getInvitations(): Promise<InvitationRow[]> {
 	return rows.map((r) => ({
 		id: r.id,
 		email: r.email,
-		role: r.role ?? "viewer",
+		// Same normalisation as the member rows: a pending invite carrying better-auth's own
+		// `member` is a viewer, and the list renders both kinds through one role column.
+		role: toDisplayRole(r.role ?? "viewer"),
 		inviterName: r.inviterName ?? r.inviterEmail ?? "—",
 		createdAt: r.createdAt.toISOString(),
 	}));

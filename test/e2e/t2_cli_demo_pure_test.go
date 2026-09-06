@@ -50,9 +50,23 @@ func TestCLIDemoScoresEveryCloud(t *testing.T) {
 
 // Every tracked verdict must name an issue that LOOKS like one. A Why that says "tracked
 // elsewhere" is how a gap stops being tracked.
+//
+// SHAPE ONLY — and that is a boundary, not an omission. Whether the issue is still OPEN is a
+// question about GitHub, and this file is `_pure_test.go`: ci.yml runs it on every PR with no
+// credentials, so a network call here would make the whole file conditional on the API. The state
+// question lives in scripts/check-exclusion-issues.mjs, which holds the two halves of the
+// maintainer's ruling on #3591 apart: a CLIGap tracker must be OPEN because our own debt has to be
+// able to close, while a CloudManual tracker need only be FILED because a cloud ceiling does not
+// lift when its issue does. See DemoStep.Issue for the full statement.
 func TestCLIDemoGapsAndCeilingsAreFiled(t *testing.T) {
+	gaps, ceilings := 0, 0
 	for _, s := range CLIDemoSteps {
-		if s.Reach != CLIGap && s.Reach != CloudManual {
+		switch s.Reach {
+		case CLIGap:
+			gaps++
+		case CloudManual:
+			ceilings++
+		default:
 			continue
 		}
 		if !strings.HasPrefix(s.Issue, "#") || len(s.Issue) < 3 {
@@ -61,6 +75,19 @@ func TestCLIDemoGapsAndCeilingsAreFiled(t *testing.T) {
 		if len(s.Why) < 40 {
 			t.Errorf("step %q: Why is %d chars — too short to survive being read by somebody who was not here", s.ID, len(s.Why))
 		}
+	}
+	// THE VACUITY FLOOR, the same one TestEveryShippedCeilingCarriesAProbe carries. Every
+	// assertion above is inside a loop over a filtered set, so an empty set passes them all — and
+	// a table with no gaps and no ceilings would report this test GREEN having examined nothing.
+	//
+	// ZERO GAPS ALONE IS NOT THE VACUOUS CASE: it is the intended state, put there by #2331, and
+	// TestCLIDemoBarFailsOnlyOnCloudCeilings asserts it deliberately. It is the sum that must be
+	// non-zero, and the counts are logged so a pass says what it actually looked at rather than
+	// leaving "0 examined" and "0 wrong" rendering alike.
+	t.Logf("examined %d %s and %d %s row(s)", gaps, CLIGap, ceilings, CloudManual)
+	if gaps+ceilings == 0 {
+		t.Fatal("the table carries no gaps and no ceilings at all, so this test asserted nothing — if the " +
+			"bar is genuinely met, delete this test and say so in the PR rather than letting it pass empty")
 	}
 }
 

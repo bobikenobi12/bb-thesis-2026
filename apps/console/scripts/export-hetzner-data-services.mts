@@ -12,7 +12,7 @@
 // nightly against a real cloud. Here the fixture is DERIVED, and
 // `tests/lib/cloud-providers/hetzner-data-services-export.test.ts` fails CI if it is stale.
 //
-// Usage: pnpm -F console export:hetzner-data-services
+// Usage: pnpm -C apps/console run export:hetzner-data-services
 
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

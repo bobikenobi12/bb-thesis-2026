@@ -14,20 +14,18 @@ import (
 )
 
 const (
-	websiteURL = "https://alethialabs.io"
-	docsURL    = "https://alethialabs.io/docs"
+	websiteURL                 = "https://alethialabs.io"
+	docsURL                    = "https://alethialabs.io/docs"
+	skipUpdateNoticeAnnotation = "alethia.io/skip-update-notice"
 )
 
 func init() {
 	rootCmd.Version = version.Version
-	rootCmd.PersistentFlags().StringP("output", "o", "table", "Output format: table, json, or csv")
-	rootCmd.PersistentFlags().Bool("no-input", false, "Disable interactive prompts (fail instead of prompting)")
-	// The NON-INTERACTIVE credential. Pairs with --no-input: that one stops the CLI asking
-	// questions, this one gives it an answer to the only question a pipeline cannot answer.
-	// Prefer $ALETHIA_TOKEN in CI — a flag value lands in the process table and in shell history,
-	// where an environment variable does not.
-	rootCmd.PersistentFlags().StringVar(&serviceTokenFlag, "token", "",
-		"Service-account `token` for non-interactive use (or set $"+ServiceTokenEnv+"). Skips the interactive login entirely.")
+	// The four flags every command in the tree inherits, registered from the ONE place they are
+	// described. Their usage strings, their defaults and the rows the docs tables carry for them
+	// all come from shellFields — see shell_fields.go for why a global is the value most likely to
+	// drift, and hyg_cli_shellform_test.go for what holds the renderings together.
+	registerShellGlobalFlags(rootCmd)
 }
 
 var rootCmd = &cobra.Command{
@@ -36,15 +34,24 @@ var rootCmd = &cobra.Command{
 	Long: `alethia is the command-line interface to the Alethia control plane.
 Configure infrastructure visually, then plan, deploy, and tear it down across
 AWS, GCP, and Azure from the terminal.`,
-	// Resolves the input mode (--no-input / non-TTY stdin) before any subcommand
-	// runs, so the interactive selectors know whether prompting is allowed.
+	// Resolves the input mode (--no-input / non-TTY stdin) and the org scope (--org) before any
+	// subcommand runs, so the interactive selectors know whether prompting is allowed and every
+	// request the command makes names the same organization.
+	//
+	// This is the ONLY PersistentPreRun in the tree, and that is load-bearing rather than
+	// incidental: cobra runs the nearest one and no others, so a subcommand growing its own would
+	// silently stop resolving both. hyg_cli_orgscope_test.go asserts it.
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		resolveInputMode(cmd)
+		applyOrgScope()
 	},
 	// Runs after any subcommand that doesn't override it — surfaces the upgrade
 	// notice once per day without ever blocking the command.
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		update.CheckAndNotify(version.Version)
+		if cmd.Annotations != nil && cmd.Annotations[skipUpdateNoticeAnnotation] == "true" {
+			return
+		}
+		update.CheckAndNotify(version.Version, WebOrigin())
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		printBanner()

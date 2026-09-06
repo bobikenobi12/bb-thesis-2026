@@ -29,7 +29,28 @@ function sqlLiteral(value) {
 	return `'${value.replace(/'/g, "''")}'`;
 }
 
-const sql = postgres(url, { max: 1, onnotice: () => {} });
+/**
+ * Postgres NOTICEs that are routine and would drown the ones that matter.
+ *
+ * `IF NOT EXISTS` / `IF EXISTS` DDL emits one per object, every run, forever. They were the reason
+ * `onnotice` was stubbed out entirely — which also discarded every `RAISE NOTICE` a migration wrote
+ * ON PURPOSE.
+ */
+const ROUTINE_NOTICE = /(already exists, skipping|does not exist, skipping)/i;
+
+// FORWARD NOTICES. A migration that rewrites user data says so with `RAISE NOTICE`, and
+// `onnotice: () => {}` sent that to the floor: 0150 renames project names a person chose, name by
+// name, and the deploy that applied it would have left NO record anywhere of which ones. postgres-js
+// surfaces NOTICEs nowhere else, so the stub was the difference between an audit trail and a
+// sentence in a migration file claiming one.
+const sql = postgres(url, {
+	max: 1,
+	onnotice: (notice) => {
+		const message = typeof notice?.message === "string" ? notice.message : String(notice);
+		if (ROUTINE_NOTICE.test(message)) return;
+		console.log(`  notice: ${message}`);
+	},
+});
 
 // Postgres "already exists" error classes: duplicate_object (enum/type),
 // duplicate_table, duplicate_column. They mean the schema is already present but

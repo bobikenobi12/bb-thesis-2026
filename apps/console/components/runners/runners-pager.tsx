@@ -20,7 +20,7 @@ export function RunnersPager({
 }) {
 	if (pageCount <= 1) {
 		return (
-			<div className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+			<div className="font-mono text-ui-2xs uppercase tracking-[0.08em] text-muted-foreground">
 				{total} runner{total !== 1 ? "s" : ""}
 			</div>
 		);
@@ -28,7 +28,7 @@ export function RunnersPager({
 
 	return (
 		<div className="flex items-center justify-between gap-3">
-			<span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+			<span className="font-mono text-ui-2xs uppercase tracking-[0.08em] text-muted-foreground">
 				{total} runner{total !== 1 ? "s" : ""}
 			</span>
 			<div className="flex items-center gap-2">
@@ -42,7 +42,7 @@ export function RunnersPager({
 				>
 					<ChevronLeft className="h-4 w-4" />
 				</Button>
-				<span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+				<span className="font-mono text-ui-xs tabular-nums text-muted-foreground">
 					{page} / {pageCount}
 				</span>
 				<Button

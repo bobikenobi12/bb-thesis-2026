@@ -101,10 +101,10 @@ func TestReadOneEndpointRefusesUnvalidatedIdentifiers(t *testing.T) {
 	}
 	for _, c := range bad {
 		var stderr strings.Builder
-		if _, ok := readOneEndpoint(c.release, c.namespace, &stderr); ok {
+		if _, ok := readOneEndpoint(c.release, c.namespace, "addon-"+c.release, &stderr); ok {
 			t.Errorf("readOneEndpoint(%q, %q) = ok; want refused", c.release, c.namespace)
 		}
-		if got := readSecretRef(c.release, c.namespace, &stderr); got != "" {
+		if got := readSecretRef(c.release, c.namespace, "addon-"+c.release, &stderr); got != "" {
 			t.Errorf("readSecretRef(%q, %q) = %q; want empty", c.release, c.namespace, got)
 		}
 		if strings.Contains(stderr.String(), "REACHED") {

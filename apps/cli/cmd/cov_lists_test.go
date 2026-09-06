@@ -299,6 +299,11 @@ func covListEnvFormat(t *testing.T, mode covListMode, format string) func(args .
 	t.Cleanup(covListResetFlags)
 
 	return func(args ...string) (code int) {
+		// BOTH ends. Resetting only on the way out protects the next invocation but leaves this
+		// one at the mercy of whichever file `go test` reached first: TestList_ProjectScopedListsRequireProject
+		// drops --project from each command's arguments and asserts the refusal, and under
+		// `-shuffle` it found `addon list` still carrying a --project set two files earlier.
+		covListResetFlags()
 		defer func() {
 			covListResetFlags()
 			if r := recover(); r != nil {
@@ -309,7 +314,7 @@ func covListEnvFormat(t *testing.T, mode covListMode, format string) func(args .
 				code = e.code
 			}
 		}()
-		rootCmd.SetArgs(append(args, "--output", format))
+		execRootArgs(append(args, "--output", format))
 		if err := rootCmd.Execute(); err != nil {
 			t.Errorf("%v: %v", args, err)
 		}
@@ -459,7 +464,7 @@ func TestList_UnauthenticatedListIsFatal(t *testing.T) {
 				code = e.code
 			}
 		}()
-		rootCmd.SetArgs(append(args, "--output", "table"))
+		execRootArgs(append(args, "--output", "table"))
 		if err := rootCmd.Execute(); err != nil {
 			t.Errorf("%v: %v", args, err)
 		}

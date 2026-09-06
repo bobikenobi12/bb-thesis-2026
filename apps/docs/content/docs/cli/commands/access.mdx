@@ -14,9 +14,11 @@ Alethia's authorization model has three CLI-manageable parts:
   resource scope, as an **allow** or an explicit **deny** (deny wins).
 - **SSO providers** are the configured OIDC/SAML identity providers (read-only from the CLI).
 
-All commands operate on the **active organization** (set via `alethia org switch`); override
-per-invocation with `--org <id>`. Every command accepts the global
-[`-o, --output <table|json|csv>`](/cli/identity#output-formats) flag.
+All commands operate on the **active organization**, set with
+[`alethia org switch`](/cli/commands/organizations), or on the organization named by the global
+`--org <id>` for a single invocation. `--org` selects a scope rather than granting one: naming an
+organization you are not a member of is refused with `403`. Every command accepts it, along with the
+global [`-o, --output <table|json|csv>`](/cli/identity#output-formats) and `--no-input` flags.
 
 <Callout type="info">
 Authoring **custom roles** and **access grants** requires an **Enterprise** license. Listing roles
@@ -24,11 +26,13 @@ Authoring **custom roles** and **access grants** requires an **Enterprise** lice
 config JSON are never returned by the API.
 </Callout>
 
-## `alethia roles`
+<Callout type="info">
+No command here asks you to copy an id out of another one. `roles delete` takes `--name`, `sso get`
+takes `--domain`, `grants add` takes an email or a role name wherever it takes an id, and
+`grants remove` offers a picker — so `--no-input` always has a flag to reach for.
+</Callout>
 
-Alias: `role`.
-
-### `roles list`
+## `alethia roles list`
 
 Lists the active organization's roles — the four built-in templates (flagged) followed by any
 custom roles, with a permission count.
@@ -38,36 +42,50 @@ alethia roles list
 alethia roles list -o json
 ```
 
-### `roles create`
+## `alethia roles create`
 
-Creates a custom role. Repeat `--permission` for each `resource:action` key the role should carry.
-
-```bash
-alethia roles create deployers \
-  --permission project:plan \
-  --permission project:deploy \
-  --permission job:view
-```
-
-| Flag           | Description                                          |
-| -------------- | ---------------------------------------------------- |
-| `--permission` | Permission key to grant (repeatable, e.g. `project:deploy`) |
-
-### `roles delete <id>`
-
-Deletes a custom role (prompts for confirmation). Built-in roles cannot be deleted; grants
-referencing the role are removed too.
+Creates a custom role. Repeat `--permission` for each `resource:action` key the role should carry;
+with no `--permission` on a terminal, the keys are offered as a checklist read from the control
+plane's own catalog, so a permission added to the product appears here without a CLI release.
 
 ```bash
-alethia roles delete 3f1c…
+alethia roles create deployers --permission project:plan --permission project:deploy
+alethia roles create
 ```
 
-## `alethia grants`
+{/* fieldspec: alethia roles create */}
 
-Aliases: `grant`, `access`. A grant binds a principal to **exactly one** of a role (`--role`) or a
-single permission (`--permission`), at a resource scope. Omit `--resource` for an **org-wide** grant.
+| Field | What it is | Flag or argument | Name it by |
+| ----- | ---------- | ---------------- | ---------- |
+| Name | What the custom role is called | `[name]` | — |
+| Permissions | The resource:action keys the role carries, offered from the server's own catalog | `--permission` | — |
 
-### `grants list`
+A role with no permissions is accepted, so `--no-input` without `--permission` is not an error — it
+creates a role that grants nothing yet.
+
+## `alethia roles delete`
+
+Deletes a custom role. Name it with `--name`, or pick from the org's custom roles; grants
+referencing the role are removed with it.
+
+```bash
+alethia roles delete --name deployers --yes
+alethia roles delete
+```
+
+{/* fieldspec: alethia roles delete */}
+
+| Field | What it is | Flag or argument | Name it by |
+| ----- | ---------- | ---------------- | ---------- |
+| Role | Which custom role to delete; built-in templates cannot be deleted | `[role_id]` | `--name` |
+
+The four built-in templates cannot be deleted. They are not offered in the picker and naming one
+with `--name` is refused, because the control plane's delete filters them out and still answers
+`ok` — so asking for one used to print `Role deleted` having changed nothing.
+
+Destructive, so it confirms; `--yes` skips the prompt and is required with `--no-input`.
+
+## `alethia grants list`
 
 Lists the active organization's access grants.
 
@@ -76,58 +94,83 @@ alethia grants list
 alethia grants list -o json
 ```
 
-### `grants add`
+## `alethia grants add`
 
-Assigns a grant.
+Assigns a grant. A grant binds a principal to **exactly one** of a role (`--role`) or a single
+permission (`--permission`), at a resource scope. Omit `--resource` for an **org-wide** grant.
 
-```bash
-# Bind a user to a custom role, org-wide
-alethia grants add --principal-type user --principal <user-id> --role <role-id>
-
-# Allow a team a single permission on one project
-alethia grants add --principal-type team --principal <team-id> \
-  --permission project:deploy --resource-type project --resource <project-id>
-
-# Explicitly deny destroy on a project (deny wins over any allow)
-alethia grants add --principal <user-id> --effect deny \
-  --permission project:destroy --resource-type project --resource <project-id>
-```
-
-| Flag               | Description                                                    |
-| ------------------ | ------------------------------------------------------------- |
-| `--principal-type` | `user` (default) or `team`                                    |
-| `--principal`      | Principal id (required)                                       |
-| `--effect`         | `allow` (default) or `deny`                                   |
-| `--role`           | Role id to bind (XOR `--permission`)                          |
-| `--permission`     | Single permission key to bind (XOR `--role`)                  |
-| `--resource-type`  | Resource type to scope to (`project`, `runner`, `cloud_identity`, `org`; default `org`) |
-| `--resource`       | Resource id to scope to (omit for org-wide)                   |
-
-### `grants remove <id>`
-
-Revokes a grant (prompts for confirmation). The principal loses this access.
+`--principal` takes an **email** (or a team name) as readily as an id, and `--role` takes a **role
+name**; anything that is not already a uuid is looked up against the active org. With no
+`--principal` on a terminal, the whole grant is asked for, one question at a time.
 
 ```bash
-alethia grants remove a1b2…
+alethia grants add --principal ada@example.com --role deployers
+alethia grants add --principal platform --principal-type team --permission project:deploy --resource-type project
+alethia grants add
 ```
 
-## `alethia sso`
+{/* fieldspec: alethia grants add */}
 
-Inspect the active organization's configured SSO identity providers (OIDC and SAML). Read-only —
+| Field | What it is | Flag or argument | Name it by |
+| ----- | ---------- | ---------------- | ---------- |
+| Principal kind | Whether the grant binds a user or a team | `--principal-type` | — |
+| Principal | Who the grant is for — an email, a team name, or the id itself | `--principal` | — |
+| Effect | Whether this grant allows or explicitly denies; a deny always wins | `--effect` | — |
+| Role | The role to bind, by name or id (give this or a permission, never both) | `--role` | — |
+| Permission | The single resource:action key to bind (give this or a role, never both) | `--permission` | — |
+| Resource kind | What kind of thing the grant is scoped to; org means org-wide | `--resource-type` | — |
+| Resource | The id of the one resource to scope to; leave empty for org-wide | `--resource` | — |
+
+`--principal-type` is `user` (default) or `team`; `--effect` is `allow` (default) or `deny`. Both
+are closed sets and a value outside them is refused before anything is sent. `--resource-type` is
+not: `org` (default), `project`, `runner` and `cloud_identity` are what the picker offers, but the
+control plane stores whatever kind you name.
+
+For a **user** principal the id is the *user* id, not the member id — the same person carries both,
+which is why naming them by email is the shorter and the safer route.
+
+## `alethia grants remove`
+
+Revokes a grant. A grant has no name — it *is* the binding — so pass the id you have, or pick one
+from the org's grants.
+
+```bash
+alethia grants remove --yes
+alethia grants remove
+```
+
+{/* fieldspec: alethia grants remove */}
+
+| Field | What it is | Flag or argument | Name it by |
+| ----- | ---------- | ---------------- | ---------- |
+| Grant | Which grant to revoke; pick it from the org's grants rather than copying an id | `[grant_id]` | — |
+
+Destructive, so it confirms; `--yes` skips the prompt and is required with `--no-input`. When the
+CLI picks the grant for you, it prints which one on stderr before it asks.
+
+## `alethia sso list`
+
+Lists the active organization's configured SSO identity providers (OIDC and SAML). Read-only —
 registering a provider is done in the console. Secrets and config JSON are never shown; `Enabled`
 reflects whether the provider's domain is verified.
-
-### `sso list`
 
 ```bash
 alethia sso list
 alethia sso list -o json
 ```
 
-### `sso get <id>`
+## `alethia sso get`
 
-Shows a single provider as a detail card.
+Shows a single provider as a detail card. Name it by the email domain it serves, or pick from the
+org's providers.
 
 ```bash
-alethia sso get 3f1c…
+alethia sso get --domain example.com
+alethia sso get
 ```
+
+{/* fieldspec: alethia sso get */}
+
+| Field | What it is | Flag or argument | Name it by |
+| ----- | ---------- | ---------------- | ---------- |
+| Provider | Which configured provider to show; name it by its email domain | `[id]` | `--domain` |

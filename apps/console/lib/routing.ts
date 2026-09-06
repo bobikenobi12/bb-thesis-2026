@@ -29,6 +29,27 @@ const STATIC_RESERVED_SLUGS = [
 	// PostHog reverse-proxy path (next.config.ts rewrites /ingest/* → eu.i.posthog.com). The rewrites
 	// only match a subpath, so reserve the bare segment too — no org can be slugged `ingest`.
 	"ingest",
+	// THE `(public)` ROUTES, which were missing (#4133). Five top-level console routes were absent
+	// from this list for as long as it has existed: an org could be minted shadowing `/login`, and
+	// — the reason they were found — anything reading the first path segment as an org slug read
+	// `accept-terms` as one. `(private)/layout.tsx` redirects EVERY private route to /accept-terms
+	// while a Terms version is unaccepted, so that particular omission is the difference between a
+	// legal version bump and a console with no way back into it.
+	//
+	// `check:marketing-routes` now fails when a top-level console route is not listed here, so the
+	// next route added cannot repeat this. `auth`, `invites` and `start` were already present.
+	"accept-terms",
+	"login",
+	"onboarding",
+	"signup",
+	"sso",
+	// Next metadata convention routes are static top-level paths too. Keep these reserved so
+	// an organization cannot be minted with a slug that shadows the metadata asset.
+	"icon",
+	"apple-icon",
+	"opengraph-image",
+	"twitter-image",
+	"manifest",
 ];
 
 /** Org-segment values that must never be a real org slug — the static console/sibling
@@ -107,10 +128,6 @@ export function envHref(
 ): string {
 	return `/${orgSlug}/${projectSlug}/architecture?environment_id=${encodeURIComponent(environmentId)}`;
 }
-
-/** Vercel-style name → URL slug. Canonical implementation lives in `./slug`; re-exported
- *  here so the many `@/lib/routing` callers keep a single import site. */
-export { slugify } from "./slug";
 
 /**
  * Picks a slug that doesn't collide with `taken` by appending `-2`, `-3`, …

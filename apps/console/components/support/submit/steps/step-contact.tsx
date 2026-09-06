@@ -11,6 +11,7 @@ import {
 } from "@/lib/validations/support";
 import { Input } from "@repo/ui/input";
 import { Label } from "@repo/ui/label";
+import { SectionHeading } from "@repo/ui/section-heading";
 import {
 	Select,
 	SelectContent,
@@ -45,12 +46,11 @@ export function StepContact({ attachmentCount }: StepContactProps) {
 
 	return (
 		<div className="space-y-5">
-			<div className="space-y-1">
-				<h2 className="text-lg font-medium">How should we reach you?</h2>
-				<p className="text-sm text-muted-foreground">
-					We&apos;ll send case updates to this address.
-				</p>
-			</div>
+			<SectionHeading
+				level={2}
+				title="How should we reach you?"
+				description="We'll send case updates to this address."
+			/>
 
 			<div className="space-y-2">
 				<Label htmlFor="support-notify-email">Notification email</Label>

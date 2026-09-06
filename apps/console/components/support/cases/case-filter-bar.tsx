@@ -6,7 +6,7 @@
 // facets, and the mono reset. One language with the evidence bar
 // (components/evidence/evidence-filter-bar.tsx, the reference implementation): every control
 // is a @repo/ui filter primitive, filter state lives in the page's URL-synced zustand store,
-// and no result-count prose appears here — the count belongs in the PageHeader's pill.
+// and no result-count prose appears here — the count belongs in the page toolbar's pill.
 //
 // The bucket group is a FilterChipGroup used as a RADIO, not a multi-select: three
 // always-visible options where seeing all of them at once is the point, and "All" is the

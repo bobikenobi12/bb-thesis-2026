@@ -151,7 +151,7 @@ export function ConnectorCard({
 				{/* Wraps rather than truncates. "Verification failed" used to render as
 				    "Verification…" on a Hetzner tile — a clipped status is worse than a taller
 				    card, because the clipped half is the part that says what went wrong. */}
-				<div className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-[10px] leading-tight text-muted-foreground">
+				<div className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-ui-2xs leading-tight text-muted-foreground">
 					{isCloud && isConnected && (
 						<span className="rounded-full border border-border/60 px-1.5 py-0.5">
 							{accountCount} {accountCount === 1 ? "account" : "accounts"}
@@ -174,7 +174,7 @@ export function ConnectorCard({
 								? "This git provider has no OAuth app configured on this instance. See the docs to enable it."
 								: "This cloud needs Alethia platform credentials, which aren't configured on this instance. See the docs to enable managed cloud connections."
 						}
-						className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+						className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground"
 					>
 						Unavailable
 					</span>

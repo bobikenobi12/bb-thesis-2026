@@ -13,6 +13,39 @@ command that queues it — `project plan|apply|destroy` and `runner deploy|destr
 [Plan & Apply](/cli/commands/plan-and-apply).
 </Callout>
 
+## Choosing the job
+
+`jobs get`, `jobs logs` and `jobs cancel` each act on one job. The id is optional, and there are
+three ways to say which job you mean:
+
+```bash
+alethia jobs logs 8f3c2a1e-...        # an id you already have
+alethia jobs logs --latest --follow   # the most recent job — no id needed
+alethia jobs logs                     # a picker, on a terminal
+```
+
+`--latest` is the one to use in a script: it needs no terminal, so it works under `--no-input`.
+Narrow it until it names one job.
+
+| Flag | Description |
+|------|-------------|
+| `--latest` | Act on the most recent matching job instead of naming one. Works with `--no-input`. |
+| `--type` | Narrow to a job type: `PLAN`, `DEPLOY`, `DESTROY`, and the rest of the table below. |
+| `--status` | Narrow to a status — one of the [STATUS lifecycle](#alethia-jobs-list) values. |
+| `--project` | Narrow to a project, by name or by an id prefix. |
+
+The search covers the 50 most recent jobs, newest first. A `--type` or `--status` value outside
+the enum is refused, and the message lists the values that exist.
+
+Two combinations are refused rather than guessed:
+
+- An id **and** `--latest`. Both name a job, so obeying one would make the other a lie.
+- An id **and** a narrowing flag. `jobs logs <the id> --type DEPLOY` on a `PLAN` job would print
+  the plan's logs and look as though it had filtered.
+
+Without a terminal, without an id and without `--latest`, the command fails and says so. It never
+blocks on a prompt nobody can answer.
+
 ## `alethia jobs list`
 
 List jobs for the active organization.
@@ -23,7 +56,7 @@ alethia jobs list [--status <S>] [-n/--limit <N>]
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--status` | No | Filter by status: `QUEUED`, `CLAIMED`, `PROCESSING`, `SUCCESS`, `FAILED`, `CANCELLED`. |
+| `--status` | No | Filter by status — one of the STATUS lifecycle values below. |
 | `-n`, `--limit` | No | Jobs per page (default `20`). |
 
 Output:
@@ -34,6 +67,9 @@ Plan     SUCCESS     api-backend     fleet-hcloud-1  2 min ago     1m 12s
 Deploy   PROCESSING  api-backend     fleet-hcloud-1  30 sec ago    28s…
 Destroy  QUEUED      data-platform   —               just now      —
 ```
+
+**DURATION** is how long the job ran. A trailing `…` means it is still running. Anything over an
+hour rolls into hours — `2h 5m`, never `125m 5s` — and the console shows the same job the same way.
 
 The **TYPE** column is one of the full job-type set the Runner executes — not just the three above:
 
@@ -55,42 +91,70 @@ The **STATUS** lifecycle is `QUEUED → CLAIMED → PROCESSING → SUCCESS | FAI
 
 ## `alethia jobs get`
 
-Get detailed information about a specific job. The job ID is a **positional argument**.
+Get detailed information about one job.
 
 ```bash
-alethia jobs get <job_id>
+alethia jobs get [job_id]
+alethia jobs get --latest --type PLAN
 ```
 
-Shows: type, status, assigned Runner, all timestamps, the elench `verify_result` summary on PLAN/DEPLOY jobs, and the error message (if failed). Add `-o json` for the full execution metadata (OpenTofu outputs, cost data).
+Shows: type, status, assigned Runner, all timestamps, the elench `verify_result` summary on
+PLAN/DEPLOY jobs, the monthly cost estimate, and the error message (if failed). Add `-o json` for
+the full execution metadata (OpenTofu outputs, cost data).
+
+Timestamps are UTC, written the way the console writes them: `9 Mar 2026, 15:04`.
 
 The `Verify` line here is a one-line summary — a verdict and a count. To check the receipt's
 signature, see what it is sealed to, or read the per-control report behind that verdict, use
 [`alethia verify receipt`](/cli/commands/verify) and `alethia verify show`.
 
+The `Cost estimate` line is the Infracost breakdown the Runner attached to the job, as a monthly
+rate: `$124.56/mo (12 priced, 3 free)`. A total under one unit reads `<$1/mo` rather than
+rounding to something that looks free.
+
 ## `alethia jobs logs`
 
-Stream job logs to the terminal. The job ID is a **positional argument**.
+Stream job logs to the terminal.
 
 ```bash
-alethia jobs logs <job_id> [-f/--follow]
+alethia jobs logs [job_id] [-f/--follow]
+alethia jobs logs --latest --follow
 ```
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<job_id>` | Yes | Job ID (positional) |
+| `[job_id]` | No | Job ID (positional). Omit it and use `--latest` or the picker. |
 | `-f`, `--follow` | No | Continuously stream new log entries (like `tail -f`) |
 
+Plus the selector flags from [Choosing the job](#choosing-the-job).
+
 Without `--follow`, prints all existing logs and exits. With `--follow`, the command blocks and prints new log lines as the Runner writes them. Logs include `tofu` (OpenTofu) plan/apply output, resource creation progress, and error messages.
+
+When the CLI picked the job for you, it names which one on **stderr** before the output starts, so
+`alethia jobs logs --latest | grep Error` still gets only the logs.
 
 Press `Ctrl+C` to stop following.
 
 ## `alethia jobs cancel`
 
-Cancel a queued or in-progress job. The job ID is a **positional argument**.
+Cancel a queued or in-progress job.
 
 ```bash
-alethia jobs cancel <job_id>
+alethia jobs cancel [job_id]
+alethia jobs cancel --latest --type DEPLOY --yes   # scripted: skip the confirmation
 ```
+
+Cancelling is destructive, so it asks before acting. In a pipeline there is no terminal to ask, so
+`--yes` is **required** — without it the command fails rather than cancelling silently.
+
+When `--latest` chose the job, the command names it: in the confirmation on a terminal, and on
+stderr before it acts when `--yes` skipped the confirmation. A cancellation you cannot check is
+not a confirmation.
+
+Unless you pass `--status` yourself, `--latest` and the picker consider only the jobs that can
+still be cancelled — the non-terminal half of the STATUS lifecycle. Without that, a plan that
+finished a second ago is "the most recent job", and `--latest --yes` would either fail on the
+control plane's refusal or cancel something you did not mean while the deploy kept running.
 
 Sets the job status to CANCELLED. If the job is currently being executed by a Runner, the Runner detects the cancellation on its next status check and terminates the `tofu` process gracefully.
 
@@ -99,9 +163,17 @@ Sets the job status to CANCELLED. If the job is currently being executed by a Ru
 To block on a job from a script, queue it with `-w/--wait` rather than polling:
 
 ```bash
-# Plan and block until it finishes, then apply and block again
+# Plan and block until it finishes, then apply that exact plan and block again
 alethia project plan --project-id $ID --wait
+PLAN_JOB=$(alethia jobs get --latest --type PLAN --project $ID -o json | jq -r .id)
 alethia project apply --project-id $ID --plan-job-id $PLAN_JOB --wait
 ```
+
+On success, `--wait` prints the job's cost estimate through the same renderer `jobs get` uses.
+
+`--plan-job-id` is what makes the second command an *apply of the first one's plan*: the Runner
+checks the referenced PLAN job succeeded and downloads its artifact. Drop it and the DEPLOY
+re-plans from scratch against whatever the cloud looks like by then, which is the review window
+the flag exists to close. The id comes out of `jobs get --latest`, so nothing is copied by hand.
 
 See [Plan & Apply](/cli/commands/plan-and-apply) for the full workflow.

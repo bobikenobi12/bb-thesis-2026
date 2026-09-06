@@ -26,7 +26,7 @@ package e2e
 // real cloud. So the specs come from a GENERATED fixture on the same rail addon_catalog.<cloud>.json uses:
 //
 //	SSOT          apps/console/lib/cloud-providers/hetzner-services.ts
-//	generator     pnpm -F console export:hetzner-data-services
+//	generator     pnpm -C apps/console run export:hetzner-data-services
 //	              (apps/console/scripts/export-hetzner-data-services.mts)
 //	fixture       test/e2e/fixtures/hetzner_data_services.json
 //	drift guard   apps/console/tests/lib/cloud-providers/hetzner-data-services-export.test.ts (CI)
@@ -84,7 +84,7 @@ type hetznerDataServiceFixture struct {
 // hetznerDataServicesRegenerate is the one command that fixes every failure in this file. Repeated
 // in each error because these are read from a nightly's logs, where the surrounding doc comment is
 // not.
-const hetznerDataServicesRegenerate = "regenerate: pnpm -F console export:hetzner-data-services"
+const hetznerDataServicesRegenerate = "regenerate: pnpm -C apps/console run export:hetzner-data-services"
 
 // hetznerDataServicesFixturePath locates the generated fixture beside this package.
 func hetznerDataServicesFixturePath() (string, error) {

@@ -159,7 +159,7 @@ export function UsageCard({
         <span className="font-display text-sm font-semibold text-text-primary">
           Usage
         </span>
-        <span className="font-mono text-[10px] text-text-tertiary">
+        <span className="font-mono text-ui-2xs text-text-tertiary">
           Last 30 days
         </span>
         {data && <UsageHeaderCta orgSlug={orgSlug} data={data} />}
@@ -224,12 +224,12 @@ function UsageHeaderCta({
 
   return (
     <div className="ml-auto flex items-center gap-2">
-      <span className="rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+      <span className="rounded-full border px-2 py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
         {planMeta(data.plan).name}
       </span>
       <Link
         href={billingHref}
-        className="font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+        className="font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
       >
         Manage →
       </Link>
@@ -246,11 +246,11 @@ function UsageMeter({ row }: { row: GaugeRow }) {
     <div className="flex items-center gap-3 border-b border-border/60 py-2.5 last:border-b-0">
       <UsageRing used={row.used} limit={row.limit} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-[13px] text-text-primary">
+        <div className="flex items-center gap-1.5 text-ui-md text-text-primary">
           {row.label}
           <MetricTip tip={row.tip} />
         </div>
-        <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">
+        <div className="mt-0.5 font-mono text-ui-2xs text-text-tertiary">
           {formatUsagePercent(row.used, row.limit)}% used
         </div>
       </div>
@@ -269,11 +269,11 @@ function UsageMeter({ row }: { row: GaugeRow }) {
 function CountReadout({ row }: { row: CountRow }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="flex items-center gap-1 text-[12px] text-text-secondary">
+      <span className="flex items-center gap-1 text-ui-sm text-text-secondary">
         {row.label}
         <MetricTip tip={row.tip} />
       </span>
-      <span className="font-mono text-[13px] tabular-nums text-text-primary">
+      <span className="font-mono text-ui-md tabular-nums text-text-primary">
         {row.value.toLocaleString()}
       </span>
     </div>

@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	projectApplyProjectID string
-	projectApplyRunnerID  string
-	projectApplyPlanJobID string
-	projectApplyEnv       string
-	projectApplyWait      bool
+	projectApplyProjectRef string
+	projectApplyProjectID  string
+	projectApplyRunnerID   string
+	projectApplyPlanJobID  string
+	projectApplyEnv        string
+	projectApplyWait       bool
 )
 
 var projectApplyCmd = &cobra.Command{
@@ -27,14 +28,17 @@ var projectApplyCmd = &cobra.Command{
 			fail(err)
 		}
 
-		if projectApplyProjectID == "" {
-			projectApplyProjectID, err = selectProject(token)
-			if err != nil {
-				fail(err)
-			}
+		projectApplyProjectID, err = projectIDForJob(api.NewClient(token), token, projectApplyProjectRef, projectApplyProjectID)
+		if err != nil {
+			fail(err)
 		}
 
-		if projectApplyRunnerID == "" {
+		// The runner picker cannot be answered with prompting disabled, and the assignment is
+		// OPTIONAL — an empty id is the picker's own "Any available" default — so a scripted
+		// run simply leaves the job unassigned. Without this guard `--no-input` could not queue
+		// a DEPLOY at all without also naming a runner, which is a flag for a field the command
+		// does not require. `project destroy` already had it; these two did not.
+		if projectApplyRunnerID == "" && canPromptForm() {
 			projectApplyRunnerID, err = selectRunner(token, "")
 			if err != nil {
 				fail(err)
@@ -78,7 +82,7 @@ var projectApplyCmd = &cobra.Command{
 
 func init() {
 	projectCmd.AddCommand(projectApplyCmd)
-	projectApplyCmd.Flags().StringVar(&projectApplyProjectID, "project-id", "", "ID of the project to deploy")
+	jobProjectFlags(projectApplyCmd, &projectApplyProjectRef, &projectApplyProjectID, "deploy")
 	projectApplyCmd.Flags().StringVar(&projectApplyRunnerID, "runner-id", "", "Assign to a specific runner")
 	projectApplyCmd.Flags().StringVar(&projectApplyPlanJobID, "plan-job-id", "", "Reference a prior PLAN job")
 	projectApplyCmd.Flags().StringVar(&projectApplyEnv, "env", "", "Target environment name (default: the project's default environment)")

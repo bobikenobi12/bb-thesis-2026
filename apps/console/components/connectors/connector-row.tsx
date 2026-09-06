@@ -128,7 +128,7 @@ export function ConnectorRow({
 				</div>
 			</TableCell>
 
-			<TableCell className="font-mono text-[10px] text-muted-foreground">
+			<TableCell className="font-mono text-ui-2xs text-muted-foreground">
 				{isCloud && isConnected ? (
 					<span className="rounded-full border border-border/60 px-1.5 py-0.5">
 						{accountCount} {accountCount === 1 ? "account" : "accounts"}
@@ -150,7 +150,7 @@ export function ConnectorRow({
 								? "This git provider has no OAuth app configured on this instance. See the docs to enable it."
 								: "This cloud needs Alethia platform credentials, which aren't configured on this instance. See the docs to enable managed cloud connections."
 						}
-						className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+						className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground"
 					>
 						Unavailable
 					</span>

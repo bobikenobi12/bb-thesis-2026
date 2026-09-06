@@ -22,6 +22,20 @@ on:
       - '.github/workflows/deploy-console.yml'
   workflow_dispatch:
 
+# SERIALIZE deploys; never cancel one. Two merges to `main` in quick succession currently run two
+# full 15-job deploys concurrently, racing the same `compose pull && up -d` on the box — which is
+# how a green deploy ships a half-updated stack.
+#
+# ⚠ `cancel-in-progress: FALSE`, deliberately, and this is the one place the default is wrong. Every
+# other group added alongside this one cancels, because a superseded CI run is not evidence and
+# holding a runner is its only cost. THIS workflow ssh's into the box and restarts containers:
+# cancelling it mid-flight leaves the deploy half-applied, which is strictly worse than the race it
+# was meant to fix. The running deploy survives; GitHub keeps only the newest pending run, so an
+# intermediate push or manual redeploy can still be cancelled before it starts.
+concurrency:
+  group: deploy-console
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -772,6 +786,7 @@ jobs:
       id-token: write # assume the read-only vault role via GitHub OIDC — no stored secrets
     env:
       IMAGE_TAG: ${{ github.sha }}
+      APPS_CHANGED: ${{ needs.changes.outputs.apps }}
       ASM_SECRET_ID: alethia/prod/env
       ASM_REGION: eu-central-1
     steps:
@@ -841,7 +856,7 @@ jobs:
             # To ROTATE the credential key with no downtime: add the previous active key to the vault as
             # ALETHIA_CRED_ENCRYPTION_KEY_<oldkid>, add an `emit ALETHIA_CRED_ENCRYPTION_KEY_<oldkid>`
             # line here, set the new active key + bump ALETHIA_CRED_ENCRYPTION_KID, deploy, then run
-            # `pnpm -F console db:reencrypt` on the box. Drop the retired key + its emit line once every
+            # `pnpm -C apps/console run db:reencrypt` on the box. Drop the retired key + its emit line once every
             # row has been re-encrypted. See lib/crypto/secrets.ts for the runbook + ordering.
             echo "ALETHIA_DB_USER=alethia"
             echo "ALETHIA_DB_NAME=alethia"
@@ -995,8 +1010,6 @@ jobs:
             emit RESEND_API_KEY
             # Support: staff Slack ping on a new case/reply (lib/support/slack-notify.ts). Unset → no-op.
             emit SUPPORT_SLACK_WEBHOOK_URL
-            # Community card link on the support page (app/(private)/[org]/~/support). Unset → "coming soon".
-            emit NEXT_PUBLIC_COMMUNITY_URL
             # Admin staff dashboard @ admin.alethialabs.io (apps/admin): the Cloudflare-Access allowlist
             # (apps/admin/lib/auth/staff.ts) + the console URL its case deep-links target. COMPOSE_PROFILES
             # activates the profiled `admin` service on the box (docker compose reads it from this .env).
@@ -1042,8 +1055,8 @@ jobs:
 
           # On the box: checkout the built SHA, swap in .env, render s3.json from the
           # same storage creds (checkout -f resets that tracked file), compose up behind
-          # the tunnel. `bash -s` gets IMAGE_TAG from the ssh env.
-          ssh $SSHOPTS "root@${HOST}" "IMAGE_TAG='${IMAGE_TAG}' bash -s" <<'REMOTE'
+          # the tunnel. `bash -s` gets IMAGE_TAG + the apps build verdict from the ssh env.
+          ssh $SSHOPTS "root@${HOST}" "IMAGE_TAG='${IMAGE_TAG}' APPS_CHANGED='${APPS_CHANGED}' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/alethia
           git fetch origin main
@@ -1078,6 +1091,22 @@ jobs:
             echo "::endgroup::"
             exit 1
           fi
+          # A SHA tag is only a registry label. Read provenance from the running app container so a
+          # stale image tagged as this commit cannot turn the production deploy green (#2746). An
+          # apps build must name this exact SHA. A runner-only release legitimately retags the older,
+          # code-equivalent console image; `retag-unchanged` already diff-gated that source commit.
+          app_id="$(docker compose $cf ps -q app)"
+          deployed_commit="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_id" \
+            | sed -n 's/^ALETHIA_SOURCE_COMMIT=//p' | head -n1)"
+          if [ -z "$deployed_commit" ]; then
+            echo "::error::Running console carries no ALETHIA_SOURCE_COMMIT provenance."
+            exit 1
+          fi
+          if [ "$APPS_CHANGED" = true ] && [ "$deployed_commit" != "$IMAGE_TAG" ]; then
+            echo "::error::Running console provenance '${deployed_commit:-missing}' does not match promoted SHA '$IMAGE_TAG'."
+            exit 1
+          fi
+          echo "✓ running console carries ALETHIA_SOURCE_COMMIT=$deployed_commit (apps changed: $APPS_CHANGED)"
           # `git checkout` replaces tracked files atomically. Caddy bind-mounts one
           # tracked file, so its existing mount can stay attached to the old inode
           # even though /opt/alethia now shows the new routes. Compose cannot detect

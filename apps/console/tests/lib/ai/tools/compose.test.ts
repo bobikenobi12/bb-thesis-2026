@@ -129,13 +129,69 @@ describe("catalogTools.list_service_options", () => {
 });
 
 describe("catalogTools.cidr_for_hosts", () => {
-	it("computes the smallest fitting CIDR via the real helper", async () => {
+	// #3670: the helper used to clamp to a hardcoded [16, 28] with no idea which cloud the answer
+	// was for, so 511 hosts produced a /23 — which cloud.validateNetworkCIDR rejects on AWS, Azure
+	// and Hetzner. It is exposed to users as an AI tool, so that answer was handed out as advice
+	// and then refused by the apply gate.
+	it("widens to the cloud's floor rather than handing back a block the apply gate refuses", async () => {
+		const out = (await run(catalogTools().cidr_for_hosts, { hosts: 511, cloud: "aws" })) as {
+			cidr: string;
+			prefix: number;
+			maxPrefix: number;
+		};
+		expect(out).toMatchObject({ cidr: "10.0.0.0/18", prefix: 18, maxPrefix: 18 });
+	});
+
+	it("uses the cloud's OWN floor, not one shared floor", async () => {
+		const hetzner = (await run(catalogTools().cidr_for_hosts, { hosts: 511, cloud: "hetzner" })) as {
+			prefix: number;
+		};
+		const gcp = (await run(catalogTools().cidr_for_hosts, { hosts: 511, cloud: "gcp" })) as {
+			prefix: number;
+		};
+		// Hetzner carves down to /22 and GCP has no floor at all, so neither is widened to AWS's /18.
+		// Both land on /22 here for different reasons: Hetzner because its floor binds, GCP because
+		// 511 HOSTS needs 513 addresses and so does not fit a /23 at all.
+		expect(hetzner.prefix).toBe(22);
+		expect(gcp.prefix).toBe(22);
+	});
+
+	// The block is sized by HOSTS, and a block spends two addresses on network + broadcast. Sizing
+	// by addresses answered /23 for 511 hosts — 510 usable, one short of what was asked for. AWS's
+	// floor hid it; GCP and Alibaba, whose floors are looser than the fit, handed it straight out.
+	it.each([
+		["gcp", 511],
+		["alibaba", 511],
+		["aws", 511],
+		["gcp", 254],
+		["gcp", 2],
+	])("returns a block that actually holds the hosts asked for (%s, %i)", async (cloud, hosts) => {
+		const out = (await run(catalogTools().cidr_for_hosts, { hosts, cloud })) as {
+			usableHosts: number;
+		};
+		expect(out.usableHosts).toBeGreaterThanOrEqual(hosts);
+	});
+
+	it("clamps to the tightest floor when no cloud is given, so the answer is valid everywhere", async () => {
 		const out = (await run(catalogTools().cidr_for_hosts, { hosts: 511 })) as {
 			cidr: string;
 			prefix: number;
+			cloud: string | null;
+		};
+		expect(out).toMatchObject({ cidr: "10.0.0.0/18", prefix: 18, cloud: null });
+	});
+
+	it("still lets the host count bind when it asks for more than the floor", async () => {
+		const out = (await run(catalogTools().cidr_for_hosts, { hosts: 60000, cloud: "aws" })) as {
+			prefix: number;
+			maxPrefix: number;
 			usableHosts: number;
 		};
-		expect(out).toMatchObject({ cidr: "10.0.0.0/23", prefix: 23, usableHosts: 510 });
+		// 60000 hosts needs a /16, which is already wider than AWS's /18 floor — so the answer comes
+		// from the host count, not from the clamp. Without this the two cases above would be
+		// satisfied by a helper that returned /18 for everything.
+		expect(out).toMatchObject({ prefix: 16, maxPrefix: 18 });
+		expect(out.usableHosts).toBeGreaterThanOrEqual(60000);
 	});
 
 	it("honors a custom base address", async () => {

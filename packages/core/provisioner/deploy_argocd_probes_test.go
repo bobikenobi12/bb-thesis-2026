@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,14 +48,22 @@ func argoValuesFiles(t *testing.T, command string) []string {
 	return out
 }
 
+// argoUnconditionalValues is every values file installArgoCD writes on EVERY install, whatever the
+// cloud and whether or not there is an ingress. Kept as one list because two different tests need
+// "is this file one of the unconditional ones" and a second hand-written copy of the answer is how
+// the next unconditional file gets missed by one of them.
+func argoUnconditionalValues() []string {
+	return []string{argocd.InstallProbeValues(), argocd.InstallResourceValues()}
+}
+
 // argoIngressValues returns the PER-CLOUD INGRESS values file, or "" when the install rendered
-// none. Identified by content — everything that is not the unconditional probe values — rather
+// none. Identified by content — everything that is not one of the unconditional files — rather
 // than by filename or position, so it cannot drift if either changes.
 func argoIngressValues(t *testing.T, command string) string {
 	t.Helper()
-	probes := argocd.InstallProbeValues()
+	unconditional := argoUnconditionalValues()
 	for _, c := range argoValuesFiles(t, command) {
-		if c != probes {
+		if !slices.Contains(unconditional, c) {
 			return c
 		}
 	}
@@ -95,17 +104,17 @@ func captureArgoInstall(t *testing.T, vc *types.ProjectConfig, outputs map[strin
 	return install, contents
 }
 
-// TestInstallArgoCDAlwaysCarriesTheProbeValues is the wiring guard, and the case that matters is
-// the FIRST one: a project with no DNS at all.
+// TestInstallArgoCDAlwaysCarriesTheUnconditionalValues is the wiring guard, and the case that
+// matters is the FIRST one: a project with no DNS at all.
 //
-// The chart's default probes restart-loop argocd-server and argocd-repo-server on a small burstable
-// node — a property of the NODE, not of DNS, of a certificate or of a cloud. The natural place to
-// have put these values was next to the per-cloud ingress values, and that would have shipped the
-// fix to only the subset of projects that configure a domain, while the e2e floor runs that
-// measured the defect are exactly the ones that do. Hence a case per shape.
-func TestInstallArgoCDAlwaysCarriesTheProbeValues(t *testing.T) {
-	want := argocd.InstallProbeValues()
-
+// Both unconditional files describe the same kind of fact. The chart's default probes restart-loop
+// argocd-server and argocd-repo-server on a small burstable node, and the chart's empty `resources`
+// leaves argocd-repo-server BestEffort at the cgroup share floor (#3855). Both are properties of the
+// NODE and the CONTAINER — not of DNS, of a certificate or of a cloud. The natural place to have put
+// either was next to the per-cloud ingress values, and that would have shipped the fix to only the
+// subset of projects that configure a domain, while the e2e floor runs that measured both defects
+// are exactly the ones that do not. Hence a case per shape, and both files asserted per case.
+func TestInstallArgoCDAlwaysCarriesTheUnconditionalValues(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		vc      *types.ProjectConfig
@@ -127,22 +136,28 @@ func TestInstallArgoCDAlwaysCarriesTheProbeValues(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, contents := captureArgoInstall(t, tc.vc, tc.outputs)
-			found := false
-			for _, c := range contents {
-				if c == want {
-					found = true
+			// Named per file, not counted: "2 of 2 present" and "the same file twice" are the same
+			// number, and the failure has to say WHICH protection was dropped.
+			for _, want := range []struct{ name, body, cost string }{
+				{"probe", argocd.InstallProbeValues(), "the chart's 1-second liveness timeout would restart-loop argocd-server on a burstable node"},
+				{"resource", argocd.InstallResourceValues(), "argocd-repo-server would stay BestEffort at the cgroup CPU-share floor and first in the node's eviction ranking (#3855)"},
+			} {
+				if !slices.Contains(contents, want.body) {
+					t.Errorf("the helm install carried %d values file(s), none of them the %s values — %s.\ngot: %#v", len(contents), want.name, want.cost, contents)
 				}
-			}
-			if !found {
-				t.Fatalf("the helm install carried %d values file(s), none of them the probe values — the chart's 1-second liveness timeout would restart-loop argocd-server on a burstable node.\ngot: %#v", len(contents), contents)
 			}
 		})
 	}
 }
 
 // TestInstallArgoCDOrdersProbeValuesBeforeTheIngressValues pins the merge order on the one path
-// that ships a second values file. helm merges `-f` left to right, so a per-cloud file must be able
-// to win on any key it also sets. Today nothing overlaps; this is what keeps that true.
+// that ships a per-cloud values file. helm merges `-f` left to right, so a per-cloud file must be
+// able to win on any key it also sets. Today nothing overlaps; this is what keeps that true.
+//
+// The two unconditional files BOTH set `repoServer`, which is why the order between them is not
+// asserted as a precedence: helm deep-merges maps, so `repoServer.readinessProbe` and
+// `repoServer.resources` coexist rather than one replacing the other. What is asserted is that the
+// per-cloud file is LAST, which is the only ordering that carries a decision.
 func TestInstallArgoCDOrdersProbeValuesBeforeTheIngressValues(t *testing.T) {
 	// The GKE branch is gated on a gcp-only output PLUS cert-manager's readiness, so the identity
 	// outputs below are what make CertManagerEnabled() true — without them the switch falls through
@@ -159,13 +174,16 @@ func TestInstallArgoCDOrdersProbeValuesBeforeTheIngressValues(t *testing.T) {
 			"cloud_dns_zone_name":          "demo-zone",
 		})
 
-	if len(contents) != 2 {
-		t.Fatalf("GKE install carried %d values files, want 2 (probes then ingress):\n%s", len(contents), install)
+	unconditional := argoUnconditionalValues()
+	if len(contents) != len(unconditional)+1 {
+		t.Fatalf("GKE install carried %d values files, want %d (the unconditional ones, then the ingress):\n%s", len(contents), len(unconditional)+1, install)
 	}
-	if contents[0] != argocd.InstallProbeValues() {
-		t.Errorf("the FIRST values file is not the probe values — a per-cloud file can no longer override a probe key:\n%s", contents[0])
+	for i, want := range unconditional {
+		if contents[i] != want {
+			t.Errorf("values file %d is not the unconditional file it should be — a per-cloud file can now override one of its keys:\n%s", i, contents[i])
+		}
 	}
-	if !strings.Contains(contents[1], "ingressClassName: gce") {
-		t.Errorf("the SECOND values file is not the GKE ingress values:\n%s", contents[1])
+	if last := contents[len(contents)-1]; !strings.Contains(last, "ingressClassName: gce") {
+		t.Errorf("the LAST values file is not the GKE ingress values:\n%s", last)
 	}
 }

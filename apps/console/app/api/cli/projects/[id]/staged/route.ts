@@ -6,9 +6,16 @@
 // `view`; org-scoped via an explicit projects.org_id filter (RLS bypassed here). Mirrors
 // listStagedChanges (web); the per-change payload delta stays console-only (kind + op + target).
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { authorizeCli } from "@/lib/authz/guard";
+import {
+	type CursorScope,
+	MAX_PAGE_SIZE,
+	cursorKey,
+	paginate,
+	parsePageOpts,
+} from "@/lib/cli/paging";
 import {
 	resolveCliEnvironment,
 	resolveCliProject,
@@ -19,6 +26,8 @@ import { getServiceDb } from "@/lib/db";
 import { projectChanges, projects } from "@/lib/db/schema";
 import { cliStagedChangesResponse } from "@/lib/validations/cli-contract";
 
+const STAGED_LIST = "project-staged";
+
 export async function GET(
 	req: Request,
 	{ params }: { params: Promise<{ id: string }> },
@@ -27,7 +36,19 @@ export async function GET(
 	if ("error" in auth) return auth.error;
 	const { actor } = auth;
 	const { id } = await params;
-	const envParam = new URL(req.url).searchParams.get("env");
+	const { searchParams } = new URL(req.url);
+	const envParam = searchParams.get("env");
+	const cursorScope: CursorScope = { orgId: actor.orgId, list: STAGED_LIST };
+	const parsed = parsePageOpts(searchParams, cursorScope);
+	if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+	const asked = (key: string) => {
+		const raw = searchParams.get(key);
+		return raw !== null && raw !== "";
+	};
+	const opts =
+		!asked("limit") && !asked("cursor")
+			? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+			: parsed.opts;
 
 	try {
 		const project = await resolveCliProject(actor.orgId, id);
@@ -55,32 +76,44 @@ export async function GET(
 		}
 
 		const db = getServiceDb();
-		const rows = await db
-			.select({
-				component_type: projectChanges.component_type,
-				op: projectChanges.op,
-				component_id: projectChanges.component_id,
-				created_at: projectChanges.created_at,
-			})
-			.from(projectChanges)
-			.innerJoin(projects, eq(projectChanges.project_id, projects.id))
-			.where(
-				and(
-					eq(projectChanges.project_id, project.id),
-					eq(projectChanges.environment_id, environmentId),
-					eq(projects.org_id, actor.orgId),
-				),
-			)
-			.orderBy(asc(projectChanges.created_at));
+		const { items, page } = await paginate({
+			db,
+			table: projectChanges,
+			createdAt: projectChanges.created_at,
+			id: projectChanges.id,
+			scope: [
+				eq(projectChanges.project_id, project.id),
+				eq(projectChanges.environment_id, environmentId),
+			],
+			cursor: cursorScope,
+			opts,
+			rows: (query) =>
+				db
+					.select({
+						id: projectChanges.id,
+						component_type: projectChanges.component_type,
+						op: projectChanges.op,
+						component_id: projectChanges.component_id,
+						created_at: projectChanges.created_at,
+						cursor_key: cursorKey(projectChanges.created_at),
+					})
+					.from(projectChanges)
+					.innerJoin(projects, eq(projectChanges.project_id, projects.id))
+					.where(and(query.where, eq(projects.org_id, actor.orgId)))
+					.orderBy(...query.orderBy)
+					.limit(query.limit),
+			positionOf: (row) => ({ createdAt: row.cursor_key, id: row.id }),
+		});
 
 		return cliJson(cliStagedChangesResponse, {
 			environment: environmentName,
-			changes: rows.map((r) => ({
+			changes: items.map(({ id: _id, cursor_key: _cursor, ...r }) => ({
 				component_type: r.component_type,
 				op: r.op,
 				component_id: r.component_id,
 				created_at: r.created_at.toISOString(),
 			})),
+			page,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";

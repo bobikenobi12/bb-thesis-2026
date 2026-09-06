@@ -33,6 +33,7 @@ import { StripeElementsProvider } from "@/components/billing/stripe-elements";
 import { authClient } from "@/lib/auth/client";
 import { track } from "@/lib/analytics/track";
 import type { PaidAiTier } from "@/lib/billing/config";
+import { billingIntentErrorMessage } from "@/lib/billing/intent-error";
 import {
 	type AiPlanCatalogEntry,
 	aiPlanMeta,
@@ -115,11 +116,7 @@ export function UpgradeAiSheet({ open, onOpenChange, onUpgraded }: UpgradeAiShee
 				setClientSecret(intent.clientSecret);
 				setCurrency(intent.currency);
 			})
-			.catch(
-				(e) =>
-					alive &&
-					setError(e instanceof Error ? e.message : "Couldn't start the upgrade."),
-			);
+			.catch((error) => alive && setError(billingIntentErrorMessage(error)));
 		return () => {
 			alive = false;
 		};
@@ -270,7 +267,7 @@ function ChooserView({
 					/>
 				);
 			})}
-			<p className="px-1 text-[11px] text-text-tertiary">
+			<p className="px-1 text-ui-xs text-text-tertiary">
 				Billed monthly, cancel any time. Included usage refills on a rolling 5-hour
 				session and a weekly cycle; top-up credit packs never expire.
 			</p>
@@ -308,42 +305,42 @@ function TierCard({
 			<div className="flex items-start justify-between gap-3">
 				<div className="flex min-w-0 flex-col gap-1">
 					<div className="flex flex-wrap items-center gap-2">
-						<span className="font-display text-[15px] font-semibold text-text-primary">
+						<span className="font-display text-ui-lg font-semibold text-text-primary">
 							{entry.name}
 						</span>
 						{isCurrent && (
-							<Badge variant="secondary" className="font-mono text-[9px] uppercase">
+							<Badge variant="secondary" className="font-mono text-ui-3xs uppercase">
 								Current
 							</Badge>
 						)}
 						{!isCurrent && entry.recommended && !comingSoon && (
-							<Badge variant="secondary" className="font-mono text-[9px] uppercase">
+							<Badge variant="secondary" className="font-mono text-ui-3xs uppercase">
 								Recommended
 							</Badge>
 						)}
 						{comingSoon && (
-							<Badge variant="outline" className="font-mono text-[9px] uppercase">
+							<Badge variant="outline" className="font-mono text-ui-3xs uppercase">
 								Coming soon
 							</Badge>
 						)}
 					</div>
-					<span className="text-[12px] leading-snug text-text-secondary">
+					<span className="text-ui-sm leading-snug text-text-secondary">
 						{entry.tagline}
 					</span>
 				</div>
 				<div className="flex shrink-0 items-baseline gap-1">
-					<span className="font-display text-[20px] font-semibold tracking-tight text-text-primary">
+					<span className="font-display text-ui-xl font-semibold tracking-tight text-text-primary">
 						{amount}
 					</span>
 					{cadence && (
-						<span className="font-mono text-[11px] text-text-tertiary">/ {cadence}</span>
+						<span className="font-mono text-ui-xs text-text-tertiary">/ {cadence}</span>
 					)}
 				</div>
 			</div>
 
 			<ul className="mt-4 space-y-2 border-t border-border pt-4">
 				{entry.highlights.map((h) => (
-					<li key={h} className="flex gap-2 text-[12.5px] text-text-secondary">
+					<li key={h} className="flex gap-2 text-ui-sm text-text-secondary">
 						<Check size={13} className="mt-0.5 shrink-0 text-text-tertiary" />
 						{h}
 					</li>
@@ -394,7 +391,7 @@ function PayView({
 	if (error) {
 		return (
 			<div className="space-y-3">
-				<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-[12.5px] text-text-secondary">
+				<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-ui-sm text-text-secondary">
 					{error}
 				</p>
 				<Button variant="outline" className="w-full" onClick={onClose}>
@@ -409,7 +406,7 @@ function PayView({
 				<button
 					type="button"
 					onClick={onBack}
-					className="text-[12px] text-text-secondary transition-colors hover:text-text-primary"
+					className="text-ui-sm text-text-secondary transition-colors hover:text-text-primary"
 				>
 					← Change plan
 				</button>

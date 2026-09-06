@@ -88,22 +88,34 @@ test.describe("Hero happy-path", () => {
 		await expect(page.getByRole("button", { name: /^deploy$/i })).toBeVisible();
 
 		// 8. Land on the evidence surface — the org's "keep proving it" roll-up. Creating a
-		//    project ALWAYS seeds its environment matrix (lib/queries/projects.ts — four rows
-		//    via DEFAULT_ENVIRONMENT_MATRIX, or two on the legacy path), so by now the org has
-		//    environments and the page renders the posture table. They are DRAFT and unverified,
-		//    which is the honest state for a run that stops before a deploy.
+		//    project ALWAYS seeds its environment matrix (four rows from
+		//    DEFAULT_ENVIRONMENT_MATRIX — production/staging/dev/preview, declared in
+		//    components/design-project/placement-selector.tsx and fanned out by
+		//    insertProjectWithDefaultFabric in lib/queries/projects.ts; two on the legacy path),
+		//    so by now the org has environments and the page renders the posture table. They are
+		//    DRAFT and unverified, which is the honest state for a run that stops before a deploy.
 		//
-		//    This used to assert the "No environments yet" onboarding state, and passed — because
-		//    CI ran a COMMUNITY console (ee/dist was never built), where getOrgEvidence
-		//    short-circuits to EMPTY_EVIDENCE for the personal scope. The page was empty
-		//    regardless of data, so the assertion could not fail. CI now builds ee, so this
-		//    exercises the EE scope that production and the sandbox box run.
+		//    ASSERT THE CONTENT, NOT A HEADING (#4059). This step used to wait for an
+		//    `<h2>Environments</h2>`, and when it went red on `dev` the missing heading read as the
+		//    "no page titles" rule having deleted it. It had not — `SectionHeading level={2}` still
+		//    renders a real `<h2>` with that accessible name. The page had taken the OTHER branch:
+		//    evidence-client.tsx renders `EvidenceOnboarding` whenever `summary.environments === 0`,
+		//    and that branch contains no heading, no filter bar and no table at all. A missing
+		//    heading is therefore a SYMPTOM of an empty scope, and it names the wrong cause.
+		//
+		//    So the onboarding copy is asserted by name, and asserted FIRST: it is the branch that
+		//    actually fires, so it is the assertion whose failure states the real finding. Do NOT
+		//    relax any of this to `getByText(/environments/i)` — that matches the onboarding copy
+		//    too, and would turn the exact defect being caught here into a pass.
 		await page.goto(`/${orgSlug}/~/evidence`);
+		// Anchor on chrome both branches paint. `toHaveCount(0)` is satisfied by a page that has
+		// not rendered yet, so without this the negative below could pass on a blank document.
 		await expect(
-			page.getByRole("heading", { name: /environments/i }).first(),
-		).toBeVisible();
-		await expect(page.getByText("production").first()).toBeVisible();
+			page.getByRole("navigation", { name: "breadcrumb" }),
+		).toContainText("Evidence");
 		await expect(page.getByText("No environments yet")).toHaveCount(0);
+		// …and the content the surface exists to show: the seeded production environment's row.
+		await expect(page.getByText("production").first()).toBeVisible();
 
 		// 9. …and the clusters surface. Nothing is provisioned (we stopped before a real deploy), so it
 		//    correctly renders the empty state — the truthful end of a hermetic hero run. (List pages no

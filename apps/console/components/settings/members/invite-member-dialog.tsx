@@ -242,7 +242,7 @@ export function InviteMemberDialog({
                             {...f}
                           />
                         </FormControl>
-                        <FormMessage className="text-[11px]" />
+                        <FormMessage className="text-ui-xs" />
                       </FormItem>
                     )}
                   />
@@ -295,7 +295,7 @@ export function InviteMemberDialog({
             </Button>
 
             {/* Role legend — what each role grants (descriptions, no overflow). */}
-            <ul className="space-y-0.5 border-t pt-2.5 text-[11px] text-muted-foreground">
+            <ul className="space-y-0.5 border-t pt-2.5 text-ui-xs text-muted-foreground">
               {roles.map((r) => (
                 <li key={r.value}>
                   <span className="font-medium text-foreground">{r.label}</span>{" "}

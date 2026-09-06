@@ -11,6 +11,7 @@
 
 import { Loader2, RotateCw, ShieldCheck } from "lucide-react";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { Sheet, SheetContent } from "@repo/ui/sheet";
 import { cn } from "@repo/ui/utils";
 import { EvIcon, type IconKey, TONE_TEXT } from "@/components/evidence/evidence-status";
@@ -65,10 +66,10 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 					className={cn("shrink-0", TONE_TEXT[STATUS_TONE[ctl.status]])}
 				/>
 				<div className="flex min-w-0 flex-1 items-baseline gap-2">
-					<span className="font-mono text-[11px] text-text-primary">{ctl.id}</span>
-					<span className="truncate text-[12.5px] text-text-secondary">{ctl.title}</span>
+					<span className="font-mono text-ui-xs text-text-primary">{ctl.id}</span>
+					<span className="truncate text-ui-sm text-text-secondary">{ctl.title}</span>
 				</div>
-				<span className="shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary">
+				<span className="shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 					{ctl.severity}
 				</span>
 			</div>
@@ -79,7 +80,7 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 							{ctl.frameworks.map((fw) => (
 								<span
 									key={fw}
-									className="rounded-xs bg-surface-sunken px-1.5 py-0.5 font-mono text-[9.5px] text-text-tertiary"
+									className="rounded-xs bg-surface-sunken px-1.5 py-0.5 font-mono text-ui-3xs text-text-tertiary"
 								>
 									{fw}
 								</span>
@@ -88,18 +89,18 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 					) : null}
 					{(ctl.findings ?? []).map((f, i) => (
 						<div key={`${f.address}-${i}`} className="border-l-2 border-border-strong pl-2.5">
-							<div className="font-mono text-[11px] text-text-primary">{f.address}</div>
-							<div className="mt-0.5 text-[11.5px] leading-relaxed text-text-tertiary">
+							<div className="font-mono text-ui-xs text-text-primary">{f.address}</div>
+							<div className="mt-0.5 text-ui-xs leading-relaxed text-text-tertiary">
 								{f.message}
 							</div>
 						</div>
 					))}
 					{ctl.coverage && (
 						<div className="flex gap-2.5 rounded-sm border border-dashed border-border-strong bg-surface-sunken px-2.5 py-2">
-							<span className="shrink-0 pt-px font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary">
+							<span className="shrink-0 pt-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 								Blind spot
 							</span>
-							<span className="text-[11.5px] leading-relaxed text-text-secondary">
+							<span className="text-ui-xs leading-relaxed text-text-secondary">
 								{ctl.coverage}
 							</span>
 						</div>
@@ -114,8 +115,8 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 function SummaryPill({ label, count, tone }: { label: string; count: number; tone: Tone }) {
 	return (
 		<div className="flex items-baseline gap-1.5 rounded-md border bg-surface px-2.5 py-1.5">
-			<span className={cn("font-mono text-[13px] tabular-nums", TONE_TEXT[tone])}>{count}</span>
-			<span className="text-[10.5px] uppercase tracking-wide text-text-tertiary">{label}</span>
+			<span className={cn("font-mono text-ui-md tabular-nums", TONE_TEXT[tone])}>{count}</span>
+			<span className="text-ui-2xs uppercase tracking-wide text-text-tertiary">{label}</span>
 		</div>
 	);
 }
@@ -167,26 +168,24 @@ export function ChartScanSheet({
 				<div className="border-b border-border-faint px-5 py-4">
 					<div className="flex items-center gap-2">
 						<ShieldCheck className="size-4 text-text-tertiary" />
-						<span className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+						<span className="font-mono text-ui-2xs uppercase tracking-[0.16em] text-text-tertiary">
 							Chart safety scan
 						</span>
 					</div>
-					<div className="mt-2 text-[15px] font-semibold text-text-primary">{chartId}</div>
-					<div className="mt-1 font-mono text-[11px] text-text-tertiary">
+					<div className="mt-2 text-ui-lg font-semibold text-text-primary">{chartId}</div>
+					<div className="mt-1 font-mono text-ui-xs text-text-tertiary">
 						{repoUrl.replace(/^https?:\/\/(www\.)?/, "")} · /{chartPath.replace(/^\/+/, "")} · {chartRef}
 					</div>
 				</div>
 
 				<div className="flex-1 overflow-y-auto px-5 py-4">
 					{scanning || scanStatus === "scanning" ? (
-						<div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-							<Loader2 className="size-5 animate-spin text-text-tertiary" />
-							<div className="text-[13px] text-text-secondary">Running security checks…</div>
-							<div className="max-w-[280px] text-[11.5px] leading-relaxed text-text-tertiary">
-								Rendering the chart and evaluating it for privileged access, host mounts, missing
-								resource limits, and over-broad RBAC.
-							</div>
-						</div>
+						<EmptyState
+							className="px-0 py-16 md:px-0 md:py-16"
+							icon={<Loader2 className="animate-spin" />}
+							title="Running security checks…"
+							description="Rendering the chart and evaluating it for privileged access, host mounts, missing resource limits, and over-broad RBAC."
+						/>
 					) : report && verdict ? (
 						<div className="flex flex-col gap-4">
 							{/* Verdict + rescan */}
@@ -196,13 +195,13 @@ export function ChartScanSheet({
 									size={17}
 									className={cn("shrink-0", TONE_TEXT[verdict.tone])}
 								/>
-								<span className={cn("text-[13.5px] font-medium", TONE_TEXT[verdict.tone])}>
+								<span className={cn("text-ui-md font-medium", TONE_TEXT[verdict.tone])}>
 									{verdict.label}
 								</span>
 								<Button
 									variant="ghost"
 									size="sm"
-									className="ml-auto h-7 gap-1.5 px-2 text-[11.5px]"
+									className="ml-auto h-7 gap-1.5 px-2 text-ui-xs"
 									onClick={onRescan}
 								>
 									<RotateCw className="size-3" /> Rescan
@@ -228,27 +227,33 @@ export function ChartScanSheet({
 								))}
 							</div>
 
-							<p className="pt-1 text-[11px] leading-relaxed text-text-tertiary">
+							<p className="pt-1 text-ui-xs leading-relaxed text-text-tertiary">
 								Advisory — findings are surfaced, not enforced, while charts are trusted-only. They
 								become a hard admission gate when untrusted charts open up.
 							</p>
 						</div>
 					) : (
 						/* Unscanned / failed empty state */
-						<div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-							<EvIcon
-								name={scanStatus === "failed" ? "triangle-alert" : "shield-question"}
-								size={20}
-								className={scanStatus === "failed" ? TONE_TEXT.bad : TONE_TEXT.muted}
-							/>
-							<div className="text-[13px] text-text-secondary">
-								{scanStatus === "failed" ? "The last scan failed." : "This chart hasn't been scanned yet."}
-							</div>
-							<Button size="sm" className="mt-1 gap-1.5" onClick={onRescan}>
-								<ShieldCheck className="size-3.5" />
-								{scanStatus === "failed" ? "Retry scan" : "Scan chart"}
-							</Button>
-						</div>
+						<EmptyState
+							className="px-0 py-16 md:px-0 md:py-16"
+							icon={
+								<EvIcon
+									name={scanStatus === "failed" ? "triangle-alert" : "shield-question"}
+									className={scanStatus === "failed" ? TONE_TEXT.bad : TONE_TEXT.muted}
+								/>
+							}
+							title={
+								scanStatus === "failed"
+									? "The last scan failed"
+									: "This chart hasn't been scanned yet"
+							}
+							action={
+								<Button size="sm" className="gap-1.5" onClick={onRescan}>
+									<ShieldCheck className="size-3.5" />
+									{scanStatus === "failed" ? "Retry scan" : "Scan chart"}
+								</Button>
+							}
+						/>
 					)}
 				</div>
 			</SheetContent>

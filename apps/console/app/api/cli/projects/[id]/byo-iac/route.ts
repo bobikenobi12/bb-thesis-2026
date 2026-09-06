@@ -22,6 +22,10 @@ import { cliJson } from "@/lib/cli/respond";
 import { getServiceDb } from "@/lib/db";
 import { projectIacSources, projects } from "@/lib/db/schema";
 import {
+	isNotReservedTfvarKey,
+	RESERVED_TFVAR_MESSAGE,
+} from "@/lib/validations/byo-iac";
+import {
 	cliByoChartAttachResponse,
 	cliIacSourceResponse,
 	cliOkResponse,
@@ -125,8 +129,16 @@ const attachIacBody = z.object({
 	ref: z.string().trim().min(1).nullish(),
 	path: z.string().trim().optional(),
 	git_credential_id: z.string().uuid().nullish(),
+	// The reserved platform namespace, checked HERE and not only in the action. attachIacSource
+	// validates with the throwing `.parse()`, and byoWriteError classifies an escaped ZodError by
+	// regex over its message — which for this rule fell through to a 500 carrying a raw Zod dump.
+	// A rule the CLI can trip needs a 400 that names the field, not a server fault.
 	var_values: z
 		.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+		.refine(
+			(v) => Object.keys(v).every(isNotReservedTfvarKey),
+			RESERVED_TFVAR_MESSAGE,
+		)
 		.optional(),
 });
 
@@ -142,8 +154,12 @@ export async function POST(
 
 	const parsed = attachIacBody.safeParse(await req.json().catch(() => null));
 	if (!parsed.success) {
+		// The ACTUAL first issue, not a fixed sentence. This used to answer "repo_url is required"
+		// whatever had failed, which for any rule but that one names the wrong field.
+		const first = parsed.error.issues[0];
+		const where = first === undefined || first.path.length === 0 ? "" : `${first.path.join(".")}: `;
 		return NextResponse.json(
-			{ error: "Invalid request body: repo_url is required" },
+			{ error: `Invalid request body: ${where}${first?.message ?? "repo_url is required"}` },
 			{ status: 400 },
 		);
 	}

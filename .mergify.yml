@@ -25,6 +25,30 @@
 
 queue_rules:
   - name: dev
+    # ── WHY batch_size AT ALL ──
+    # Unset, Mergify's default is 1: every queued PR gets its OWN full speculative branch and its own
+    # 11 required checks. Measured on 2026-09-02 at 14:08 UTC, with 20 PRs open: 25 of 34 active CI
+    # runs were speculative merge-queue branches against 9 real PR runs, and 64 speculative branches
+    # had been created that day to land 38 merges. Three quarters of the CI budget re-validating the
+    # queue one PR at a time is why a green, reviewed, conflict-free PR sat ~50 minutes at the front,
+    # and why #3784 was open for seven hours.
+    #
+    # A batch validates five PRs as ONE tree, so five land per cycle instead of one. It is the same
+    # tree the queue would have produced anyway — batching changes how many checks pay for it, not
+    # what is checked, and the speculative merge is still what catches lane-vs-lane defects that
+    # per-PR CI is blind to (a symbol declared in two PRs, an import of a module another deleted).
+    #
+    # ── THE COST, STATED ──
+    # When a batch FAILS, Mergify splits it to isolate the culprit and re-runs the remainder, so a
+    # failure costs more CI than it would have serially. That trade is only worth taking while
+    # batches are usually green: on 2026-09-02 every batch observed was green, and the failures that
+    # did occur were caught on the PRs' own CI before they were ever queued. If red batches become
+    # common, LOWER this number rather than removing it — 5 → 2 keeps most of the win.
+    #
+    # ── WHERE THIS TAKES EFFECT ──
+    # Mergify reads its configuration from the DEFAULT branch (`main`). Merging this to `dev` changes
+    # nothing until it rides dev→staging→main, same as the review-thread gate above it.
+    batch_size: 5
     # queue_conditions decide which PRs THIS queue accepts — REQUIRED, or a PR can't be assigned to the queue
     # (its absence returned `queue_rule_name: null` before). merge_conditions decide WHEN to merge.
     queue_conditions:

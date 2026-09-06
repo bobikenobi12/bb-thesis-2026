@@ -35,6 +35,19 @@ apps/console/lib/compat/generated/matrix.ts  linguist-generated=true
 # generated half exists to prevent.
 test/e2e/generated/programme.json  linguist-generated=true
 
+# ── shared-surface ledger counters (pnpm gen:shared-surface) ──────────────────────────────────
+# apps/console/shared-surface-allowlist.yaml carries TWO derived lines — `baseline:` and `debt:`,
+# entry counts over its own rows — and several hundred hand-authored ones. It is therefore NOT
+# marked generated, deliberately: collapsing it in review would hide the rows, and the rows are the
+# whole point of reviewing a diff to this file.
+#
+# THE RULE above applies to those two lines only: on a conflict at `baseline:` or `debt:`, TAKE
+# EITHER SIDE and re-run `pnpm gen:shared-surface`. The result is a function of the merged rows, so
+# which hunk was picked cannot matter, and `check:shared-surface` proves it. Hand-resolving them is
+# arithmetic — and when two lanes remove the same NUMBER of different rows it merges clean and
+# wrong, which is the case no reviewer sees (#3788). A conflict among the ROWS is a real
+# disagreement and is resolved by reading them.
+
 # ── Go coverage floors (scripts/go-coverage.sh --update) ──────────────────────────────────────
 # THE RULE above applies with unusual force here. These files are laid out as fixed 4-line records
 # precisely so that two PRs raising DIFFERENT packages merge cleanly; hand-resolving a conflict

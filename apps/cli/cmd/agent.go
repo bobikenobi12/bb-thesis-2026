@@ -33,7 +33,7 @@ var agentListCmd = &cobra.Command{
 		client := api.NewClient(token)
 		if interactiveTable(cmd) {
 			var agents []api.Agent
-			ui.RunSpinner("Fetching agents...", func() {
+			runSpinner("Fetching agents...", func() {
 				agents, err = client.ListAgents()
 			})
 			if err != nil {
@@ -78,15 +78,25 @@ func runAgentList(c apiClient, out io.Writer, format string) error {
 }
 
 var agentGetCmd = &cobra.Command{
-	Use:   "get <agent-id>",
+	Use:   "get [agent-id]",
 	Short: "Show an agent identity's persona, mission, and tool scope",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
+	Long: `Shows one agent identity: its persona, mission, allowed tool scope and memory namespace.
+
+Omit the id on a terminal and the identities you can see are offered to choose from, so the id
+never has to be copied out of "agent list".`,
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		if err := runAgentGet(api.NewClient(token), os.Stdout, outputFormat(cmd), args[0]); err != nil {
+		client := api.NewClient(token)
+		ref, err := resolveAgentID(client, args)
+		if err != nil {
+			fail(err)
+		}
+		announceResolvedAgent(ref)
+		if err := runAgentGet(client, os.Stdout, outputFormat(cmd), ref.ID); err != nil {
 			failf("Failed to get agent: %v", err)
 		}
 	},
@@ -102,16 +112,17 @@ func runAgentGet(c apiClient, out io.Writer, format, id string) error {
 	if format == ui.FormatJSON {
 		return ui.Render(out, format, ui.TableSpec{}, a)
 	}
-	tools := ui.SymbolDash
-	if len(a.ToolScope) > 0 {
-		tools = strings.Join(a.ToolScope, ", ")
-	}
 	rows := [][]string{
 		{"id", a.ID},
 		{"persona", a.Persona},
 		{"mission", a.Mission},
-		{"tool scope", tools},
+		{"tool scope", ui.OrDash(strings.Join(a.ToolScope, ", "))},
 		{"namespace", a.MemoryNamespace},
+		// project_id and created_at came over the wire and were rendered nowhere. An identity
+		// scoped to a project answers a different question from an org-wide one, and it was
+		// only visible in -o json.
+		{"project", ui.StrOrDash(a.ProjectID)},
+		{"created", ui.RelativeTime(a.CreatedAt)},
 		{"version", fmt.Sprintf("%d", a.Version)},
 	}
 	return ui.RenderCard(out, format, "alethia · agent", rows, a)

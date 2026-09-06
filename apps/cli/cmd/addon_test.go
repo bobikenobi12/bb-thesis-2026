@@ -65,15 +65,15 @@ func TestRunAddonListError(t *testing.T) {
 
 // strOrDash renders nil/empty as the dash glyph and a value verbatim.
 func TestStrOrDash(t *testing.T) {
-	if strOrDash(nil) != ui.SymbolDash {
+	if ui.StrOrDash(nil) != ui.SymbolDash {
 		t.Error("nil should be dash")
 	}
 	empty := ""
-	if strOrDash(&empty) != ui.SymbolDash {
+	if ui.StrOrDash(&empty) != ui.SymbolDash {
 		t.Error("empty should be dash")
 	}
 	v := "x"
-	if strOrDash(&v) != "x" {
+	if ui.StrOrDash(&v) != "x" {
 		t.Error("value should pass through")
 	}
 }

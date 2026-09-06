@@ -16,7 +16,7 @@ import {
 } from "./generated/catalog";
 
 /** The provisioning-slug values as a runtime set, kept in lockstep with the type via `satisfies`. */
-const CLOUD_PROVIDER_SLUGS = [
+export const CLOUD_PROVIDER_SLUGS = [
 	"aws",
 	"gcp",
 	"azure",

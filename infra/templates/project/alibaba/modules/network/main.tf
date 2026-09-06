@@ -43,7 +43,7 @@ resource "alicloud_nat_gateway" "this" {
 
   vpc_id           = alicloud_vpc.this.id
   nat_gateway_name = "ngw-${var.vpc_name}"
-  vswitch_id       = alicloud_vswitch.this[0].id
+  vswitch_id       = try(alicloud_vswitch.this[0].id, null)
   nat_type         = "Enhanced"
   tags             = var.tags
 }

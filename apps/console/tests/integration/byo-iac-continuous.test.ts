@@ -39,7 +39,7 @@ import type { ProvisionJobType } from "@/lib/db/schema/enums";
 import { sweepDriftSchedule } from "@/lib/drift/dispatch";
 import { DRIFT_CADENCE_MS } from "@/lib/drift/schedule";
 import { verifySnapshot } from "@/lib/runners/snapshot-sig";
-import { describeIfDb } from "./db";
+import { defaultIfFirst, describeIfDb } from "./db";
 
 const USER = randomUUID();
 const ORG = randomUUID();
@@ -83,6 +83,7 @@ describeIfDb("BYO-IaC continuous re-proving + reconcile — real Postgres", () =
 				stage,
 				status: "ACTIVE",
 				fabric_id: fabricId,
+				is_default: defaultIfFirst(projectId),
 				...overrides,
 			})
 			.returning({ id: projectEnvironments.id });

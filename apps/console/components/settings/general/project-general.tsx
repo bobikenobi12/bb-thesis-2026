@@ -114,7 +114,7 @@ export function ProjectGeneral({
                   {...form.register("name")}
                 />
                 {form.formState.errors.name && (
-                  <span className="text-[11px] text-destructive">
+                  <span className="text-ui-xs text-destructive">
                     {form.formState.errors.name.message}
                   </span>
                 )}
@@ -123,7 +123,7 @@ export function ProjectGeneral({
                 label="Project URL"
                 hint="The slug in this project's URLs — kept stable across renames."
               >
-                <div className="flex h-[38px] items-center overflow-hidden rounded-sm border border-border-strong bg-surface-sunken px-3 font-mono text-[12px] text-text-tertiary">
+                <div className="flex h-[38px] items-center overflow-hidden rounded-sm border border-border-strong bg-surface-sunken px-3 font-mono text-ui-sm text-text-tertiary">
                   /{orgSlug}/{slug ?? "—"}
                 </div>
               </SettingsField>

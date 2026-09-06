@@ -72,7 +72,7 @@ export function ChannelRouting({
 						>
 							<ChannelIcon type={c.type} active={c.is_verified} size={16} />
 							<span className="min-w-0 flex-1 truncate">{c.name}</span>
-							<span className="font-mono text-[10px] text-muted-foreground">
+							<span className="font-mono text-ui-2xs text-muted-foreground">
 								{FLOOR_OPTIONS.find((o) => o.value === (b.min_severity ?? "any"))?.label}
 							</span>
 						</div>

@@ -12,7 +12,10 @@ these commands only inspect and re-probe one.
 <Callout type="info">
 The CLI is a client of the same Console API. These subcommands call `/cli/providers/<provider>/*`
 with your [CLI token](/cli/authentication) and operate on the **active organization**
-(`alethia org switch`, or `--org <id>` per invocation).
+(`alethia org switch`), or on the organization named by the global `--org <id>` flag.
+You must be a member of the organization you name; if you are not, the request is refused
+with `403`. A service token is pinned to the organization it was minted for, and a request
+carrying a different one is refused with `403` rather than quietly rescoped.
 </Callout>
 
 ## `alethia provider status`
@@ -22,11 +25,14 @@ Show the connection status of a cloud provider identity.
 ```bash
 alethia provider status aws
 alethia provider status gcp -o json
+
+# Or omit the provider for a picker over your connections
+alethia provider status
 ```
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `<provider>` | Yes | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. |
+| `[provider]` | No | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. Omit for a picker over the accounts you have connected. |
 
 Renders a field/value card: **status** (`connected` | `disconnected`), the **identity** id, and the
 provider-specific identity fields that are set (AWS account id / role arn, GCP project id / service
@@ -41,11 +47,19 @@ identity for a provider. The server verifies **inline** — there is no job to p
 
 ```bash
 alethia provider verify aws
+
+# Or omit the provider for a picker over your connections
+alethia provider verify
 ```
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `<provider>` | Yes | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. |
+| `[provider]` | No | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. Omit for a picker over the accounts you have connected. |
+
+The picker lists the accounts you have actually connected, not every provider Alethia
+supports: these commands read and re-probe an existing connection, so offering one with no
+identity behind it can only produce "no connected identity". Under `--no-input` there is no
+picker, so the argument is required and the refusal names the valid providers.
 
 The command resolves the connected identity via `status`, then re-verifies it and renders the
 verdict: **identity**, **status**, **verified**, and — when degraded — the **missing permissions**.

@@ -1,0 +1,4 @@
+{
+  "address": "aws_iam_policy.admin",
+  "message": "policy grants Action:* on Resource:*"
+}

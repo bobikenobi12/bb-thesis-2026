@@ -14,6 +14,7 @@
 
 import { Boxes } from "lucide-react";
 import { formatMonthlyRate } from "@repo/format";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
 import { useEnvironmentStatus } from "@/lib/canvas/environment-status-context";
 import { NODE_STATUS_META, nodeStatusKey, useNodeStatus } from "@/lib/canvas/node-status";
@@ -62,13 +63,11 @@ export function ExternalPanel({ nodeId }: { nodeId: string }) {
 					<div className="truncate font-mono text-xs text-muted-foreground">
 						{config.module || "root module"}
 					</div>
-					<span
-						className={cn("vx-status", `vx-status--${meta.vx}`)}
+					<StatusBadge
+						status={meta.label}
+						tier={meta.vx}
 						title={status.message ?? meta.label}
-					>
-						<span className="vx-status__dot" />
-						{meta.label}
-					</span>
+					/>
 				</div>
 			</div>
 
@@ -95,10 +94,10 @@ export function ExternalPanel({ nodeId }: { nodeId: string }) {
 						const hasDrift = drifted.has(m.address);
 						return (
 							<li key={m.address} className="space-y-1 px-4 py-2.5">
-								<div className="truncate font-mono text-[11px] text-foreground" title={m.address}>
+								<div className="truncate font-mono text-ui-xs text-foreground" title={m.address}>
 									{m.address}
 								</div>
-								<div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] text-muted-foreground">
+								<div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-ui-2xs text-muted-foreground">
 									<span>{m.type}</span>
 									{m.action && (
 										<span className={cn(m.action !== "no-op" && "text-foreground")}>

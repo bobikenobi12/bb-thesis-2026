@@ -93,7 +93,7 @@ function RailAccount() {
             >
               <Avatar className="h-7 w-7">
                 <AvatarImage src={user?.image ?? undefined} alt="" />
-                <AvatarFallback className="bg-muted text-[10px] font-medium text-muted-foreground">
+                <AvatarFallback className="bg-muted text-ui-2xs font-medium text-muted-foreground">
                   {userInitials(user)}
                 </AvatarFallback>
               </Avatar>

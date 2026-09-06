@@ -1,55 +1,118 @@
 # SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Shared-surface exceptions — the machine-readable half of CLAUDE.md §6.
+# Shared-surface exceptions and measured drift — the machine-readable half of CLAUDE.md §6.
 #
 # §6: "if two pages disagree about how something looks or reads, the user is being told the product
 # is two products." `check:shared-surface` (scripts/check-shared-surface.mjs) fails on any console
-# site that hand-rolls a number, a date or a page title instead of reaching for `@repo/format` or
-# `@repo/ui/page-header`, unless it is listed here.
+# site that hand-rolls a number, a date, a section heading, a font size, an empty state, a stat
+# strip, a stacking level or a table instead of reaching for `@repo/format`,
+# `@repo/ui/section-heading`, a `--text-ui-*` rung, `@repo/ui/empty`, `@repo/ui/status-badge`, a
+# `--z-*` token or `DataTable` — and on any console page that gives itself a TITLE, which is the one
+# rule whose fix is deletion. Unless it is listed here.
 #
-# An entry is a DECISION, not a mute button. Each one states why THIS surface is a different thing
-# from the one the shared component is for — a display heading on a marketing-shaped page, an
-# accessibility landmark, a quantity the package has no opinion about. Never "we haven't got to it
-# yet": work not yet done belongs on the board as an issue, where it stays visible. An exclusion
-# says we are not going to do it, and the guard prints it to anyone who trips over it.
+# TWO KINDS OF ENTRY, and the file says which. They are counted separately, and neither can be
+# spent as the other — converting one into the other is a diff, which is the point.
 #
-# The list is SHRINK-ONLY. `baseline` is the entry count the guard ratchets against: adding an
-# entry without raising it is refused, and so is a shrink that is not recorded, so a win cannot be
+#   reason:  A DECISION. This surface is genuinely a different thing from the one the shared
+#            component is for — a display heading on a marketing-shaped page, an accessibility
+#            landmark, a quantity the package has no opinion about. NEVER "we haven't got to it
+#            yet". An exclusion says we are not going to do it, and the guard prints it to anyone
+#            who trips over it. Counted against `baseline`.
+#
+#   lifts:   DEBT. Measured drift that is going to be fixed, recorded per file and per occurrence
+#            so it can only shrink, and naming the board issue that removes it — quoted, because a
+#            bare `#` opens a comment in every YAML reader that is not the guard's own. Counted
+#            against `debt`.
+#
+# Why the second kind exists, since the first kind's rule ("never 'we haven't got to it yet'") is
+# right and stays: on its own it is also a rule that stops a guard from ever being ADDED to a
+# surface that has already drifted. The six rules added in #3615 were measured on an unmodified
+# `dev` and found 101 occurrences across 74 files, and there is no honest sentence in the product's
+# voice that calls any of them a different thing. Writing 74 fake decisions would empty the word
+# "decision" of meaning — the eleven `page_header` reasons below are worth reading precisely
+# because none of them is that. Leaving the guard red would mean it never lands, which is how the
+# drift reached 101 unseen. So the drift is written down where it can only shrink, and every row
+# says which issue takes it away. Work not yet done still belongs on the board, and here it is
+# ON the board: #3613's conformance lanes, one per console area.
+#
+# BOTH ledgers are SHRINK-ONLY and both are checked in BOTH directions: adding a row without
+# raising the number is refused, and so is a shrink that is not recorded, so a win cannot be
 # quietly spent later. Be clear about what that does and does not mechanise: the guard compares
-# `baseline` against the entry count in THIS file, so raising the number and adding an entry in one
-# commit passes. The shrink-only property is enforced by REVIEW — the same way the checked-in
-# coverage floors are. A `baseline` that goes up in a diff is the thing to stop.
+# each number against the rows in THIS file, so raising it and adding a row in one commit passes.
+# The shrink-only property is enforced by REVIEW — the same way the checked-in coverage floors
+# are. A `baseline` or a `debt` that goes UP in a diff is the thing to stop.
 #
-# `hits` is the same ratchet one level down — an exception is granted per OCCURRENCE, not per file,
-# so a new `<h1>` in an allowlisted file is new drift.
+# DO NOT TYPE THE TWO NUMBERS. They are DERIVED from the rows below: `pnpm gen:shared-surface`
+# writes them, `check:shared-surface` refuses a file whose counters disagree with its rows, and CI
+# runs the generator and diffs. ON A MERGE CONFLICT AT THOSE TWO LINES, TAKE EITHER SIDE AND RUN
+# THE GENERATOR — the result is a function of the merged rows and never of which hunk was picked,
+# so there is nothing to recount and nothing to get wrong. Hand-typed, this file is shared by every
+# conformance lane of #3613 and the counter had two failure shapes: different values conflict and
+# the resolution is arithmetic, and the SAME value — one lane removing ten rows, another removing
+# ten DIFFERENT rows — merges silently onto a file that now holds twenty fewer, failing later on
+# `dev` and blaming whichever PR landed second (#3788).
+#
+# The ROWS are still hand-authored and still merge as ordinary text, which is correct: a conflict
+# among them is a real disagreement about what is excluded, and a generator must not resolve it.
+#
+# `hits` is the same ratchet one level down — granted per OCCURRENCE, not per file, so a new
+# `<h2>` in a file already carrying two is new drift.
 #
 # Fields:
 #   path    — repo-relative, exactly as the guard prints it. One entry per file per section; a
 #             second entry for the same path is a parse error, because it would be a free entry
-#             against `baseline` with only one of its two reasons being the recorded decision.
+#             against a ledger with only one of its two notes being the recorded one.
 #   hits    — how many occurrences this entry covers. The guard fails if the file has more OR
 #             fewer, which is also its live proof that the matcher still matches.
 #   reason  — one line, in the product's voice: what a USER gets from this surface being different,
 #             not what the code does. The guard prints it verbatim with either `hits` failure.
+#   lifts   — one quoted line starting `#<issue>`: the board issue that removes this drift, and
+#             what is here. Printed the same way, so whoever trips over it knows where it is owed.
 #
-# THREE sections. A section this file invents is a parse error, never a silently ignored block of
+# THE SECTIONS. A section this file invents is a parse error, never a silently ignored block of
 # exceptions.
-#   format:       — @repo/format. `toFixed(`, `toLocaleDateString`, `toLocaleTimeString`, a literal
-#                   `$` before an interpolation, and `/ 1024`. `scripts/check-shared-surface.mjs`
-#                   states which console directories each of those reaches.
-#   page_header:  — @repo/ui/page-header. A raw `<h1>` in app/(private)/** or components/**.
-#   scanned:      — NOT exceptions. One census floor per scope the guard declares: the fewest
-#                   files that scope may examine before the run is refused. It is the ONLY control
-#                   that notices a root being DELETED from the guard's own scope declaration — the
-#                   per-root vacuity check is built from that list, so a removed root has no row
-#                   left to be zero, and the guard printed a clean tree over 299 unread route
-#                   files. This ratchet runs the OPPOSITE way to `baseline`: files only grow, so
-#                   the number may be raised freely and a DROP is the thing review stops. The
-#                   floors sit a few percent under the live count so an ordinary refactor need not
-#                   touch them.
+#   format:          — @repo/format. `toFixed(`, `toLocaleDateString`, `toLocaleTimeString`, a
+#                      literal `$` before an interpolation, `/ 1024`, an interpolation glued
+#                      directly onto a `toLocaleString`, and a currency symbol passed as a prop.
+#   page_title:      — NO page title. A raw `<h1>` in app/(private)/** or components/**. The
+#                      direction of this rule is INVERTED from what it was: the fix is to DELETE the
+#                      heading, not to adopt a component. #3733 — the page's name is said by the
+#                      sidebar entry you clicked and by the breadcrumb above the content, and a
+#                      third saying earns nothing. Every entry below is therefore a surface with NO
+#                      BREADCRUMB ABOVE IT, or the one `sr-only` outline landmark.
+#   section_header:  — @repo/ui/section-heading. A raw `<h2>` through `<h6>`, same scope. It runs
+#                      to `<h6>` because a rule that stopped at `<h3>` would be an instruction to
+#                      demote: the guard goes quiet, the outline gets worse. Kept apart from
+#                      `page_title:` so a file's `<h1>` decision and its `<h2>` debt cannot merge
+#                      into one entry carrying only one of the two notes.
+#   type_scale:      — a `--text-ui-*` rung from packages/brand/src/tokens.css. A hardcoded font
+#                      size — `text-[13px]`, `text-[12.5px]`, and the same in any length unit, with
+#                      or without a variant prefix — in components/**, app/**, lib/** or hooks/**.
+#                      They were spread across 23 values when the rule landed, against a token
+#                      file that carried no UI type scale at all; every one is debt and none is a
+#                      decision, and the live count is whatever the matcher measures.
+#   empty_state:     — @repo/ui/empty. One class string — double-quoted, single-quoted or a
+#                      template literal — carrying `text-center` and `py-6` or more, no upper bound.
+#   stat_strip:      — §6's "No stat-card strips": a `<Stat` CELL — the container is the wrong
+#                      half of the shape — and the `Stat` primitive itself.
+#   layer_token:     — a `--z-*` token. A raw stacking level of 40 or more, variant prefix or
+#                      not (`md:z-50`, `data-[state=open]:z-50`), counting from the gap
+#                      packages/brand/src/tokens.css leaves empty between its in-flow lifts and
+#                      the page chrome.
+#   data_table:      — DataTable, or @repo/ui/table. A grid used as a table, and a raw `<table>`.
+#   scanned:         — NOT entries. One census floor per scope the guard declares: the fewest
+#                      files that scope may examine before the run is refused. It is the ONLY
+#                      control that notices a root being DELETED from the guard's own scope
+#                      declaration — the per-root vacuity check is built from that list, so a
+#                      removed root has no row left to be zero, and the guard printed a clean tree
+#                      over 299 unread route files. This ratchet runs the OPPOSITE way to the two
+#                      above: files only grow, so the number may be raised freely and a DROP is
+#                      the thing review stops. The floors sit a few percent under the live count
+#                      so an ordinary refactor need not touch them.
 
-baseline: 15
+baseline: 16
+debt: 0
 
 scanned:
   - scope: console_code
@@ -57,7 +120,7 @@ scanned:
   - scope: console_view
     floor: 630
   - scope: console_pages
-    floor: 380
+    floor: 400
 
 format:
   - path: apps/console/components/runners/pool-card.tsx
@@ -72,38 +135,101 @@ format:
   - path: apps/console/components/agent/widgets/bodies/blocks.tsx
     hits: 2
     reason: SVG path coordinates for a sparkline — geometry the browser reads, never a number a person does.
+  # --- debt: measured 2026-09-01 on an unmodified dev, by the two new money matchers.
 
-page_header:
+page_title:
+  # THE TEST IS: DOES ANYTHING ELSE ON SCREEN ALREADY NAME THIS? Not "is there a breadcrumb" — FIVE
+  # of the eleven entries below sit inside the console shell WITH a breadcrumb above them, and are
+  # kept because what they say is not the route's name: a question ("What can we help you with?"),
+  # two invitations above an empty composer, an error message, and an `sr-only` outline root. The
+  # other six are outside the shell entirely, where there is neither breadcrumb nor sidebar entry,
+  # so the heading is the only thing that says what the page is. Each entry's own `reason:` says
+  # which of the two it is, and applying "is there a breadcrumb" instead would delete five headings
+  # this list deliberately keeps.
   - path: apps/console/components/auth/auth-form.tsx
     hits: 4
-    reason: Sign-in is a full-screen, marketing-shaped page; its display heading is the same one the website uses, and shrinking it to a console page title would make the product's front door look like a settings tab.
+    reason: Sign-in is the front door — no sidebar, no breadcrumb, nothing else on the screen says what this is. It keeps the display heading the website uses, so the two halves of arriving look like one product.
   - path: apps/console/components/auth/onboarding-form.tsx
     hits: 2
-    reason: The first screen after sign-up, still on the marketing-shaped surface — it welcomes you, it does not label a page you navigated to.
+    reason: The first screen after sign-up, still outside the console shell — it welcomes you, and there is no breadcrumb above it to welcome you instead.
   - path: apps/console/components/forms/oauth-consent-form.tsx
     hits: 2
-    reason: A consent screen has to read as its own moment, not as a page inside the console you happen to be on, because the decision it asks for is about handing access to someone else.
+    reason: A consent screen has to read as its own moment, not as a page inside the console you happen to be on, because the decision it asks for is about handing access to someone else — and it renders outside the shell, with no breadcrumb.
   - path: apps/console/components/org/org-purchase-ui.tsx
     hits: 2
-    reason: Buying a plan is a checkout, not a console page; it keeps the display type the pricing page uses so the two halves of one purchase look like one purchase.
+    reason: Buying a plan is a checkout, not a console page; it renders outside the shell and keeps the display type the pricing page uses, so the two halves of one purchase look like one purchase.
   - path: apps/console/components/legal/accept-terms-form.tsx
     hits: 1
-    reason: Accepting terms blocks everything else until it is answered, and the display heading is what makes it read as a stop rather than a page.
+    reason: Accepting terms blocks everything else until it is answered — it replaces the console rather than sitting inside it, and the display heading is what makes it read as a stop rather than a page.
   - path: apps/console/app/(private)/cli/login/page.tsx
     hits: 1
-    reason: The CLI hand-off is a single-purpose full-screen page in the same marketing-shaped shell as sign-in, and it is read from a terminal-shaped context, not from inside the console shell.
+    reason: The CLI hand-off is a single-purpose full-screen page in the same shell-less frame as sign-in, arrived at from a terminal rather than from the console, so nothing above it says what it is.
   - path: apps/console/app/(private)/[org]/~/support/page.tsx
     hits: 1
-    reason: "\"What can we help you with?\" is the support hub's opening question over its entry-point cards — a centred hero, which a left-aligned title-and-actions row cannot express."
+    reason: "\"What can we help you with?\" is a question, not the name of a page — the breadcrumb above it already says \"Support\", and this asks you something instead of repeating that."
   - path: apps/console/components/agent/elench/elench-empty-landing.tsx
     hits: 1
-    reason: The agent's invitation above an empty composer. It is the prompt, not the name of a page — there is nothing on screen yet for a page title to title.
+    reason: The agent's invitation above an empty composer. It is the prompt, not the name of a page — the breadcrumb already says where you are, and there is nothing on screen yet for a title to title.
   - path: apps/console/components/create-project/create-project-form.tsx
     hits: 1
-    reason: The same invitation, on the surface where a project starts; it opens the composer rather than labelling the route, and the two openers must read alike.
+    reason: The same invitation, on the surface where a project starts; it opens the composer rather than labelling the route — the breadcrumb labels the route — and the two openers must read alike.
   - path: apps/console/components/alerts/alerts-page.tsx
     hits: 1
-    reason: An `sr-only` landmark. The page shows three stacked section headers and no visible title, so this exists purely to give a screen reader the route's name.
+    reason: An `sr-only` landmark, and the only heading in this list that is never painted. No console page shows a title any more, but a route still needs one outline root or its three sections are orphans — a screen reader has no breadcrumb to fall back on.
   - path: apps/console/components/errors/error-state.tsx
     hits: 1
-    reason: An error boundary is not a page header — it replaces the page, and its heading has to size itself to whether it is filling the screen or sitting inside a panel.
+    reason: An error boundary replaces the page, so the breadcrumb above it is naming something the reader can no longer see; its heading says what went wrong, and has to size itself to whether it is filling the screen or sitting inside a panel.
+
+section_header:
+
+type_scale:
+  # --- debt only: hardcoded pixel type sizes across 194 files and 23 distinct values,
+  # measured 2026-09-01 on an unmodified dev by this rule's own matcher. Not one of
+  # them is a decision: packages/brand/src/tokens.css carried NO UI type scale until the commit
+  # that added this rule, so there was nothing for any of these files to have reached for.
+  #
+  # RE-ATTRIBUTED 2026-09-03 (#3828). Every row here used to name #3742 — which CLOSED with PR
+  # #3809 after converting 74 files, leaving the twenty it did not reach naming a finished issue. A
+  # `lifts:` naming a closed issue is debt with NO OWNER, and the guard cannot see it: it checks
+  # that a row names an issue and that its `hits:` still match, not that the issue is open. So the
+  # rows now name the lane that actually removes each one:
+  #
+  #   #3631 — the page whose own rebuild lane deletes the size as a side effect. `support/page.tsx`
+  #           was the same shape and went to #3629; #4054 has since landed and deleted that row.
+  #   #4141 — the other 48 occurrences across 18 files, filed for exactly this purpose.
+  #
+  # #4141 also takes the FOUR rows in `section_header:` and `empty_state:` that named #3619 — the
+  # same defect, found by auditing every `lifts:` owner in this file rather than trusting #3828’s
+  # title, which says `type_scale`. 22 rows / 53 occurrences now have one live owner, and no row
+  # in this file names a closed issue.
+  #
+  # #4141 exists rather than a `sed` because the mechanical move is WRONG for 24 of those 48:
+  # `apps/console/components/shell/**` is inside #3805’s `scope:` glob, but #3805 is the audit-fix
+  # lane — R4 overlap, R5 axe, R6 a prefetch 404 — and nothing in it removes a `text-[13px]`. Point
+  # a row at a lane that will not lift it and it orphans again the day that lane closes, which is
+  # the same staleness one level up. A GLOB MATCH IS NOT OWNERSHIP.
+  - path: apps/console/components/auth/auth-form.tsx
+    hits: 1
+    reason: The 6-digit sign-in code is typeset at 22px monospace so the person entering it can see which character they are on and catch a transposed digit before submitting. That is legibility of a code being typed, not reading type, so no rung of either ladder is the right answer — #3806.
+
+
+empty_state:
+  # RE-ATTRIBUTED 2026-09-03 (#3828): both rows named #3619, which CLOSED without converting them.
+  # See the note under `type_scale:` — this is the same defect, and #4141 owns all of it.
+  # --- debt only: 33 hand-rolled centred empty states across 24 files, six different heights,
+  #     measured 2026-09-01 on an unmodified dev. That census is the starting line, not a live
+  #     count — the rows below it are the live count, and they only shrink.
+
+stat_strip:
+  # --- debt only: 12 stat-card cells and the 2 Stat primitives they render, measured
+  #     2026-09-01 on an unmodified dev. The census is the starting line, not a live count.
+
+layer_token:
+  # --- debt only: the two raw stacking levels in the gap the token scale leaves empty.
+# `data_table:` had three entries and no longer has a section: #3622 converted the alerts activity
+# ledger to `DataTable`, the consistency matrix to the `@repo/ui/table` primitives, and the alerts
+# event picker to the flex row it always was, so the console records NO grid-as-table drift. The
+# rule still runs against every file — an empty ledger is what a clean rule looks like.
+
+data_table:
+  # --- debt only: three grid-as-table sites in two files, plus the console's one raw <table>.

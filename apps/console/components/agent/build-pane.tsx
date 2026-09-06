@@ -7,7 +7,9 @@
 // there is no per-service status column — so the surface can't claim more than the read model knows.
 // Build LOGS aren't duplicated here: they stream in the Logs tab (a BUILD is just a job).
 
+import { PANEL_EMPTY } from "@/components/agent/panel-empty";
 import { CopyButton } from "@repo/ui/copy-button";
+import { EmptyState } from "@repo/ui/empty";
 import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import {
 	type BuildJobState,
@@ -51,7 +53,7 @@ function BuildRow({
 			<div className="flex min-w-0 flex-col gap-0.5">
 				<span className="truncate font-mono text-xs text-foreground">{name}</span>
 				{image && phase === "pushed" && (
-					<span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+					<span className="flex items-center gap-1.5 text-ui-xs text-muted-foreground">
 						<span className="truncate font-mono">{shortDigest(image)}</span>
 						<CopyButton text={image} className="flex-none" />
 					</span>
@@ -79,11 +81,14 @@ export function BuildPane({
 
 	if (states.length === 0) {
 		return (
-			<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
-				{prebuilt > 0
-					? "Every service here deploys a prebuilt image — nothing to build."
-					: "No repo-sourced services. Add a service built from a Git repo to see its image build here."}
-			</p>
+			<EmptyState
+				className={PANEL_EMPTY}
+				title={
+					prebuilt > 0
+						? "Every service here deploys a prebuilt image — nothing to build."
+						: "No repo-sourced services. Add a service built from a Git repo to see its image build here."
+				}
+			/>
 		);
 	}
 
@@ -101,18 +106,18 @@ export function BuildPane({
 
 	return (
 		<div className="space-y-4">
-			<div className="font-mono text-[11px] tracking-wide text-muted-foreground">
+			<div className="font-mono text-ui-xs tracking-wide text-muted-foreground">
 				{rollup}
 			</div>
 
 			<div>
-				<div className="vx-eyebrow pb-1 text-[9px]">Workloads</div>
+				<div className="vx-eyebrow pb-1 text-ui-3xs">Workloads</div>
 				<div className="border border-border px-3">
 					{states.map((s) => (
 						<BuildRow key={s.name} name={s.name} phase={s.phase} image={s.image} />
 					))}
 				</div>
-				<p className="mx-0.5 mt-1.5 text-[11px] leading-snug text-muted-foreground">
+				<p className="mx-0.5 mt-1.5 text-ui-xs leading-snug text-muted-foreground">
 					Repo-sourced services build in an in-cluster job after the cluster is up, pushing a
 					signed image to the registry — no keys held. Build logs stream in the Logs tab.
 					{prebuilt > 0 &&

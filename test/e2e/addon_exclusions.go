@@ -229,11 +229,18 @@ var addOnExclusions = map[string]AddOnExclusion{
 	// This entry shrinks only when the product turns out to WORK. Inert is not working, so the
 	// honest move is back onto the list. Making the add-on actually assume the role the template
 	// already creates — and asserting something stronger than Healthy, which is too weak a
-	// predicate for this add-on on ANY workload-identity cloud — is tracked in #3470. The product
-	// half, which is what a customer hits, is #3469 and is now closed: a workload-identity provider
-	// with no identity is refused at configure time rather than installed inert.
+	// predicate for this add-on on ANY workload-identity cloud — was tracked in #3470, which CLOSED
+	// as completed on 2026-08-31 (#3523 gave the add-on its own ServiceAccount and identity, #3554
+	// made a missing one fail closed). The product half, which is what a customer hits, is #3469 and
+	// is also closed: a workload-identity provider with no identity is refused at configure time
+	// rather than installed inert.
 	//
-	// ⚠️ FOR #3470. It cannot be done by pointing the add-on at the platform role as it stands. That
+	// SO WHAT KEEPS THE ENTRY. Not "no knob" any more — that reason is dead. The fixture carries a
+	// STAND-IN identity that exists in no account (see the Why below), and supplying a real one is a
+	// customer action. What remains is a paid run per cloud, which is #3524.
+	//
+	// ⚠️ THE NOTE #3470 WAS CLOSED ON, kept because the constraint it records still binds anyone
+	// touching this. It cannot be done by pointing the add-on at the platform role as it stands. That
 	// role's trust is bound to `external-dns:external-dns-sa` (aws irsa.tf:139, and the GKE member /
 	// Azure federated subject are bound to the same name), which is the RAIL's ServiceAccount; the
 	// add-on now runs as `addon-external-dns-sa` precisely so it cannot take that object over. The
@@ -258,8 +265,18 @@ var addOnExclusions = map[string]AddOnExclusion{
 			"provider=cloudflare with no token. gcp/azure/alibaba remain UNVERIFIED since #3048, " +
 			"and aws is verified INERT rather than unverified — see the retraction above, which " +
 			"is why Healthy must not be asserted for it. Making the add-on assume a real identity, " +
-			"and asserting something stronger than Healthy, is #3470.",
-		Issue:  "#2717",
+			"and asserting something stronger than Healthy, was #3470 — closed completed on " +
+			"2026-08-31 by #3523/#3554. What is left is a paid run per cloud, which is #3524.",
+		// #3524, NOT #2717. #2717 is the run that MEASURED the 11-of-22 surface and it closed on
+		// 2026-08-29; this field's contract is that it names something OPEN, because an exclusion
+		// whose tracker is closed has nothing left to make it come off the list. #3524 is the ledger
+		// entry for taking this exclusion out, and it stays open until a paid `addons` run is green
+		// on the cloud whose row is being removed.
+		//
+		// The prose above the field said exactly this for six days while the value disagreed with it,
+		// which is why scripts/check-exclusion-issues.mjs now asks GitHub rather than only asking the
+		// regex: addon_exclusions_pure_test.go checks the SHAPE `^#\d+$`, and shape is not state.
+		Issue:  "#3524",
 		Clouds: []string{"aws", "gcp", "azure", "alibaba"},
 		// aws ONLY. gcp and azure fail inside the provider constructor and read Degraded, so their
 		// Healthy would be real evidence and the ratchet must keep firing there.
@@ -270,7 +287,8 @@ var addOnExclusions = map[string]AddOnExclusion{
 				"every Route53 write is denied — Healthy here means \"running, writing nothing\", " +
 				"which infra/templates/argocd/external-dns.yaml already recorded from aws/gitops " +
 				"run 33095437088. The stronger predicate this owes — that the ServiceAccount " +
-				"carries the IRSA annotation — is #3470.",
+				"carries the IRSA annotation — was #3470, closed completed on 2026-08-31; the " +
+				"remaining step is the paid aws `addons` run tracked by #3524.",
 		},
 	},
 }

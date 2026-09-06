@@ -50,7 +50,8 @@ import { CurrencyToggle } from "@/components/billing/currency-toggle";
 import { authClient } from "@/lib/auth/client";
 import { track } from "@/lib/analytics/track";
 import { useLivePlanPrice } from "@/lib/billing/use-live-plan-price";
-import { orgHost, slugify } from "@/lib/org-url";
+import { orgHost } from "@/lib/org-url";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { useWorkspaceStore } from "@/lib/stores/use-workspace-store";
 import { type SupportedCurrency, planMeta } from "@repo/plan-catalog";
 import { Button } from "@repo/ui/button";
@@ -275,7 +276,10 @@ export function CreateOrgSheet({ open, onOpenChange }: CreateOrgSheetProps) {
 			const org = await createOrg(data);
 			if (!org) return;
 			try {
-				await startProTrial();
+				// The org just created, NOT the ambient one — this sheet is open on a page inside the
+				// CURRENT org, so ambient would burn the account's one trial on the wrong org and then
+				// delete the new org in the catch below.
+				await startProTrial({ orgId: org.id });
 				track("trial_started", { plan: "team", context: "create_org" });
 			} catch (trialErr) {
 				// Roll back the just-created org — a failed trial must not orphan it.
@@ -341,7 +345,9 @@ export function CreateOrgSheet({ open, onOpenChange }: CreateOrgSheetProps) {
 			await fetchWorkspace();
 			if (billing.useAsPrimary) {
 				try {
-					await updateOrgPrimaryAddress(billingAddressFrom(billing));
+					// The org just created — ambient here is the page's org, and this `catch` is why
+					// overwriting it was silent.
+					await updateOrgPrimaryAddress(billingAddressFrom(billing), orgId);
 				} catch {
 					// Non-fatal — billing address is still set on the customer.
 				}
@@ -433,7 +439,7 @@ export function CreateOrgSheet({ open, onOpenChange }: CreateOrgSheetProps) {
 												setView("name");
 												setClientSecret(null);
 											}}
-											className="text-left text-[12.5px] text-text-tertiary transition-colors hover:text-text-primary"
+											className="text-left text-ui-sm text-text-tertiary transition-colors hover:text-text-primary"
 										>
 											← Back
 										</button>
@@ -528,34 +534,34 @@ function NamePanel({
 						const v = e.target.value;
 						form.setValue("name", v, { shouldValidate: true });
 						if (!slugTouched)
-							form.setValue("slug", slugify(v), { shouldValidate: true });
+							form.setValue("slug", slugifyOrEmpty(v), { shouldValidate: true });
 					}}
 				/>
 				<div className="flex items-center justify-between pt-1">
-					<span className="font-mono text-[11.5px] text-text-tertiary">
+					<span className="font-mono text-ui-xs text-text-tertiary">
 						{orgHost()}/<span className="text-text-secondary">{slug || "org"}</span>
 					</span>
 					<button
 						type="button"
 						onClick={() => setShowUrl(!showUrl)}
-						className="font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						{showUrl ? "Done" : "Customize URL"}
 					</button>
 				</div>
 				{showUrl && (
 					<div className="flex h-9 items-center overflow-hidden rounded-sm border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-						<span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-[12px] text-text-tertiary">
+						<span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-ui-sm text-text-tertiary">
 							{orgHost()}/
 						</span>
 						<input
-							className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-[12px] text-text-primary outline-none"
+							className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-ui-sm text-text-primary outline-none"
 							placeholder="acme-cloud"
 							autoComplete="off"
 							value={slug}
 							onChange={(e) => {
 								setSlugTouched(true);
-								form.setValue("slug", slugify(e.target.value), {
+								form.setValue("slug", slugifyOrEmpty(e.target.value), {
 									shouldValidate: true,
 								});
 							}}
@@ -563,7 +569,7 @@ function NamePanel({
 					</div>
 				)}
 				{form.formState.errors.slug?.message && (
-					<p className="text-[11px] text-destructive">
+					<p className="text-ui-xs text-destructive">
 						{form.formState.errors.slug.message}
 					</p>
 				)}
@@ -600,21 +606,21 @@ function TrialPanel({
 			<button
 				type="button"
 				onClick={onBack}
-				className="text-[12.5px] text-text-tertiary transition-colors hover:text-text-primary"
+				className="text-ui-sm text-text-tertiary transition-colors hover:text-text-primary"
 			>
 				← Back
 			</button>
 
 			<div className="rounded-lg border border-border">
 				<div className="flex items-center justify-between border-b border-border px-4 py-3">
-					<span className="text-[13px] font-medium text-text-primary">Due today</span>
-					<span className="font-display text-[18px] font-semibold text-text-primary">
+					<span className="text-ui-md font-medium text-text-primary">Due today</span>
+					<span className="font-display text-ui-xl font-semibold text-text-primary">
 						$0
 					</span>
 				</div>
-				<div className="flex items-center justify-between px-4 py-3 text-[12.5px] text-text-secondary">
+				<div className="flex items-center justify-between px-4 py-3 text-ui-sm text-text-secondary">
 					<span>After your {trialDays}-day free trial</span>
-					<span className="font-mono text-[12px] text-text-primary">
+					<span className="font-mono text-ui-sm text-text-primary">
 						{priceLabel}
 					</span>
 				</div>
@@ -624,7 +630,7 @@ function TrialPanel({
 				{busy ? "Setting up…" : `Start ${trialDays}-day free trial`}
 				<ArrowRight size={15} />
 			</Button>
-			<p className="text-center font-mono text-[10px] text-text-tertiary">
+			<p className="text-center font-mono text-ui-2xs text-text-tertiary">
 				No charge during the trial · cancel anytime
 			</p>
 		</div>
@@ -635,7 +641,7 @@ function TrialPanel({
 function RetrySetup({ busy, onRetry }: { busy: boolean; onRetry: () => void }) {
 	return (
 		<div className="space-y-3">
-			<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-[12.5px] text-text-secondary">
+			<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-ui-sm text-text-secondary">
 				Your payment went through, but we couldn&apos;t finish setting up the team. You
 				won&apos;t be charged again — retry to complete setup.
 			</p>

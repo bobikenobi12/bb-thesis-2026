@@ -127,7 +127,7 @@ func ReadDataEndpoints(addons []types.AddOnInstall, stdout, stderr io.Writer) ma
 			fmt.Fprintf(stderr, "Warning: refusing to read data service %s — namespace %q / release %q is not a valid kubernetes name; skipping\n", a.ID, a.Namespace, release)
 			continue
 		}
-		ep, ok := readOneEndpoint(release, a.Namespace, stderr)
+		ep, ok := readOneEndpoint(release, a.Namespace, a.ID, stderr)
 		if !ok {
 			fmt.Fprintf(stderr, "Warning: no Service found for data service %s (namespace %s) — the console will show no endpoint\n", a.ID, a.Namespace)
 			continue
@@ -140,7 +140,7 @@ func ReadDataEndpoints(addons []types.AddOnInstall, stdout, stderr io.Writer) ma
 
 // readOneEndpoint finds the primary (and, when present, reader) Service for one release, plus the
 // Secret the chart minted for it.
-func readOneEndpoint(release, namespace string, stderr io.Writer) (DataEndpoint, bool) {
+func readOneEndpoint(release, namespace, addonID string, stderr io.Writer) (DataEndpoint, bool) {
 	// Restated rather than left to the caller: this builds a shell command, and the one thing a
 	// shell-command builder must not do is trust that somebody upstream checked. ReadDataEndpoints
 	// already refuses these, so this only fires for a future caller.
@@ -196,22 +196,54 @@ func readOneEndpoint(release, namespace string, stderr io.Writer) (DataEndpoint,
 	if reader.name != "" {
 		ep.ReaderEndpoint = fmt.Sprintf("%s.%s.svc.cluster.local", reader.name, namespace)
 	}
-	ep.SecretRef = readSecretRef(release, namespace, stderr)
+	ep.SecretRef = readSecretRef(release, namespace, addonID, stderr)
 	return ep, true
 }
 
-// readSecretRef returns "<namespace>/<name>" of the credential Secret the chart minted for this
-// release — a REFERENCE only. Never reads or returns the Secret's data.
-func readSecretRef(release, namespace string, stderr io.Writer) string {
+// readSecretRef returns "<namespace>/<name>" of the credential Secret for this release — a
+// REFERENCE only. Never reads or returns the Secret's data.
+//
+// TWO SOURCES, because there are two ways a data service's credential comes to exist:
+//
+//  1. THE RUNNER MINTED IT (a `queue` node's RabbitMQ, #3304). A chart that generates a credential
+//     per render is permanently OutOfSync, so those charts are pointed at a Secret the runner
+//     seeds instead — and the chart then renders NO Secret at all. Before this lookup existed the
+//     console silently showed a queue with no credential reference: not an error anywhere, just an
+//     endpoint the operator cannot connect with.
+//  2. THE CHART MINTED IT (CNPG's "<cluster>-app", Valkey's). It carries the chart's own
+//     `app.kubernetes.io/instance` label, so ArgoCD's release label finds it.
+//
+// THE RUNNER'S ANSWER WINS, and the order is load-bearing rather than arbitrary. A cluster that
+// deployed before #3304 still holds the chart's old Secret — it is annotated
+// `helm.sh/resource-policy: keep`, so it outlives the render that stopped producing it — and that
+// Secret is no longer what the pods read. Asking the release label first would keep pointing the
+// console at it.
+//
+// The runner's lookup deliberately matches `alethia.io/addon-secret` and NOT the ArgoCD release
+// label. Stamping the release label onto a runner-seeded Secret would make the Application own a
+// resource its manifest does not contain, and `prune: true` deletes exactly that — the fix would
+// take the credential away on the first reconcile.
+func readSecretRef(release, namespace, addonID string, stderr io.Writer) string {
 	// Same restatement as readOneEndpoint, same reason.
 	if !k8sNameRe.MatchString(release) || !k8sNameRe.MatchString(namespace) {
 		return ""
 	}
+	// An add-on id interpolates into the same command string, and this one reaches here straight
+	// from the config snapshot rather than through AddOnAppName — so it is checked, not trusted. An
+	// unusable id skips this source; it never skips the one below.
+	if addonID != "" && k8sNameRe.MatchString(addonID) {
+		if ref := secretRefBySelector(fmt.Sprintf("%s=%s", addonSecretLabelKey, addonID), namespace, stderr); ref != "" {
+			return ref
+		}
+	}
+	return secretRefBySelector(fmt.Sprintf("app.kubernetes.io/instance=%s", release), namespace, stderr)
+}
+
+// secretRefBySelector lists the Secrets in one namespace matching one label selector and returns
+// "<namespace>/<name>" for the credential among them, or "" when there is none.
+func secretRefBySelector(selector, namespace string, stderr io.Writer) string {
 	var secrets secretList
-	cmd := fmt.Sprintf(
-		"kubectl get secret -n %s -l app.kubernetes.io/instance=%s -o json",
-		namespace, release,
-	)
+	cmd := fmt.Sprintf("kubectl get secret -n %s -l %s -o json", namespace, selector)
 	if err := kubectlJSON(cmd, &secrets, stderr); err != nil {
 		return ""
 	}

@@ -135,13 +135,13 @@ describeIfDb("per-state-object job serialization", () => {
 
 		const [e] = await db()
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT" })
+			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT", is_default: true })
 			.returning({ id: projectEnvironments.id });
 		envId = e.id;
 
 		const [e2] = await db()
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "staging", status: "DRAFT" })
+			.values({ project_id: projectId, user_id: USER, name: "staging", status: "DRAFT", is_default: false })
 			.returning({ id: projectEnvironments.id });
 		otherEnvId = e2.id;
 	});
@@ -279,7 +279,7 @@ describeIfDb("update_job_status keeps a contradicting runner report", () => {
 		projectId = p.id;
 		const [e] = await db()
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT" })
+			.values({ project_id: projectId, user_id: USER, name: "prod", status: "DRAFT", is_default: true })
 			.returning({ id: projectEnvironments.id });
 		envId = e.id;
 	});

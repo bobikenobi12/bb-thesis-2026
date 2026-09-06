@@ -26,6 +26,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -300,6 +301,245 @@ func AssertCLIDemoBeatsAreLeafCommands(ctx context.Context, t *testing.T, run *C
 				"Name the subcommand.", b.StepID, strings.Join(path, " "))
 		}
 	}
+}
+
+// cliDemoCobraErrorRe lifts cobra's own refusal out of a failed invocation.
+//
+// Cobra prints `Error: <what it objected to>` on its own line before the usage block, and the
+// binary's Execute() then exits 1 (apps/cli/cmd/root.go). The verdict is RELAYED rather than
+// classified: this guard's job is to notice that the real parser said no, not to have an opinion
+// about which kind of no it was.
+var cliDemoCobraErrorRe = regexp.MustCompile(`(?m)^Error: (.+)$`)
+
+// AssertCLIDemoBeatFlagsAreRegistered refuses a beat whose argv names a flag its command does not
+// register — on ANY cloud the harness can dispatch, not just the one this run bought.
+//
+// ── THIS EXISTS BECAUSE IT ALREADY HAPPENED (#4083) ──
+//
+// AssertCLIDemoBeatsAreLeafCommands, right above, reads only the LEADING NON-FLAG TOKENS of a
+// beat's argv. So `connector aws --token-stdin` passed it — `connector aws` really is a leaf — while
+// the flag rode behind unexamined, registered on exactly one sibling command. The old guard asked
+// whether the command EXISTS; this one asks whether the INVOCATION PARSES, which is a different
+// question and the one three of five cells died on.
+//
+// ── HOW THE ANSWER IS OBTAINED, AND WHY NOT FROM A LIST ──
+//
+// It asks the binary. `alethia <the beat's whole argv> --help` runs cobra's real ParseFlags, which
+// executes BEFORE the help short-circuit, so an unregistered flag exits non-zero while a registered
+// one prints help and performs nothing. The expected flag set is therefore the command tree's ACTUAL
+// registrations, obtained from the tree — never a list typed here, which is the shape that stops
+// covering silently the moment a command grows a flag.
+//
+// ── EVERY CLOUD, FROM WHICHEVER ONE IS DISPATCHED ──
+//
+// The argv is rebuilt for every provider in t2ProviderTable, because a beat is written once and
+// dispatched five ways, and the cloud that reveals the defect is rarely the cloud in front of you.
+// A hetzner run — the cheapest — now proves that aws, gcp and azure's invocations parse too. That is
+// the whole reason this is worth a second `--help` per beat.
+//
+// It COLLECTS and then fails once: fixing a table this size one CI round-trip at a time is how it
+// stays wrong for a week. It is FATAL at the end rather than merely red, because everything after it
+// buys a cluster.
+func AssertCLIDemoBeatFlagsAreRegistered(ctx context.Context, t *testing.T, run *CLIDemoRun) {
+	t.Helper()
+
+	if strings.TrimSpace(run.Bin) == "" {
+		t.Fatal("cli-demo: no binary under test — the flag check cannot ask the command tree anything, " +
+			"and reporting that as \"no problems found\" is the failure it exists to prevent")
+	}
+	providers := t2ProviderNames()
+	if len(providers) == 0 {
+		t.Fatal("cli-demo: t2ProviderTable is empty — the flag check would examine no invocation at all")
+	}
+
+	// Deduplicated on the argv, because most beats do not vary by cloud and 17 beats × 5 clouds of
+	// identical `--help` runs is four fifths waste. EVERY provider that produced an argv is recorded
+	// against it, not just the first — see the `providers` field.
+	type probe struct {
+		stepID string
+		// EVERY provider that produced this argv, not just the first.
+		//
+		// t2ProviderNames() is sorted, so "the first that produced it" was always `alibaba` for the
+		// beats that do not vary by cloud — which is most of them. A finding on a hetzner dispatch
+		// then read `beat "whoami" on alibaba`, naming a cloud the run is not on and that this very
+		// table records as not driven. The set is what the message needs, because the honest answer
+		// for an invariant beat is "on every cloud", not any one of them.
+		providers []string
+		argv      []string
+	}
+	// One bucket, one fatal at the end: everything after this call buys a cluster, so a finding
+	// recorded with t.Errorf would red the run AND still spend.
+	var refused []string
+	var probes []probe
+	at := map[string]int{} // argv key -> index into probes
+	for _, provider := range providers {
+		// ONLY Provider varies. ClusterSets, Region and the ids stay at the DISPATCHED run's values,
+		// so this proves "the argv each cloud's builders produce from this run parses", not "the argv
+		// each cloud would produce on its own dispatch". On a hetzner run `component-add`'s argv is
+		// identical across all five providers (ClusterSets is empty there), so the aws/azure `--set`
+		// pairs are not probed by this check at all — the per-cloud dispatch is what exercises those.
+		candidate := *run
+		candidate.Provider = provider
+		for _, b := range CLIDemoBeats {
+			if b.Args == nil {
+				// ValidateCLIDemoBeats owns that finding; two reports of one cause read as two causes.
+				continue
+			}
+			argv := b.Args(&candidate)
+			if len(argv) == 0 {
+				refused = append(refused, fmt.Sprintf(
+					"beat %q on %s builds an EMPTY argv — it would perform nothing and exit 0", b.StepID, provider))
+				continue
+			}
+			key := strings.Join(argv, "\x00")
+			if i, ok := at[key]; ok {
+				probes[i].providers = append(probes[i].providers, provider)
+				continue
+			}
+			at[key] = len(probes)
+			probes = append(probes, probe{stepID: b.StepID, providers: []string{provider}, argv: argv})
+		}
+	}
+	if len(probes) == 0 {
+		t.Fatalf("cli-demo: the flag check built NO invocation from %d beat(s) × %d cloud(s). "+
+			"That is this check reporting green having measured nothing.", len(CLIDemoBeats), len(providers))
+	}
+
+	// An invariant beat is reported as invariant rather than attributed to whichever cloud sorted
+	// first; see the `providers` field above.
+	where := func(p probe) string {
+		if len(p.providers) == len(providers) {
+			return fmt.Sprintf("on every cloud (%d)", len(providers))
+		}
+		return "on " + strings.Join(p.providers, ", ")
+	}
+
+	for _, p := range probes {
+		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		out, err := exec.CommandContext(cctx, run.Bin,
+			append(append([]string{}, p.argv...), "--help")...).CombinedOutput()
+		cancel()
+		if err == nil {
+			continue
+		}
+		// A TIMEOUT IS THE CHECK FAILING, NOT THE BEAT. CommandContext KILLS the process on
+		// expiry, so Cmd.Wait sees a non-zero ProcessState and returns *exec.ExitError — the ctx
+		// error is substituted only when Wait would otherwise return nil. So `errors.As` below
+		// succeeds for a hung `--help`, and it would be filed as "exited non-zero and named no
+		// Error: line": this guard's own failure branch reported as a finding about the beat.
+		// It asks for DEADLINE EXCEEDED specifically, not for `Err() != nil`: `cancel()` has already
+		// run by this line, so a bare Err() is non-nil for EVERY failure and would file every genuine
+		// refusal as a timeout — the same conflation, inverted. context.Err latches the first cause,
+		// so DeadlineExceeded means the deadline really did pass and Canceled means cancel() won.
+		if cerr := cctx.Err(); errors.Is(cerr, context.DeadlineExceeded) {
+			t.Fatalf("cli-demo: `%s %s --help` did not finish within 60s (%v).\nThe flag check reached "+
+				"no verdict for this invocation — treat this as the check failing, not as the beat being "+
+				"wrong.\n%s", run.Bin, strings.Join(p.argv, " "), cerr, out)
+		}
+		// A binary that could not be RUN is not a beat that is wrong, and conflating the two would
+		// bury a missing binary under seventeen flag findings. Stop, and say which it was.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatalf("cli-demo: could not RUN `%s %s --help`: %v\nThe flag check reached no verdict — "+
+				"treat this as the check failing, not as the beats passing.\n%s",
+				run.Bin, strings.Join(p.argv, " "), err, out)
+		}
+		detail := strings.Join(p.argv, " ")
+		if m := cliDemoCobraErrorRe.FindStringSubmatch(string(out)); m != nil {
+			refused = append(refused, fmt.Sprintf(
+				"beat %q %s: `alethia %s` — the CLI refuses to parse it: %s",
+				p.stepID, where(p), detail, strings.TrimSpace(m[1])))
+			continue
+		}
+		refused = append(refused, fmt.Sprintf(
+			"beat %q %s: `alethia %s --help` exited non-zero (%v) and named no Error: line. "+
+				"Reported rather than swallowed — an invocation the binary will not even take help for "+
+				"is not one to buy a cluster behind.\n%s",
+			p.stepID, where(p), detail, err, out))
+	}
+
+	if len(refused) > 0 {
+		sort.Strings(refused)
+		t.Fatalf("cli-demo: %d beat invocation(s) will not reach the command they name.\n  - %s\n\n"+
+			"A flag belongs to the ONE command that registers it: `--token-stdin` is hetzner's "+
+			"(apps/cli/cmd/connector_hetzner.go), and aws/gcp/azure/alibaba each take their own. The "+
+			"non-interactive flag set per cloud lives in cliDemoConnectorFlags and is the same one "+
+			"apps/cli/cmd/cov_connectors_test.go's connCompleteCases asserts.", len(refused), strings.Join(refused, "\n  - "))
+	}
+	t.Logf("cli-demo: %d distinct beat invocation(s) parse against the real command tree, across %d cloud(s)",
+		len(probes), len(providers))
+}
+
+// AssertCLIDemoConnectorIsDrivable refuses, BEFORE any spend, a cloud whose `connector` beat cannot
+// complete against the console this dimension boots.
+//
+// ── WHY A REFUSAL AND NOT A SKIP ──
+//
+// The beat can now be INVOKED on every cloud; on aws, gcp, azure and alibaba it will still be
+// REJECTED, and not by the CLI. `/api/cli/providers/{p}/connect` probes the connection inline with
+// an assertion the console signs itself, and this console's issuer is http://localhost:3000/api/oidc
+// with no signing key — see cliDemoConnectorIssuerTrust for the per-cloud detail and the evidence.
+//
+// A skip would report the dimension green having driven nothing, which is the exact vacuity the
+// whole tier exists to prevent — and the file's own history shows how that goes: a comment claiming
+// the other clouds were "skipped with a recorded reason" stood unchallenged because nobody could
+// see that no such path existed. So this is a hard red that names the blocker in one line, taken
+// before any CLOUD RESOURCE is bought.
+//
+// WHAT IT DOES NOT SAVE, stated because the earlier wording claimed it: this is not before the
+// console build. e2e-nightly.yml builds ee and the console, seeds the token, starts the console and
+// builds the CLI, all before `go test` reaches this call — the control plane, the A0.5 graph and the
+// runner row already exist by then. What the refusal buys is the cloud spend, which is the
+// expensive half; the twelve minutes are already gone.
+//
+// It lifts from the OUTSIDE: set ALETHIA_E2E_CLI_DEMO_ISSUER_TRUSTED once the e2e console has an
+// issuer the clouds trust, and the run proceeds with no code change. Refuse what is KNOWN broken,
+// and always ship the escape hatch.
+func AssertCLIDemoConnectorIsDrivable(t *testing.T, run *CLIDemoRun) {
+	t.Helper()
+
+	if t2Truthy(os.Getenv(cliDemoConnectorIssuerTrustEnv)) {
+		// THE LIFT IS A STATEMENT ABOUT THE ISSUER, NOT ABOUT THE CREDENTIALS. It used to return
+		// here on the strength of that one variable, which made it the one path where an unset repo
+		// variable reached the CLI as an empty flag value — and an empty value does not fail, it
+		// falls through to the cloud's LOCAL setup flow and creates real identity (see
+		// cliDemoConnectorEmptyFlags). The maintainer opting in to the issuer cannot also mean the
+		// role ARN is present, so that is asked separately, and still before any spend.
+		if empty := cliDemoConnectorEmptyFlags(run); len(empty) > 0 {
+			t.Fatalf("cli-demo: %s is set, but `connector %s` would be invoked with %d empty flag "+
+				"value(s): %s.\n\nAn empty value is NOT a parse error — the command falls through to "+
+				"its local setup flow and creates real cloud identity (aws: a CloudFormation stack with "+
+				"an IAM OIDC provider and AlethiaProvisionerRole, which aws-cleanup.sh does not sweep). "+
+				"Set the variable(s) behind those flags, or clear %s.",
+				cliDemoConnectorIssuerTrustEnv, run.Provider, len(empty), strings.Join(empty, ", "),
+				cliDemoConnectorIssuerTrustEnv)
+		}
+		t.Logf("cli-demo: %s is set — driving `connector %s` on the maintainer's word that this "+
+			"console's OIDC issuer is trusted by that cloud", cliDemoConnectorIssuerTrustEnv, run.Provider)
+		return
+	}
+
+	why, ok := cliDemoConnectorIssuerTrust[run.Provider]
+	if !ok {
+		t.Fatalf("cli-demo: nothing in cliDemoConnectorIssuerTrust answers for provider %q. "+
+			"An unanswered cloud is not a drivable one — say whether `connector %s` can complete "+
+			"against this dimension's console, in a sentence, before dispatching it.", run.Provider, run.Provider)
+	}
+	if why == "" {
+		return
+	}
+	t.Fatalf("cli-demo: the `connector` beat cannot COMPLETE on %s against this dimension's console.\n\n  %s\n\n"+
+		"This is not the CLI: the invocation parses, and `connector %s` submits the right fields. The "+
+		"connection test that runs inside POST /api/cli/providers/%s/connect authenticates with an "+
+		"assertion the CONSOLE signs, and this console is started with "+
+		"NEXT_PUBLIC_APP_URL=http://localhost:3000 and no ALETHIA_OIDC_SIGNING_KEY, so no cloud can "+
+		"verify it.\n\n"+
+		"Unblocking it is a maintainer decision about the e2e console's identity, not a harness "+
+		"change. Once that console has an issuer the cloud trusts, set %s=1 and re-dispatch — this "+
+		"refusal reads that variable and nothing else.\n\n"+
+		"Refused before any cloud resource is bought, rather than at the beat. (Not before the console "+
+		"build — that has already happened by the time `go test` runs; see this function's doc.)",
+		run.Provider, why, run.Provider, run.Provider, cliDemoConnectorIssuerTrustEnv)
 }
 
 // DriveCLIDemoPhase executes every beat in one phase, in table order, against the real binary.

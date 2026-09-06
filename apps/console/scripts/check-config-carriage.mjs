@@ -79,7 +79,7 @@
 // Decisions live in infra/config-carriage-exclusions.yaml — deliberately NOT offer-exclusions.yaml.
 // See that file's header for why.
 //
-// Run from apps/console (`pnpm -F console check:config-carriage`). `--matrix` additionally writes the
+// Run from apps/console (`pnpm -C apps/console run check:config-carriage`). `--matrix` additionally writes the
 // living board to docs/testing/config-carriage.md; it is the same measurement, so a matrix write can
 // never suppress a finding.
 
@@ -1555,7 +1555,7 @@ if (writeMatrix) {
 	md.push(
 		`Measured this run: ${COLUMNS_EXAMINED} schema columns examined, ${FIELDS.length} of them user-settable, ` +
 			`${cells.filter((c) => MEASURED_STATES.has(c.state)).length} cloud verdicts. ` +
-			"Regenerate with `pnpm -F console gen:config-carriage`. CI runs the guard on every PR.",
+			"Regenerate with `pnpm -C apps/console run gen:config-carriage`. CI runs the guard on every PR.",
 	);
 	md.push("");
 	writeFileSync(MATRIX_OUT, md.join("\n"));

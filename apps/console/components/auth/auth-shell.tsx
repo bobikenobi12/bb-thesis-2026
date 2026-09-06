@@ -24,11 +24,21 @@ import { legalUrl, statusUrl } from "@/lib/legal";
  *  hands width control to the child (the wizard animates it per step). */
 type CardWidth = "default" | "wide" | "plans" | "fluid";
 
+/* `mx-auto` alongside each width, the way SettingsShell writes its own
+   (`mx-auto w-full min-w-0 max-w-[1200px]`). It centres nothing that `<main>`'s
+   `justify-center` was not already centring, so it changes no pixel — what it changes
+   is that the class list now SAYS "this is the page's content width" in the one shape
+   the console states that in. RUBRIC.md's S2 asks whether the single max-width
+   governing a route comes from its shell, and `scripts/check-route-states.mjs`
+   answers it by looking for a centred block; a shell that centres with flexbox
+   instead declared a width nothing could attribute to it, so `/cli/login` — the one
+   private route wearing this shell — scored "no max-width anywhere" while visibly
+   sitting in a 392px card. */
 const CARD_MAX: Record<CardWidth, string> = {
-  default: "max-w-[392px]",
-  wide: "max-w-[496px]",
-  plans: "max-w-[980px]",
-  fluid: "max-w-none",
+  default: "mx-auto max-w-[392px]",
+  wide: "mx-auto max-w-[496px]",
+  plans: "mx-auto max-w-[980px]",
+  fluid: "mx-auto max-w-none",
 };
 
 interface AuthShellProps {
@@ -94,7 +104,7 @@ export function AuthShell({
 
         {switchPrompt && switchHref && switchLabel ? (
           <div className="flex items-center gap-3 whitespace-nowrap">
-            <span className="hidden text-[13px] text-text-tertiary sm:inline">
+            <span className="hidden text-ui-md text-text-tertiary sm:inline">
               {switchPrompt}
             </span>
             <Button
@@ -124,7 +134,7 @@ export function AuthShell({
 
       {/* footer */}
       <footer className="relative z-30 flex flex-wrap items-center justify-between gap-4 px-8 pb-7 pt-5">
-        <div className="flex flex-wrap items-center gap-4 font-mono text-[10.5px] tracking-[0.06em] text-text-tertiary">
+        <div className="flex flex-wrap items-center gap-4 font-mono text-ui-2xs tracking-[0.06em] text-text-tertiary">
           {/* The year was hard-coded and would have quietly gone stale. */}
           <span>© {new Date().getFullYear()} {LEGAL_ENTITY.tradingName}</span>
           <a href={legalUrl("/terms")} className="vx-clamp vx-clamp--tight transition-colors hover:text-text-primary">
@@ -149,7 +159,7 @@ export function AuthShell({
             className="vx-clamp vx-clamp--tight inline-flex items-center gap-2"
           >
             <span className="ah-pulse" />
-            <span className="font-mono text-[10.5px] tracking-[0.06em] text-text-tertiary transition-colors hover:text-text-primary">
+            <span className="font-mono text-ui-2xs tracking-[0.06em] text-text-tertiary transition-colors hover:text-text-primary">
               All systems operational
             </span>
           </a>

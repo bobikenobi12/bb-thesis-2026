@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
 )
 
@@ -40,7 +41,27 @@ func probeImage() string {
 func WaitClusterReady(ctx context.Context, timeout time.Duration, requireNode bool, stdout io.Writer) error {
 	started := time.Now()
 	deadline := started.Add(timeout)
-	fmt.Fprintf(stdout, "Waiting for the cluster to become reachable (timeout %s)...\n", timeout)
+	// The budget is announced here and quoted again in all THREE failure messages below — the
+	// cancelled-context one, the unreachable-API one, and the no-Ready-node one. All four renders go
+	// through format.Duration so one run cannot print the same configured value two ways: the
+	// default 15m budget is `15m0s` from Duration.String() and `15m 0s` from format.Duration, and
+	// a banner and a failure message disagreeing about it makes the reader guess which is the
+	// setting they configured.
+	//
+	// COUNT THE RENDERS, not the messages. The first draft of this migrated three of the four and
+	// left the no-Ready-node one raw — which is the DEFAULT path (clusterReadyRequireNode is true
+	// unless explicitly disabled), so it turned a tree where all four agreed at `15m0s` into one
+	// where the banner and the commonest failure disagreed. Exactly the defect this comment gives
+	// as the reason the banner had to move.
+	//
+	// KNOWN LOSS, accepted: format.Duration drops seconds above an hour, so a budget of
+	// `1h30m45s` echoes as `1h 30m`. Rounding a MEASUREMENT is free; rounding a value the operator
+	// TYPED is not obviously free, and this is the latter. It is accepted because seconds survive
+	// intact below an hour (a `90s` budget is `1m 30s`, exactly) and an hour-plus budget with
+	// second precision is not a thing anyone sets. If it ever matters, the fix is to echo the raw
+	// ALETHIA_CLUSTER_READY_TIMEOUT string the operator set rather than re-rendering the parsed
+	// Duration — re-rendering can never be lossless, whichever formatter it uses.
+	fmt.Fprintf(stdout, "Waiting for the cluster to become reachable (timeout %s)...\n", format.Duration(timeout))
 
 	// 1. API server reachable — poll readyz, but keep WHY it fails (auth vs network vs not-ready)
 	// so a timeout is diagnosable at a glance, and fast-fail on a persistent auth rejection (an
@@ -82,7 +103,7 @@ func WaitClusterReady(ctx context.Context, timeout time.Duration, requireNode bo
 		// context.DeadlineExceeded; the last probe error stays as colour but drives nothing.
 		if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
 			return fmt.Errorf("waiting for the cluster API server was cancelled after %s (timeout %s) — the caller's context ended, so this is NOT a cluster fault%s: %w",
-				time.Since(started).Round(time.Second), timeout, lastProbeDetail(lastErr), apiErr)
+				format.Duration(time.Since(started)), format.Duration(timeout), lastProbeDetail(lastErr), apiErr)
 		}
 		if lastErr == nil {
 			lastErr = apiErr
@@ -90,8 +111,14 @@ func WaitClusterReady(ctx context.Context, timeout time.Duration, requireNode bo
 		// Report ELAPSED, not the configured timeout. The fast-fail path gives up after ~60s, so
 		// quoting the 15m budget made a rejected token read as a hang and sent readers looking for a
 		// slow endpoint (#1259).
+		//
+		// ELAPSED and BUDGET are rendered by the SAME function, deliberately. They are two spans of
+		// the same kind sitting in one sentence, and the reader's whole job here is to compare them:
+		// `after 1m 2s (timeout 15m0s)` invites reading two different units. format.Duration drops
+		// seconds only once a span passes an hour, and it drops them from BOTH numbers at the same
+		// threshold, so the comparison never becomes apples-to-oranges.
 		return fmt.Errorf("cluster API server did not become reachable after %s (timeout %s) — %s: %w",
-			time.Since(started).Round(time.Second), timeout, classifyReachability(lastErr, lastOut), lastErr)
+			format.Duration(time.Since(started)), format.Duration(timeout), classifyReachability(lastErr, lastOut), lastErr)
 	}
 	fmt.Fprintln(stdout, "Cluster API server is reachable.")
 
@@ -121,7 +148,8 @@ func WaitClusterReady(ctx context.Context, timeout time.Duration, requireNode bo
 		if reasons := NotReadyReasons(lastNodesRaw); len(reasons) > 0 {
 			detail = " — NotReady: " + strings.Join(reasons, "; ")
 		}
-		return fmt.Errorf("no cluster node reached Ready within %s (%d/%d ready)%s: %w", timeout, lastReady, lastTotal, detail, err)
+		return fmt.Errorf("no cluster node reached Ready within %s (%d/%d ready)%s: %w",
+			format.Duration(timeout), lastReady, lastTotal, detail, err)
 	}
 	fmt.Fprintf(stdout, "%d/%d nodes Ready.\n", lastReady, lastTotal)
 	return nil

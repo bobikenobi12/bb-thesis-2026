@@ -46,7 +46,7 @@ export function RecentInvoices() {
 	const viewAll = (
 		<Link
 			href={`/${org}/~/settings/billing/invoices`}
-			className="font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+			className="font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 		>
 			View all invoices →
 		</Link>

@@ -86,14 +86,14 @@ export function NotificationsPopover() {
             <p className="text-sm font-semibold text-foreground">
               Notifications
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-xs text-muted-foreground">
               {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
             </p>
           </div>
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
-              className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              className="text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               Mark all read
             </button>
@@ -118,7 +118,7 @@ export function NotificationsPopover() {
             ),
           )}
           {feed.length === 0 && (
-            <div className="p-8 text-center text-sm text-muted-foreground">
+            <div className="p-8 text-center text-ui-sm text-muted-foreground">
               You&apos;re all caught up!
             </div>
           )}
@@ -169,7 +169,7 @@ function JobRow({
           <p className="truncate text-xs font-medium text-foreground">
             {label} — {n.status.toLowerCase()}
           </p>
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-ui-xs text-muted-foreground">
             {scope ? `${scope} · ` : ""}
             {formatRelative(n.createdAt)}
           </p>
@@ -213,12 +213,12 @@ function SupportRow({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-foreground">
-            <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-ui-xs text-muted-foreground">
               {formatCaseNumber(n.caseNumber)}
             </span>{" "}
             {n.subject}
           </p>
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-ui-xs text-muted-foreground">
             {SUPPORT_STATUS_LABELS[n.status]} ·{" "}
             {formatRelative(n.lastMessageAt)}
           </p>

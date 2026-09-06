@@ -18,7 +18,9 @@
   --gray-300:  oklch(0.882 0 0);
   --gray-400:  oklch(0.788 0 0);
   --gray-500:  oklch(0.664 0 0);
+  --gray-550:  oklch(0.610 0 0);
   --gray-600:  oklch(0.556 0 0);
+  --gray-625:  oklch(0.527 0 0);
   --gray-700:  oklch(0.440 0 0);
   --gray-800:  oklch(0.345 0 0);
   --gray-900:  oklch(0.268 0 0);
@@ -37,7 +39,7 @@
 
   --text-primary:      var(--gray-1000);
   --text-secondary:    var(--gray-700);
-  --text-tertiary:     var(--gray-600);
+  --text-tertiary:     var(--gray-625);
   --text-disabled:     var(--gray-400);
   --text-on-ink:       var(--gray-50);
 
@@ -101,7 +103,7 @@
 
   --text-primary:      var(--gray-50);
   --text-secondary:    var(--gray-500);
-  --text-tertiary:     var(--gray-600);
+  --text-tertiary:     var(--gray-550);
   --text-disabled:     var(--gray-700);
   --text-on-ink:       var(--gray-1000);
 

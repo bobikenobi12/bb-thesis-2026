@@ -11,7 +11,7 @@
 // fixture diff (CI git-diff) → Go test names the field to add.
 //
 // Determinism is essential — fixed values, schema property order, no randomness —
-// so `git diff` only fires on a real contract change. Run: pnpm -F console gen:cli-fixtures
+// so `git diff` only fires on a real contract change. Run: pnpm -C apps/console run gen:cli-fixtures
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -86,8 +86,28 @@ function sample(node: unknown, root: JsonSchema): unknown {
 			if (schema.format === "date-time") return SAMPLE_TS;
 			return "string";
 		case "integer":
-		case "number":
+		case "number": {
+			// A BOUND ON THE NUMBER IS PART OF THE CONTRACT, and sampling the type's default of 0
+			// ignores it — `z.number().int().positive()` renders as `exclusiveMinimum: 0`, so the
+			// fixture came out holding a value the very schema it was generated from rejects. That
+			// is not hypothetical: `page_info.json` has carried `"limit": 0` against
+			// `pageInfoSchema`'s `.positive()` since #3666, and nothing caught it because the
+			// fixture is not in `cli-contract.test.ts`'s list (see the note there).
+			//
+			// ZERO UNLESS ZERO IS OUT OF RANGE — deliberately not "the schema's minimum". Zod
+			// renders every `.int()` with the SAFE-INTEGER bounds as its `minimum`/`maximum`, so
+			// reading `minimum` unconditionally replaces every integer in every fixture with
+			// -9007199254740991: a number no wire ever carries, in 19 files, to fix two. The bound
+			// is consulted only to decide whether the existing placeholder is legal.
+			//
+			// Only the LOWER bound is consulted, because a field whose maximum excludes zero does
+			// not exist in this contract; adding the branch would be code no schema can reach.
+			const exclusive = schema.exclusiveMinimum;
+			if (typeof exclusive === "number" && exclusive >= 0) return exclusive + 1;
+			const minimum = schema.minimum;
+			if (typeof minimum === "number" && minimum > 0) return minimum;
 			return 0;
+		}
 		case "boolean":
 			return false;
 		case "null":
@@ -104,11 +124,12 @@ const FIXTURES: Record<keyof typeof cliContract, string> = {
 	ByoScanResponse: "byo_scan.json",
 	RunnerRegistrationResponse: "runner_registration.json",
 	DesignApplyResponse: "design_apply.json",
-	ClustersResponse: "clusters.json",
+	ClustersPageResponse: "clusters_page.json",
 	ClusterDetailResponse: "cluster_detail.json",
 	CloudIdentitiesResponse: "cloud_identities.json",
 	JobsPageResponse: "jobs_page.json",
 	JobResponse: "job_response.json",
+	PageInfo: "page_info.json",
 	Job: "job.json",
 	JobLogsResponse: "job_logs.json",
 	RepositoriesResponse: "repositories.json",
@@ -167,7 +188,17 @@ mkdirSync(testdataDir, { recursive: true });
 
 for (const [key, file] of typedEntries(FIXTURES)) {
 	const js = asRecord(z.toJSONSchema(cliContract[key], { target: "draft-7" }));
-	const value = sample(js, js);
+	const value =
+		key === "LatestRelease"
+			? {
+					version: "1.2.3",
+					release_notes: "Release notes",
+					released_at: SAMPLE_TS,
+					github_release_url:
+						"https://github.com/alethialabs-io/alethia-cli/releases/tag/v1.2.3",
+					min_supported_version: "1.0.0",
+			  }
+			: sample(js, js);
 	writeFileSync(join(testdataDir, file), `${JSON.stringify(value, null, "\t")}\n`);
 	console.log(`wrote testdata/${file}`);
 }

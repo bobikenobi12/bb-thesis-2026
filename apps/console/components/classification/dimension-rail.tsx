@@ -41,10 +41,10 @@ export function DimensionRail({
 	return (
 		<div className="rounded-lg border bg-surface p-1.5 shadow-sm">
 			<div className="flex items-center justify-between px-2 pb-[7px] pt-2">
-				<span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+				<span className="font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 					Dimensions
 				</span>
-				<span className="font-mono text-[10px] text-text-tertiary">
+				<span className="font-mono text-ui-2xs text-text-tertiary">
 					{dims.length}
 				</span>
 			</div>
@@ -80,7 +80,7 @@ export function DimensionRail({
 							<div className="flex items-center gap-[7px]">
 								<span
 									className={cn(
-										"truncate text-[13px]",
+										"truncate text-ui-md",
 										selected
 											? "font-semibold text-text-primary"
 											: "font-medium text-text-secondary",
@@ -90,20 +90,20 @@ export function DimensionRail({
 								</span>
 								<span
 									title={d.multi ? "Multiple values per resource" : "One value per resource"}
-									className="shrink-0 rounded-[2px] border px-1 font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary"
+									className="shrink-0 rounded-[2px] border px-1 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary"
 								>
 									{d.multi ? "M" : "1"}
 								</span>
 							</div>
-							<div className="truncate font-mono text-[10px] text-text-tertiary">
+							<div className="truncate font-mono text-ui-2xs text-text-tertiary">
 								{d.key}
 							</div>
 						</div>
 						<div className="shrink-0 text-right">
-							<div className="font-mono text-[11px] text-text-secondary">
+							<div className="font-mono text-ui-xs text-text-secondary">
 								{d.values.length}
 							</div>
-							<div className="font-mono text-[9px] text-text-tertiary">
+							<div className="font-mono text-ui-3xs text-text-tertiary">
 								{d.resourceCount} tagged
 							</div>
 						</div>

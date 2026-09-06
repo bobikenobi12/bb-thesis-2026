@@ -29,8 +29,11 @@ type SwitcherTriggerProps = {
   /** When set, the body becomes a `<Link href>` (navigates) and only the chevron opens the
    * popover — i.e. a split button. When absent, the whole row opens the popover. */
   href?: string;
-  /** Accessible label for the chevron button in split mode, e.g. "Switch organization". */
-  ariaLabel?: string;
+  /** What the trigger switches, e.g. "Switch organization" / "Switch project". In split mode it
+   * names the chevron button; on a whole-row trigger it is prefixed to the current selection —
+   * "Switch project: All projects". Required in both modes: a switcher whose only name is its
+   * selection is a control nobody can identify by ear. */
+  ariaLabel: string;
 };
 
 /**
@@ -52,15 +55,15 @@ export function SwitcherTrigger({
 }: SwitcherTriggerProps) {
   const labelBlock = caption ? (
     <span className="flex min-w-0 flex-col items-start leading-tight">
-      <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground/70">
+      <span className="font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground/70">
         {caption}
       </span>
-      <span className="max-w-[10rem] truncate text-[13px] font-medium text-foreground">
+      <span className="max-w-[10rem] truncate text-ui-md font-medium text-foreground">
         {label}
       </span>
     </span>
   ) : (
-    <span className="min-w-0 flex-1 truncate text-left text-[13.5px] font-medium">
+    <span className="min-w-0 flex-1 truncate text-left text-ui-md font-medium">
       {label}
     </span>
   );
@@ -68,6 +71,19 @@ export function SwitcherTrigger({
   const chevron = (
     <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
   );
+
+  // `role="combobox"` used to sit on both triggers (the shadcn popover-picker idiom). It was
+  // wrong twice over, and the second way was a CRITICAL axe failure on all 40 private routes:
+  //  · these are not comboboxes — there is no text input and no owned listbox; base-ui already
+  //    reports the truth as `aria-haspopup="dialog"`;
+  //  · `combobox` takes its name FROM THE AUTHOR ONLY, so the role silently deleted the visible
+  //    label from the accessible name. The topbar project switcher (every `/{org}/…` route) and
+  //    the env switcher (every project route) were therefore buttons with no discernible text —
+  //    the whole of the audit's `button-name` finding (#3731).
+  // The split (org) trigger escaped only because its chevron already carried an `aria-label`.
+  // The role is gone from both; `aria-expanded` stays, which is valid on a button that pops up a
+  // dialog. Each trigger is then named explicitly below rather than left to name-from-content —
+  // the reason is at the whole-row branch.
 
   // Split button (org): the body navigates, only the chevron opens the popover.
   if (href) {
@@ -88,7 +104,6 @@ export function SwitcherTrigger({
             <Button
               variant="ghost"
               size="icon-sm"
-              role="combobox"
               aria-expanded={open}
               aria-label={ariaLabel}
               className="shrink-0"
@@ -107,8 +122,14 @@ export function SwitcherTrigger({
       render={
         <Button
           variant="ghost"
-          role="combobox"
           aria-expanded={open}
+          // Named explicitly rather than from content, for two reasons. The visible label is only
+          // the CURRENT SELECTION — "All projects", "production" — which never says what the
+          // control does; and it can be empty, which would leave the button unnamed again. An
+          // `sr-only` prefix does not work here: accessible-name computation trims each node and
+          // joins inline descendants with no separator, so it is announced as one run-on word.
+          // The visible text stays part of the name, so WCAG 2.5.3 (label in name) holds.
+          aria-label={label ? `${ariaLabel}: ${label}` : ariaLabel}
           className={cn(
             "h-auto",
             variant === "sidebar"

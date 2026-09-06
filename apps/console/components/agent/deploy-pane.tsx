@@ -9,6 +9,8 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { ExternalLink } from "lucide-react";
+import { PANEL_EMPTY } from "@/components/agent/panel-empty";
+import { EmptyState } from "@repo/ui/empty";
 import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import type {
 	GitopsComponentRow,
@@ -88,10 +90,10 @@ function Section({
 }) {
 	return (
 		<div>
-			<div className="vx-eyebrow pb-1 text-[9px]">{title}</div>
+			<div className="vx-eyebrow pb-1 text-ui-3xs">{title}</div>
 			<div className="border border-border px-3">{children}</div>
 			{hint && (
-				<p className="mx-0.5 mt-1.5 text-[11px] leading-snug text-muted-foreground">
+				<p className="mx-0.5 mt-1.5 text-ui-xs leading-snug text-muted-foreground">
 					{hint}
 				</p>
 			)}
@@ -102,7 +104,7 @@ function Section({
 /** One key/value wiring row (mono, right-aligned value). */
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
 	return (
-		<div className="flex items-center justify-between gap-3 border-b border-border py-2 font-mono text-[11px] last:border-0">
+		<div className="flex items-center justify-between gap-3 border-b border-border py-2 font-mono text-ui-xs last:border-0">
 			<span className="text-muted-foreground">{k}</span>
 			<span className="truncate text-right text-foreground">{v || "—"}</span>
 		</div>
@@ -116,7 +118,7 @@ function ComponentRow({ row }: { row: GitopsComponentRow }) {
 			<div className="flex min-w-0 flex-col gap-0.5">
 				<span className="truncate font-mono text-xs text-foreground">{row.name}</span>
 				{row.message && (
-					<span className="text-[11px] leading-snug text-muted-foreground">
+					<span className="text-ui-xs leading-snug text-muted-foreground">
 						{row.message}
 					</span>
 				)}
@@ -145,7 +147,7 @@ function Group({
 	return (
 		<Section title={title} hint={hint}>
 			{rows.length === 0 ? (
-				<div className="py-2.5 font-mono text-[11px] leading-snug text-muted-foreground">
+				<div className="py-2.5 font-mono text-ui-xs leading-snug text-muted-foreground">
 					{emptyText}
 				</div>
 			) : (
@@ -158,9 +160,7 @@ function Group({
 /** The Deploy tab's content — null status means the read hasn't landed yet. */
 export function DeployPane({ status }: { status: GitopsDeployStatus | null }) {
 	if (!status) {
-		return (
-			<p className="py-8 text-center text-xs text-muted-foreground">Loading…</p>
-		);
+		return <EmptyState className={PANEL_EMPTY} title="Loading…" />;
 	}
 
 	const gitops = status.mode === "gitops";
@@ -170,7 +170,7 @@ export function DeployPane({ status }: { status: GitopsDeployStatus | null }) {
 
 	return (
 		<div className="space-y-4">
-			<div className="font-mono text-[11px] tracking-wide text-muted-foreground">
+			<div className="font-mono text-ui-xs tracking-wide text-muted-foreground">
 				{rollup(status)}
 			</div>
 
@@ -178,17 +178,17 @@ export function DeployPane({ status }: { status: GitopsDeployStatus | null }) {
 				<div className="border border-border bg-muted/40 p-3">
 					<div className="flex items-center gap-2.5">
 						<StatusBadge status="failed" label="Failed" />
-						<span className="vx-eyebrow text-[9px]">
+						<span className="vx-eyebrow text-ui-3xs">
 							GitOps deploy failed · {status.failedStep}
 						</span>
 					</div>
 					{status.failureMessage && (
-						<p className="mt-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+						<p className="mt-2.5 font-mono text-ui-xs leading-relaxed text-foreground">
 							{status.failureMessage}
 						</p>
 					)}
 					<div className="mt-2.5 flex items-baseline gap-2 border-t border-border pt-2.5">
-						<span className="vx-eyebrow flex-none text-[9px]">Fix</span>
+						<span className="vx-eyebrow flex-none text-ui-3xs">Fix</span>
 						<span className="text-xs leading-snug text-muted-foreground">
 							{FIX_HINTS[status.failedStep] ?? "Re-run the deploy."}
 						</span>
@@ -206,10 +206,10 @@ export function DeployPane({ status }: { status: GitopsDeployStatus | null }) {
 							key={w}
 							className="flex items-start gap-2.5 border-b border-border py-2 last:border-0"
 						>
-							<span className="flex-none pt-px font-mono text-[11px] leading-none text-muted-foreground">
+							<span className="flex-none pt-px font-mono text-ui-xs leading-none text-muted-foreground">
 								!
 							</span>
-							<span className="font-mono text-[11px] leading-snug text-foreground">
+							<span className="font-mono text-ui-xs leading-snug text-foreground">
 								{w}
 							</span>
 						</div>

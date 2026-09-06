@@ -37,7 +37,7 @@ export function InfoHint({
           </button>
         }
       />
-      <TooltipContent className="max-w-[240px] text-[12px] leading-relaxed">
+      <TooltipContent className="max-w-[240px] text-ui-sm leading-relaxed">
         {children}
       </TooltipContent>
     </Tooltip>

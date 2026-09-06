@@ -22,6 +22,7 @@ vi.mock("@/lib/scaler", () => ({ notifyScaler: vi.fn() }));
 vi.mock("@/lib/auth/owner", () => ({ requireOwner: vi.fn() }));
 vi.mock("@/lib/auth/scope", () => ({ getActiveScope: vi.fn() }));
 vi.mock("@/lib/billing/usage-guard", () => ({ assertUsageAllowed: vi.fn() }));
+vi.mock("@/lib/billing/job-quota", () => ({ assertJobQuotaAllowed: vi.fn() }));
 vi.mock("@/lib/authz/tuple-sync", () => ({ mirrorHierarchyEdge: vi.fn() }));
 vi.mock("@/lib/cli/auth", () => ({ verifyCliToken: vi.fn() }));
 vi.mock("@/lib/alerts/emit", () => ({ emitAlertEventSafe: vi.fn() }));
@@ -30,6 +31,7 @@ import { POST } from "@/app/api/jobs/route";
 import { getActiveScope } from "@/lib/auth/scope";
 import { authorize, ensureCliOrgAccess } from "@/lib/authz/guard";
 import { ForbiddenError } from "@/lib/authz/types";
+import { assertJobQuotaAllowed } from "@/lib/billing/job-quota";
 import { assertUsageAllowed } from "@/lib/billing/usage-guard";
 import { verifyCliToken } from "@/lib/cli/auth";
 import { emitAlertEventSafe } from "@/lib/alerts/emit";
@@ -137,15 +139,20 @@ function valuesFor(spy: ReturnType<typeof vi.fn>, table: unknown): Record<string
  * Stubs getServiceDb for the route's own queries: the post-action job fetch
  * (select→limit), the configuration_hash write (update→returning), the
  * DESTROY_RUNNER legacy insert (insert→returning), and the defense-in-depth
- * assigned-runner lookup (select from runners → org_id). `runnerOrgId` (default
- * "org-1", the caller's org) makes the assigned runner in-org; a mismatch or null
- * simulates a cross-org / missing runner.
+ * assigned-runner lookup (select from runners → org_id).
+ *
+ * The runner lookup has THREE outcomes, and they are distinct because the route now reads
+ * the org back rather than only asserting it (#3874): `runnerOrgId` (default "org-1", the
+ * caller's org) is the org the runners row holds — a different value is a cross-tenant self
+ * runner, and `null` is a MANAGED runner, which is a real row with no tenant, not a missing
+ * one. `runnerMissing` is the missing one.
  */
 function mockServiceDb(rows: {
 	selectRows?: Rows;
 	updateRows?: Rows;
 	insertRows?: Rows;
 	runnerOrgId?: string | null;
+	runnerMissing?: boolean;
 }) {
 	const insertValuesSpy = vi.fn();
 	const updateSetSpy = vi.fn();
@@ -157,9 +164,9 @@ function mockServiceDb(rows: {
 					limit: () =>
 						Promise.resolve(
 							t === runners
-								? runnerOrgId !== null
-									? [{ org_id: runnerOrgId }]
-									: []
+								? rows.runnerMissing
+									? []
+									: [{ org_id: runnerOrgId }]
 								: (rows.selectRows ?? []),
 						),
 				}),
@@ -237,6 +244,7 @@ beforeEach(() => {
 	vi.mocked(authorize).mockResolvedValue({ userId: "user-1", orgId: "org-1" } as never);
 	vi.mocked(ensureCliOrgAccess).mockResolvedValue(null);
 	vi.mocked(assertUsageAllowed).mockResolvedValue(undefined as never);
+	vi.mocked(assertJobQuotaAllowed).mockResolvedValue(undefined);
 });
 
 describe("POST /api/jobs (CLI queue)", () => {
@@ -424,11 +432,115 @@ describe("POST /api/jobs (CLI queue)", () => {
 		expect(() => valuesFor(valuesSpy, jobs)).toThrow();
 	});
 
+	// ── #3874: the org the DESTROY_RUNNER row is STAMPED with ──────────────────────────────
+	//
+	// The insert runs on getServiceDb() — no RLS, no `app.current_org` — and carries no
+	// project, so `set_org_id_from_project` used to fall through to `NEW.user_id` and file the
+	// job in the caller's PERSONAL org. It is now stamped explicitly, and stamped from the
+	// RUNNER rather than from the actor, because `claim_next_job` compares
+	// `j.org_id = v_runner_org_id` as a hard equality and #3874 ships no backfill. The real
+	// stamp is proven against Postgres in tests/integration/cli-enqueue-org.test.ts; these two
+	// pin the active-tenant value the route passes, in the suite that runs on every PR.
+	it("keeps an assigned legacy DESTROY_RUNNER job in the active org", async () => {
+		setupTx({});
+		const { insertValuesSpy } = mockServiceDb({
+			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
+			// The runner carries the deployer's personal org (user-1), not the active org
+			// (org-1) — every runner the CLI deployed before #3874.
+			runnerOrgId: "user-1",
+		});
+
+		const res = await post({
+			job_type: "DESTROY_RUNNER",
+			config_snapshot: { runner_name: "r1" },
+			assigned_runner_id: "runner-legacy",
+		});
+
+		expect(res.status).toBe(201);
+		expect(insertValuesSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ org_id: "org-1" }),
+		);
+		// The quota is counted against the org the row is stamped with, not the caller's
+		// personal org — checking one tenant and inserting into another measures nothing.
+		expect(assertJobQuotaAllowed).toHaveBeenCalledWith("org-1");
+	});
+
+	it("DESTROY_RUNNER for a runner in the ACTOR's org gets the actor's org, resolved from the header", async () => {
+		setupTx({});
+		const { insertValuesSpy } = mockServiceDb({
+			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
+			runnerOrgId: "org-1",
+		});
+
+		const res = await post(
+			{
+				job_type: "DESTROY_RUNNER",
+				config_snapshot: { runner_name: "r1" },
+				assigned_runner_id: "runner-modern",
+			},
+			{ "X-Alethia-Org": "org-1" },
+		);
+
+		expect(res.status).toBe(201);
+		expect(insertValuesSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ org_id: "org-1", user_id: "user-1" }),
+		);
+		// The scope resolution was HOISTED above this branch (#3874): before, DESTROY_RUNNER —
+		// the verb that destroys a runner — honoured neither `X-Alethia-Org` nor a service
+		// token's org pin, while its three siblings did.
+		expect(getActiveScope).toHaveBeenCalledWith("user-1", "org-1");
+		expect(ensureCliOrgAccess).toHaveBeenCalled();
+		// The quota's subject is the org being STAMPED — here distinguishable from the caller's
+		// personal org ("user-1"), which is what it used to be counted against.
+		expect(assertJobQuotaAllowed).toHaveBeenCalledWith("org-1");
+		expect(assertJobQuotaAllowed).not.toHaveBeenCalledWith("user-1");
+	});
+
+	it("DESTROY_RUNNER with no assigned runner falls back to the ACTOR's org", async () => {
+		setupTx({});
+		const { insertValuesSpy } = mockServiceDb({
+			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
+		});
+
+		const res = await post({
+			job_type: "DESTROY_RUNNER",
+			config_snapshot: { runner_name: "r1" },
+		});
+
+		expect(res.status).toBe(201);
+		expect(insertValuesSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ org_id: "org-1" }),
+		);
+	});
+
+	it("DESTROY_RUNNER pinned to a MANAGED runner (org_id NULL) falls back to the actor's org", async () => {
+		setupTx({});
+		const { insertValuesSpy } = mockServiceDb({
+			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
+			// A managed runner belongs to no tenant; claim_next_job admits it for any org
+			// (`v_operator = 'managed'`), so the job takes the actor's org, not NULL.
+			runnerOrgId: null,
+		});
+
+		const res = await post({
+			job_type: "DESTROY_RUNNER",
+			config_snapshot: { runner_name: "r1" },
+			assigned_runner_id: "runner-managed",
+		});
+
+		expect(res.status).toBe(201);
+		expect(insertValuesSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ org_id: "org-1" }),
+		);
+	});
+
 	it("404s (defense-in-depth) when DESTROY_RUNNER names a runner in another org", async () => {
 		setupTx({});
 		const { insertValuesSpy } = mockServiceDb({
 			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
-			runnerOrgId: "org-other", // not the caller's org (user-1's personal org)
+			// Neither the caller's active org (org-1) nor their personal org (user-1), so the
+			// transitional personal-org admission does not reach it.
+			runnerOrgId: "org-other",
 		});
 
 		const res = await post({
@@ -436,6 +548,23 @@ describe("POST /api/jobs (CLI queue)", () => {
 			cloud_identity_id: "ci-1",
 			config_snapshot: { runner_name: "r1" },
 			assigned_runner_id: "runner-x",
+		});
+
+		expect(res.status).toBe(404);
+		expect(insertValuesSpy).not.toHaveBeenCalled();
+	});
+
+	it("404s a NON-EXISTENT runner with the same response as a cross-org one (no disclosure)", async () => {
+		setupTx({});
+		const { insertValuesSpy } = mockServiceDb({
+			insertRows: [wireJob({ job_type: "DESTROY_RUNNER", project_id: null })],
+			runnerMissing: true,
+		});
+
+		const res = await post({
+			job_type: "DESTROY_RUNNER",
+			config_snapshot: { runner_name: "r1" },
+			assigned_runner_id: "runner-gone",
 		});
 
 		expect(res.status).toBe(404);

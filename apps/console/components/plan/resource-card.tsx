@@ -147,7 +147,7 @@ export function ResourceCard({ resource, cost }: ResourceCardProps) {
         )}
         <Badge
           variant="outline"
-          className={`text-[10px] shrink-0 ${actionStyle.className}`}
+          className={`text-ui-2xs shrink-0 ${actionStyle.className}`}
         >
           {actionStyle.label}
         </Badge>

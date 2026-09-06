@@ -106,6 +106,27 @@ type DemoStep struct {
 	Why string
 	// Issue is the tracking issue. Required for CLIGap and CloudManual — the maintainer's ruling
 	// is that every one of these is filed, so a verdict without a number is an unkept promise.
+	//
+	// WHETHER IT MUST STILL BE OPEN DEPENDS ON THE VERDICT, and the maintainer's ruling on #3591
+	// is that the two differ:
+	//
+	//	CLIGap      → the tracker must be OPEN.
+	//	CloudManual → the tracker need only be FILED. A closed one is fine.
+	//
+	// A CLIGap is OUR debt — the product does this and the CLI cannot reach it — and debt must be
+	// able to CLOSE. Letting its tracker close while the gap still stands is exactly how debt
+	// becomes permanent by being forgotten, which is the failure the must-be-OPEN rule on
+	// addon_exclusions.go's Issue field exists to prevent. Same failure, same rule.
+	//
+	// A CloudManual is a FACT ABOUT A CLOUD. The ceiling does not lift because somebody closed the
+	// issue: #2332 (hetzner ships no API that mints Object Storage keys) and #2333 (a prepaid CR EE
+	// instance is released in a console) are permanent, and both are closed today. Requiring OPEN
+	// here would red the build over entries that are legitimately closed, and reopening them to
+	// satisfy a guard would be the guard editing reality to match itself.
+	//
+	// Enforced by scripts/check-exclusion-issues.mjs, which needs the network and therefore cannot
+	// live in this package's pure tests. Shape is checked here (TestCLIDemoGapsAndCeilingsAreFiled);
+	// state is checked there.
 	Issue string
 	// Clouds narrows the step to specific clouds. Empty means every cloud. Used by the per-cloud
 	// prerequisites that only one provider imposes.

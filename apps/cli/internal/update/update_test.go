@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCompareSemver(t *testing.T) {
@@ -49,7 +50,7 @@ func TestFetchLatest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r, err := fetchLatest(srv.URL)
+	r, err := FetchLatest(srv.URL)
 	if err != nil {
 		t.Fatalf("fetchLatest: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestNotifyTo(t *testing.T) {
 	if !strings.Contains(out, "1.0.0") || !strings.Contains(out, "1.2.0") {
 		t.Errorf("expected both versions, got: %q", out)
 	}
-	if !strings.Contains(out, "brew upgrade alethia") || !strings.Contains(out, "example.com/r") {
+	if !strings.Contains(out, "alethia update") || !strings.Contains(out, "example.com/r") {
 		t.Errorf("expected upgrade hint, got: %q", out)
 	}
 
@@ -83,5 +84,18 @@ func TestNotifyTo(t *testing.T) {
 	notifyTo(&buf, "1.0.0", cache{Latest: "2.0.0", MinSupported: "1.5.0"})
 	if !strings.Contains(buf.String(), "minimum supported") {
 		t.Errorf("expected min-supported warning, got: %q", buf.String())
+	}
+}
+
+func TestShouldNotifyAtMostDailyPerRelease(t *testing.T) {
+	now := time.Now()
+	if shouldNotify("1.0.0", cache{Latest: "1.1.0", LastNotified: now, NotifiedVersion: "1.1.0"}) {
+		t.Fatal("same release should not repeat within a day")
+	}
+	if !shouldNotify("1.0.0", cache{Latest: "1.1.0", LastNotified: now.Add(-25 * time.Hour), NotifiedVersion: "1.1.0"}) {
+		t.Fatal("same release should repeat after a day")
+	}
+	if !shouldNotify("1.0.0", cache{Latest: "1.2.0", LastNotified: now, NotifiedVersion: "1.1.0"}) {
+		t.Fatal("a new release should notify immediately")
 	}
 }

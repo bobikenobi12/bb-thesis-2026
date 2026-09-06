@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	projectPlanProjectID string
-	projectPlanRunnerID  string
-	projectPlanEnv       string
-	projectPlanWait      bool
+	projectPlanProjectRef string
+	projectPlanProjectID  string
+	projectPlanRunnerID   string
+	projectPlanEnv        string
+	projectPlanWait       bool
 )
 
 var projectPlanCmd = &cobra.Command{
@@ -26,14 +27,17 @@ var projectPlanCmd = &cobra.Command{
 			fail(err)
 		}
 
-		if projectPlanProjectID == "" {
-			projectPlanProjectID, err = selectProject(token)
-			if err != nil {
-				fail(err)
-			}
+		projectPlanProjectID, err = projectIDForJob(api.NewClient(token), token, projectPlanProjectRef, projectPlanProjectID)
+		if err != nil {
+			fail(err)
 		}
 
-		if projectPlanRunnerID == "" {
+		// The runner picker cannot be answered with prompting disabled, and the assignment is
+		// OPTIONAL — an empty id is the picker's own "Any available" default — so a scripted
+		// run simply leaves the job unassigned. Without this guard `--no-input` could not queue
+		// a PLAN at all without also naming a runner, which is a flag for a field the command
+		// does not require. `project destroy` already had it; these two did not.
+		if projectPlanRunnerID == "" && canPromptForm() {
 			projectPlanRunnerID, err = selectRunner(token, "")
 			if err != nil {
 				fail(err)
@@ -74,7 +78,7 @@ var projectPlanCmd = &cobra.Command{
 
 func init() {
 	projectCmd.AddCommand(projectPlanCmd)
-	projectPlanCmd.Flags().StringVar(&projectPlanProjectID, "project-id", "", "ID of the project to plan")
+	jobProjectFlags(projectPlanCmd, &projectPlanProjectRef, &projectPlanProjectID, "plan")
 	projectPlanCmd.Flags().StringVar(&projectPlanRunnerID, "runner-id", "", "Assign to a specific runner")
 	projectPlanCmd.Flags().StringVar(&projectPlanEnv, "env", "", "Target environment name (default: the project's default environment)")
 	projectPlanCmd.Flags().BoolVarP(&projectPlanWait, "wait", "w", false, "Wait for job completion")

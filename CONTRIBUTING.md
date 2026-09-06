@@ -76,6 +76,21 @@ receives merges from `staging`.
   queue) or merge a red PR. The heavy real-runner and browser E2Es run as observe-only signals,
   tracked by `scripts/merge-signal-health.sh` and the weekly *Merge-signal health* workflow.
 
+- **A promotion PR (`dev → staging`, `staging → main`) lives as a DRAFT between promotions.**
+  Mark it ready when you are actually promoting, and draft it again after.
+
+  Its head is an integration branch, so every merge into `dev` is a `synchronize` on it — and its
+  diff is everything `dev` is ahead of `staging` by, which matches nearly every path filter in the
+  repo. Measured 2026-09-03 over 500 runs: one standing promotion PR was **22% of all CI runs**,
+  firing ~9 runs across 9 workflows on every single merge, to re-validate a promotion nobody was
+  promoting.
+
+  That matters more than the share suggests, because **CI here is rationed by runner slots, not
+  minutes**: in the same sample jobs spent 5,376 minutes waiting for a runner against 1,802
+  executing, and a run had all its ready jobs running only after ~35 minutes. A five-second job
+  that waits twenty minutes holds a slot for twenty minutes. `workflow-health.yml` reports the
+  demand daily (*CI demand*) so this is visible rather than rediscovered — see #4173.
+
 - **`staging` is protected too** (PR + green CI), lighter than `main`.
 - **release-please** runs on `main` and opens the release PRs (CLI + runner version
   bumps); this flow is unchanged by the branch model.

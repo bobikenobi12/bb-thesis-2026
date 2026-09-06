@@ -26,18 +26,18 @@ provider "azurerm" {
 provider "azuread" {}
 
 provider "kubernetes" {
-  host                   = var.provision_aks ? module.aks[0].cluster_endpoint : ""
-  client_certificate     = var.provision_aks ? base64decode(module.aks[0].client_certificate) : ""
-  client_key             = var.provision_aks ? base64decode(module.aks[0].client_key) : ""
-  cluster_ca_certificate = var.provision_aks ? base64decode(module.aks[0].cluster_ca_certificate) : ""
+  host                   = try(module.aks[0].cluster_endpoint, null) != null ? module.aks[0].cluster_endpoint : ""
+  client_certificate     = try(module.aks[0].client_certificate, null) != null ? base64decode(module.aks[0].client_certificate) : ""
+  client_key             = try(module.aks[0].client_key, null) != null ? base64decode(module.aks[0].client_key) : ""
+  cluster_ca_certificate = try(module.aks[0].cluster_ca_certificate, null) != null ? base64decode(module.aks[0].cluster_ca_certificate) : ""
 }
 
 provider "helm" {
   kubernetes {
-    host                   = var.provision_aks ? module.aks[0].cluster_endpoint : ""
-    client_certificate     = var.provision_aks ? base64decode(module.aks[0].client_certificate) : ""
-    client_key             = var.provision_aks ? base64decode(module.aks[0].client_key) : ""
-    cluster_ca_certificate = var.provision_aks ? base64decode(module.aks[0].cluster_ca_certificate) : ""
+    host                   = try(module.aks[0].cluster_endpoint, null) != null ? module.aks[0].cluster_endpoint : ""
+    client_certificate     = try(module.aks[0].client_certificate, null) != null ? base64decode(module.aks[0].client_certificate) : ""
+    client_key             = try(module.aks[0].client_key, null) != null ? base64decode(module.aks[0].client_key) : ""
+    cluster_ca_certificate = try(module.aks[0].cluster_ca_certificate, null) != null ? base64decode(module.aks[0].cluster_ca_certificate) : ""
   }
 }
 

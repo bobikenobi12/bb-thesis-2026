@@ -15,8 +15,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// verifyShowSelector holds this command's answers to the "which job" spec.
+var verifyShowSelector jobSelector
+
 var verifyShowCmd = &cobra.Command{
-	Use:   "show",
+	Use:   "show [job_id]",
 	Short: "Show the per-control verification report behind a job's verdict",
 	Long: `Prints the elench report the receipt seals: every control that was evaluated, its
 status, and the findings behind a failure.
@@ -26,17 +29,23 @@ not inspect is not a control that passed, and a report that quietly omitted them
 what was checked. Any recorded waiver is printed with who granted it and why.
 
 Exits non-zero on a blocking verdict, matching elench-verify, so this can gate a pipeline on the
-verification result the way ` + "`alethia verify receipt`" + ` gates on the signature.`,
+verification result the way ` + "`alethia verify receipt`" + ` gates on the signature.
+
+The id is optional. Without it, ` + "`--latest`" + ` takes the most recent PLAN or DEPLOY job —
+the two that carry a receipt — and a terminal gets a picker.`,
+	Args: verifyJobArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		jobID, err := currentJob(cmd)
+		client := api.NewClient(token)
+		ref, err := resolveVerifyJob(client, cmd, args, verifyShowSelector)
 		if err != nil {
 			fail(err)
 		}
-		if err := runVerifyShow(api.NewClient(token), os.Stdout, outputFormat(cmd), jobID); err != nil {
+		announceResolvedJob(ref, "Showing")
+		if err := runVerifyShow(client, os.Stdout, outputFormat(cmd), ref.ID); err != nil {
 			fail(err)
 		}
 	},
@@ -90,7 +99,10 @@ func writeFindings(out io.Writer, r *verify.Report, ex *verify.RecordedException
 		fmt.Fprintf(out, "\n%s\n", ui.WarningStyle.Render(fmt.Sprintf(
 			"Waiver: %s — granted by %s, reason: %s", strings.Join(ex.Controls, ", "), ex.By, ex.Reason)))
 		if ex.Expiry != "" {
-			fmt.Fprintf(out, "    %s\n", ui.MutedStyle.Render("expires "+ex.Expiry))
+			// Through the same shared rule as the receipt card's Evaluated row: a waiver's
+			// expiry is the date an auditor reads off this line, and it must not be spelled one
+			// way here and another way two commands over.
+			fmt.Fprintf(out, "    %s\n", ui.MutedStyle.Render("expires "+receiptStamp(ex.Expiry)))
 		}
 	}
 }

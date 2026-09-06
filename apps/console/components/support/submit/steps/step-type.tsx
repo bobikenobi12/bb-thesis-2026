@@ -9,6 +9,7 @@ import {
 	SUPPORT_CASE_TYPE_LABELS,
 	type SubmitCaseInput,
 } from "@/lib/validations/support";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 /** One-line description per case type, shown under each radio card. */
 const TYPE_DESCRIPTIONS: Record<string, string> = {
@@ -28,12 +29,11 @@ export function StepType() {
 
 	return (
 		<div className="space-y-4">
-			<div className="space-y-1">
-				<h2 className="text-lg font-medium">What kind of case is this?</h2>
-				<p className="text-sm text-muted-foreground">
-					This helps us route your case to the right team.
-				</p>
-			</div>
+			<SectionHeading
+				level={2}
+				title="What kind of case is this?"
+				description="This helps us route your case to the right team."
+			/>
 			<Controller
 				control={control}
 				name="type"

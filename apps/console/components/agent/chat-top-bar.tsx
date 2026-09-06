@@ -72,7 +72,7 @@ export function ChatTopBar({
 							>
 								<div className="flex flex-col">
 									<span>{m.name}</span>
-									<span className="font-mono text-[9px] text-muted-foreground">
+									<span className="font-mono text-ui-3xs text-muted-foreground">
 										{m.provider}
 									</span>
 								</div>

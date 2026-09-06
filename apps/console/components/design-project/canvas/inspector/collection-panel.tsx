@@ -4,8 +4,9 @@
 
 import { Plus, X } from "lucide-react";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { Input } from "@repo/ui/input";
-import { cn } from "@repo/ui/utils";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { useState } from "react";
 import { NODE_REGISTRY } from "../graph/node-registry";
 import { configName } from "../graph/node-config";
@@ -99,7 +100,7 @@ export function CollectionPanel({ kind }: { kind: NodeKind }) {
 							{connectorLabel(secretsStore.provider, NATIVE_LABELS.secret)}
 						</span>
 					</span>
-					<span className="vx-eyebrow text-[10px] text-muted-foreground">Change</span>
+					<span className="vx-eyebrow text-ui-2xs text-muted-foreground">Change</span>
 				</button>
 			) : null}
 
@@ -137,11 +138,15 @@ export function CollectionPanel({ kind }: { kind: NodeKind }) {
 
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				{shown.length === 0 ? (
-					<p className="px-4 py-8 text-center text-xs text-muted-foreground">
-						{members.length === 0
-							? `No ${singular}s yet. Add one to get started.`
-							: `No ${singular} matches “${filter}”.`}
-					</p>
+					<EmptyState
+						className="px-4 py-8 md:px-4 md:py-8"
+						title={
+							members.length === 0
+								? `No ${singular}s yet`
+								: `No ${singular} matches “${filter}”`
+						}
+						description={members.length === 0 ? "Add one to get started." : undefined}
+					/>
 				) : (
 					<ul>
 						{shown.map((node) => {
@@ -161,20 +166,21 @@ export function CollectionPanel({ kind }: { kind: NodeKind }) {
 										onClick={() => openInspector(node.id)}
 										className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pl-4 text-left"
 									>
-										<span
-											className={cn("vx-status shrink-0", `vx-status--${meta.vx}`)}
+										<StatusBadge
+											status={meta.label}
+											tier={meta.vx}
+											showLabel={false}
+											className="shrink-0"
 											title={status.message ?? meta.label}
 											suppressHydrationWarning
-										>
-											<span className="vx-status__dot" />
-										</span>
+										/>
 										<span className="min-w-0 flex-1 truncate font-mono text-xs">
 											{name}
 										</span>
 										{/* A failed secret has to be visible from the list — collapsing the
 										    view must never hide trouble. */}
 										{!nominal && (
-											<span className="vx-eyebrow shrink-0 text-[9px]">
+											<span className="vx-eyebrow shrink-0 text-ui-3xs">
 												{meta.label}
 											</span>
 										)}

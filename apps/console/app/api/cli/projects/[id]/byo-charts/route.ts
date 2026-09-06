@@ -11,6 +11,13 @@ import { z } from "zod";
 import { attachByoChart, detachByoChart } from "@/app/server/actions/byo-charts";
 import { runWithActor } from "@/lib/authz/actor-context";
 import { authorizeCli } from "@/lib/authz/guard";
+import {
+	type CursorScope,
+	MAX_PAGE_SIZE,
+	cursorKey,
+	paginate,
+	parsePageOpts,
+} from "@/lib/cli/paging";
 import { byoWriteError, resolveByoScope } from "@/lib/cli/byo-write";
 import {
 	resolveCliEnvironment,
@@ -26,6 +33,8 @@ import {
 	cliOkResponse,
 } from "@/lib/validations/cli-contract";
 
+const BYO_CHARTS_LIST = "project-byo-charts";
+
 export async function GET(
 	req: Request,
 	{ params }: { params: Promise<{ id: string }> },
@@ -34,7 +43,19 @@ export async function GET(
 	if ("error" in auth) return auth.error;
 	const { actor } = auth;
 	const { id } = await params;
-	const envParam = new URL(req.url).searchParams.get("env");
+	const { searchParams } = new URL(req.url);
+	const envParam = searchParams.get("env");
+	const cursorScope: CursorScope = { orgId: actor.orgId, list: BYO_CHARTS_LIST };
+	const parsed = parsePageOpts(searchParams, cursorScope);
+	if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+	const asked = (key: string) => {
+		const raw = searchParams.get(key);
+		return raw !== null && raw !== "";
+	};
+	const opts =
+		!asked("limit") && !asked("cursor")
+			? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+			: parsed.opts;
 
 	try {
 		const project = await resolveCliProject(actor.orgId, id);
@@ -62,33 +83,45 @@ export async function GET(
 		}
 
 		const db = getServiceDb();
-		const rows = await db
-			.select({
-				addon_id: projectAddons.addon_id,
-				chart_repo: projectAddons.chart_repo,
-				chart_path: projectAddons.chart_path,
-				version: projectAddons.version,
-				namespace: projectAddons.namespace,
-				status: projectAddons.status,
-				health: projectAddons.health,
-				sync_status: projectAddons.sync_status,
-				scan_status: projectAddons.scan_status,
-				scanned_at: projectAddons.scanned_at,
-			})
-			.from(projectAddons)
-			.innerJoin(projects, eq(projectAddons.project_id, projects.id))
-			.where(
-				and(
-					eq(projectAddons.project_id, project.id),
-					eq(projectAddons.environment_id, environmentId),
-					eq(projectAddons.source, "byo"),
-					eq(projects.org_id, actor.orgId),
-				),
-			);
+		const { items, page } = await paginate({
+			db,
+			table: projectAddons,
+			createdAt: projectAddons.created_at,
+			id: projectAddons.id,
+			scope: [
+				eq(projectAddons.project_id, project.id),
+				eq(projectAddons.environment_id, environmentId),
+				eq(projectAddons.source, "byo"),
+			],
+			cursor: cursorScope,
+			opts,
+			rows: (query) =>
+				db
+					.select({
+						id: projectAddons.id,
+						addon_id: projectAddons.addon_id,
+						chart_repo: projectAddons.chart_repo,
+						chart_path: projectAddons.chart_path,
+						version: projectAddons.version,
+						namespace: projectAddons.namespace,
+						status: projectAddons.status,
+						health: projectAddons.health,
+						sync_status: projectAddons.sync_status,
+						scan_status: projectAddons.scan_status,
+						scanned_at: projectAddons.scanned_at,
+						cursor_key: cursorKey(projectAddons.created_at),
+					})
+					.from(projectAddons)
+					.innerJoin(projects, eq(projectAddons.project_id, projects.id))
+					.where(and(query.where, eq(projects.org_id, actor.orgId)))
+					.orderBy(...query.orderBy)
+					.limit(query.limit),
+			positionOf: (row) => ({ createdAt: row.cursor_key, id: row.id }),
+		});
 
 		return cliJson(cliByoChartsResponse, {
 			environment: environmentName,
-			charts: rows.map((r) => ({
+			charts: items.map(({ id: _id, cursor_key: _cursor, ...r }) => ({
 				id: r.addon_id,
 				repo_url: r.chart_repo ?? "",
 				chart_path: r.chart_path ?? "",
@@ -100,6 +133,7 @@ export async function GET(
 				scan_status: r.scan_status,
 				scanned_at: r.scanned_at?.toISOString() ?? null,
 			})),
+			page,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";

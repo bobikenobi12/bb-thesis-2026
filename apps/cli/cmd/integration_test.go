@@ -109,7 +109,7 @@ func cliEnv(t *testing.T) func(args ...string) error {
 	})
 
 	return func(args ...string) error {
-		rootCmd.SetArgs(append(args, "--output", "json"))
+		execRootArgs(append(args, "--output", "json"))
 		return rootCmd.Execute()
 	}
 }

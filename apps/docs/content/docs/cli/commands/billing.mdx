@@ -11,8 +11,9 @@ Three related views into an organization's plan and the platform's provisioning 
 - **`usage`** — current consumption: seats, runner-minutes, projects, and AI credits.
 - **`fleet`** — the managed pool of warm provisioning runners (platform-operator config).
 
-`billing` and `usage` operate on the **active organization** (set via `alethia org switch`); override
-per-invocation with `--org <id>`. Every command accepts the global
+`billing` and `usage` operate on the **active organization** (set via `alethia org switch`), or on
+the organization named by the global `--org <id>` for a single invocation — which is refused with
+`403` if you are not a member of it. Every command accepts the global
 [`-o, --output <table|json|csv>`](/cli/identity#output-formats) flag.
 
 <Callout type="info">
@@ -51,12 +52,23 @@ alethia usage
 alethia usage -o json
 ```
 
-| Field            | Meaning                                                       |
-| ---------------- | ------------------------------------------------------------- |
-| `Seats`          | Billable seats used **/** purchased cap                       |
-| `Runner minutes` | Managed-runner minutes consumed this billing period           |
-| `Projects`       | Projects in the organization                                  |
-| `AI credits`     | Included AI credits used this week **/** the weekly grant     |
+| Field            | Meaning                                                                        |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `Seats`          | Billable seats used **/** purchased cap                                        |
+| `Runner minutes` | Managed-runner minutes consumed this billing period, written for a person: `0 min`, `47 min`, `2h 15m` |
+| `Projects`       | Projects in the organization                                                   |
+| `AI credits`     | Included AI credits used this week **/** the weekly grant                      |
+
+<Callout type="info">
+`Runner minutes` has no **/ cap** beside it, unlike `Seats` and `AI credits`. The usage API returns
+a consumed figure and no runner-minute allowance, so the CLI shows what you have used and does not
+state an allowance nobody sent. The console's usage page reads the allowance from the plan
+catalogue; see **Settings → Usage** there for minutes used against minutes included.
+</Callout>
+
+Use `-o json` or `-o csv` when a script needs the raw counters. Only the card is written for a
+person: `runner_minutes` is a plain integer of minutes in the JSON, and the CSV `Runner minutes`
+row carries that same integer rather than `2h 15m`.
 
 ## `alethia fleet`
 
@@ -69,7 +81,7 @@ is only available on **self-managed deployments**, to organization **owners/admi
 service `fleet list` returns an empty list, and `fleet set` is refused.
 </Callout>
 
-### `fleet list`
+## `alethia fleet list`
 
 Lists the configured warm pools. On a TTY this opens the interactive table; with `--output json|csv`
 (or `--no-input`) it prints a static table.
@@ -80,24 +92,25 @@ alethia fleet list -o json
 ```
 
 Columns: `Provider`, `Enabled`, `Warm` (floor), `Max` (ceiling), `Slots` (concurrent jobs per
-runner), `Locations`, and `Version` (a pinned version, or the tracked channel).
+runner), `Locations`, and `Version` (a pinned version, or the tracked channel). The command takes
+no input of its own.
 
-### `fleet set <provider>`
+## `alethia fleet set`
 
-Updates the warm pool for a provider (`aws`, `gcp`, `azure`). Only the flags you pass are changed; the
-rest keep their stored value. A pinned `--version` and a release `--channel` are **mutually exclusive**
-— a version pin clears the channel.
+Updates the warm pool for one cloud. Only the flags you pass are changed; the rest keep their
+stored value. A pinned `--version` and a release `--channel` are **mutually exclusive** — a version
+pin clears the channel.
 
-| Flag         | Updates                                              |
-| ------------ | --------------------------------------------------- |
-| `--warm-min` | Always-warm floor of runners                        |
-| `--max`      | Hard ceiling on instances                           |
-| `--slots`    | Concurrent jobs per runner                          |
-| `--enabled`  | Enable (`true`) or pause (`false`) the pool         |
-| `--channel`  | Release channel to track (e.g. `stable`)            |
-| `--version`  | Pin an exact runner version (clears the channel)    |
+The provider is optional at a terminal: omit it and you choose from the clouds Alethia knows —
+`aws`, `azure`, `gcp`, `alibaba`, `digitalocean`, `hetzner`, `civo`. That list is the product's own
+`cloud_provider` set rather than a list typed into this page, and **nothing is refused on it**:
+which of those clouds a given deployment's fleet controller actually serves is the server's answer,
+not the CLI's.
 
 ```bash
+# Choose the cloud at a terminal
+alethia fleet set --warm-min 2
+
 # Raise the AWS pool's warm floor and ceiling
 alethia fleet set aws --warm-min 2 --max 20
 
@@ -108,7 +121,21 @@ alethia fleet set gcp --version v1.4.0
 alethia fleet set azure --enabled=false
 ```
 
+{/* fieldspec: alethia fleet set */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Provider | Which cloud's warm pool to configure; omit it to choose from the clouds Alethia supports | `[provider]` |
+| Warm floor | How many runners stay provisioned with no work to do | `--warm-min` |
+| Ceiling | The most instances the controller may ever run for this cloud | `--max` |
+| Slots per runner | How many provisioning jobs one runner takes at once | `--slots` |
+| Enabled | Whether the controller provisions for this cloud at all; disabling drains it | `--enabled` |
+| Release channel | A runner channel to track, e.g. stable; mutually exclusive with a pinned version | `--channel` |
+| Pinned version | An exact runner version to hold this pool at; setting it clears the channel | `--version` |
+
 <Callout type="info">
 Disabling a pool drains its runners (a capacity reduction), so `fleet set --enabled=false` prompts
-for confirmation on a TTY. Pass `--no-input` in scripts.
+for confirmation on a TTY — and the prompt names the cloud, because with the picker the CLI may
+have chosen it. Scripted, pass `--yes`; `--no-input` alone now **fails** rather than exiting 0
+having done nothing.
 </Callout>

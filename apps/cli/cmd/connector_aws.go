@@ -20,6 +20,7 @@ import (
 var (
 	connectorAwsRegion   string
 	connectorAwsRoleName string
+	connectorAwsRoleArn  string
 	connectorAwsManual   bool
 	connectorAwsScript   bool
 )
@@ -36,8 +37,18 @@ the Alethia issuer and a role Alethia assumes via AssumeRoleWithWebIdentity — 
 access keys and no external id.
 
 By default the stack is deployed with your local aws CLI. Use --manual to deploy
-it from the AWS console and paste back the role ARN.`,
+it from the AWS console and paste back the role ARN, or --role-arn to submit a role
+you already created — the flag form of that same paste, so the command works under
+--no-input with no aws CLI on the machine.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := refuseMultipleModes(
+			modeFlag{"--role-arn", strings.TrimSpace(connectorAwsRoleArn) != ""},
+			modeFlag{"--manual", connectorAwsManual},
+			modeFlag{"--script", connectorAwsScript},
+		); err != nil {
+			fail(err)
+		}
+
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
@@ -58,6 +69,10 @@ it from the AWS console and paste back the role ARN.`,
 		ui.PrintStepper(steps, 1)
 		var roleArn string
 		switch {
+		case strings.TrimSpace(connectorAwsRoleArn) != "":
+			// The flag half of the manual flow: the role already exists, so there is nothing to
+			// create and nothing to prompt for.
+			roleArn = strings.TrimSpace(connectorAwsRoleArn)
 		case connectorAwsManual:
 			roleArn, err = awsManualFlow(issuerURL)
 		case connectorAwsScript:
@@ -131,6 +146,10 @@ func awsManualFlow(issuerURL string) (string, error) {
 	fmt.Printf("  1. Open the CloudFormation quick-create link:\n\n     %s\n\n", ui.LinkStyle.Render(quickCreate))
 	fmt.Println("  2. Create the stack (it trusts the Alethia issuer — no external id), then copy its RoleArn output below.")
 
+	if err := requireInteractiveForm(); err != nil {
+		return "", fmt.Errorf("no role ARN given: pass --role-arn (%w)", err)
+	}
+
 	var roleArn string
 	if err := runHuhForm(huh.NewGroup(
 		huh.NewInput().
@@ -151,6 +170,7 @@ func init() {
 	connectorCmd.AddCommand(connectorAwsCmd)
 	connectorAwsCmd.Flags().StringVar(&connectorAwsRegion, "region", "", "AWS region for the CloudFormation stack")
 	connectorAwsCmd.Flags().StringVar(&connectorAwsRoleName, "role-name", defaultAwsRoleName, "Name for the cross-account IAM role")
+	connectorAwsCmd.Flags().StringVar(&connectorAwsRoleArn, "role-arn", "", "ARN of a role you already created — submits it instead of prompting (the flag form of --manual)")
 	connectorAwsCmd.Flags().BoolVar(&connectorAwsManual, "manual", false, "Deploy from the AWS console and paste the role ARN")
 	connectorAwsCmd.Flags().BoolVar(&connectorAwsScript, "script", false, "Use the aws-CLI setup script instead of the CloudFormation stack")
 }

@@ -29,7 +29,7 @@ resource "azurerm_federated_identity_credential" "acr_pull" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.acr_pull[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:${local.acr_pull_ksa_namespace}:${local.acr_pull_ksa_name}"
 }
 

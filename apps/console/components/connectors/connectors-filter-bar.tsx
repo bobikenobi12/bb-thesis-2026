@@ -74,7 +74,7 @@ export function ConnectorsFilterBar({
 				render={(opt) => (
 					<>
 						{opt.label}
-						<span className="font-mono text-[10px] opacity-60">{opt.count}</span>
+						<span className="font-mono text-ui-2xs opacity-60">{opt.count}</span>
 					</>
 				)}
 			/>

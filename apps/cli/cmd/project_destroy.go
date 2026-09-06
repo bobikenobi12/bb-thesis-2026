@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	projectDestroyProjectID string
-	projectDestroyRunnerID  string
-	projectDestroyEnv       string
-	projectDestroyWait      bool
+	projectDestroyProjectRef string
+	projectDestroyProjectID  string
+	projectDestroyRunnerID   string
+	projectDestroyEnv        string
+	projectDestroyWait       bool
 	// projectDestroyYes is the --yes opt-in: skip the confirmation prompt (and make
 	// the command usable with --no-input).
 	projectDestroyYes bool
@@ -29,11 +30,9 @@ var projectDestroyCmd = &cobra.Command{
 			fail(err)
 		}
 
-		if projectDestroyProjectID == "" {
-			projectDestroyProjectID, err = selectProject(token)
-			if err != nil {
-				fail(err)
-			}
+		projectDestroyProjectID, err = projectIDForJob(api.NewClient(token), token, projectDestroyProjectRef, projectDestroyProjectID)
+		if err != nil {
+			fail(err)
 		}
 
 		if !confirmDestructive(
@@ -47,7 +46,7 @@ var projectDestroyCmd = &cobra.Command{
 		// The runner picker cannot be answered with prompting disabled, and the
 		// assignment is optional — an empty id is the picker's own "Any available"
 		// default — so a scripted teardown simply leaves the job unassigned.
-		if projectDestroyRunnerID == "" && !noInputMode {
+		if projectDestroyRunnerID == "" && canPromptForm() {
 			projectDestroyRunnerID, err = selectRunner(token, "")
 			if err != nil {
 				fail(err)
@@ -89,7 +88,7 @@ var projectDestroyCmd = &cobra.Command{
 func init() {
 	addYesFlag(projectDestroyCmd, &projectDestroyYes)
 	projectCmd.AddCommand(projectDestroyCmd)
-	projectDestroyCmd.Flags().StringVar(&projectDestroyProjectID, "project-id", "", "ID of the project to destroy")
+	jobProjectFlags(projectDestroyCmd, &projectDestroyProjectRef, &projectDestroyProjectID, "destroy")
 	projectDestroyCmd.Flags().StringVar(&projectDestroyRunnerID, "runner-id", "", "Assign to a specific runner")
 	projectDestroyCmd.Flags().StringVar(&projectDestroyEnv, "env", "", "Target environment name (default: the project's default environment)")
 	projectDestroyCmd.Flags().BoolVarP(&projectDestroyWait, "wait", "w", false, "Wait for job completion")

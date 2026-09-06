@@ -19,6 +19,7 @@ import { Badge } from "@repo/ui/badge";
 import { Button } from "@repo/ui/button";
 import { DetailSheet } from "@repo/ui/detail-sheet";
 import { Input } from "@repo/ui/input";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Separator } from "@repo/ui/separator";
 import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import {
@@ -223,7 +224,7 @@ export function ConnectorDetailSheet({
 				{isConnected && integration.scope === "org" && (
 					<Badge
 						variant="outline"
-						className="border-border/50 text-[10px] text-muted-foreground"
+						className="border-border/50 text-ui-2xs text-muted-foreground"
 					>
 						Org-wide
 					</Badge>
@@ -238,9 +239,7 @@ export function ConnectorDetailSheet({
 				    be re-verified or removed, and while it was hidden a broken connection was stuck. */}
 				{isCloud && accounts.length > 0 && (
 					<div className="space-y-3">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-							Accounts
-						</h3>
+						<SectionHeading level={3} title="Accounts" />
 						<div className="space-y-2">
 							{accounts.map((acc) => (
 								<div
@@ -294,20 +293,20 @@ export function ConnectorDetailSheet({
 													/>
 												</div>
 												{acc.label && (
-													<div className="truncate font-mono text-[10px] text-muted-foreground">
+													<div className="truncate font-mono text-ui-2xs text-muted-foreground">
 														{acc.label}
 													</div>
 												)}
 												{/* Why it failed / what it can't see. Without this the only signal was a
 												    generic red badge, and the fix was a guess. */}
 												{acc.status === "failed" && acc.lastError && (
-													<p className="mt-1 text-[10px] leading-relaxed text-destructive">
+													<p className="mt-1 text-ui-2xs leading-relaxed text-destructive">
 														{acc.lastError}
 													</p>
 												)}
 												{acc.status === "degraded" &&
 													(acc.missingPermissions?.length ?? 0) > 0 && (
-														<p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+														<p className="mt-1 text-ui-2xs leading-relaxed text-muted-foreground">
 															Missing:{" "}
 															<span className="font-mono">
 																{acc.missingPermissions?.join(", ")}
@@ -398,9 +397,7 @@ export function ConnectorDetailSheet({
 				{/* Classification (Workstream B) — for a connected non-cloud credential. */}
 				{isConnected && !isCloud && integration.credential_id && (
 					<div className="space-y-2">
-						<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-							Classification
-						</h3>
+						<SectionHeading level={3} title="Classification" />
 						<ClassificationControl
 							kind="connector_credential"
 							id={integration.credential_id}

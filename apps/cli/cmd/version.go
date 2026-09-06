@@ -13,11 +13,21 @@ import (
 )
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print the alethia CLI version",
+	Use:         "version",
+	Short:       "Print the alethia CLI version",
+	Annotations: map[string]string{skipUpdateNoticeAnnotation: "true"},
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("alethia v%s\n", version.Version)
-		if latest, ok := update.CachedLatest(); ok && latest != version.Version {
+		if version.Version == "" || version.Version == "dev" {
+			return
+		}
+		latest := ""
+		if release, err := update.FetchLatest(WebOrigin()); err == nil {
+			latest = release.Version
+		} else if cached, ok := update.CachedLatest(); ok {
+			latest = cached
+		}
+		if update.IsNewer(latest, version.Version) {
 			ui.Muted(fmt.Sprintf("latest: v%s", latest))
 		}
 	},

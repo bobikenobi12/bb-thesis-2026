@@ -106,7 +106,7 @@ export function IacNode({ source }: { source: IacSourceState }) {
 			<div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
 				<Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 				<span className="vx-eyebrow">External IaC</span>
-				<span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+				<span className="ml-auto flex items-center gap-1.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 					<span
 						className={cn(
 							"h-1.5 w-1.5 shrink-0 rounded-full",
@@ -119,11 +119,11 @@ export function IacNode({ source }: { source: IacSourceState }) {
 
 			<div className="flex flex-col gap-2 px-3 py-2.5">
 				<div className="text-sm font-semibold text-foreground">{source.name}</div>
-				<div className="flex items-center gap-1.5 self-start border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 self-start border border-border px-2 py-1 font-mono text-ui-2xs text-muted-foreground">
 					<GitBranch className="h-3 w-3" />
 					{repoLabel}
 				</div>
-				<div className="flex gap-3 font-mono text-[10px] text-muted-foreground">
+				<div className="flex gap-3 font-mono text-ui-2xs text-muted-foreground">
 					<span>
 						path <span className="text-foreground/80">/{source.path.replace(/^\/+/, "") || ""}</span>
 					</span>
@@ -133,7 +133,7 @@ export function IacNode({ source }: { source: IacSourceState }) {
 				</div>
 
 				{/* Pinned + deployed commits */}
-				<div className="flex flex-wrap gap-2 font-mono text-[10px] text-muted-foreground">
+				<div className="flex flex-wrap gap-2 font-mono text-ui-2xs text-muted-foreground">
 					<span className="flex items-center gap-1.5">
 						<GitCommitHorizontal className="h-3 w-3" />
 						pinned <span className="text-foreground/80">{pinned || "—"}</span>
@@ -151,7 +151,7 @@ export function IacNode({ source }: { source: IacSourceState }) {
 					type="button"
 					onClick={() => setSheetOpen(true)}
 					title="IaC safety scan"
-					className="flex items-center gap-1.5 self-start rounded-none border border-border px-2 py-1 font-mono text-[10px] transition-colors hover:bg-muted"
+					className="flex items-center gap-1.5 self-start rounded-none border border-border px-2 py-1 font-mono text-ui-2xs transition-colors hover:bg-muted"
 				>
 					<ChipIcon className={cn("h-3 w-3", chip.cls, chip.spin && "animate-spin")} />
 					<span className={chip.cls}>{chip.label}</span>
@@ -159,7 +159,7 @@ export function IacNode({ source }: { source: IacSourceState }) {
 
 				{ctx && (
 					<div className="flex items-center gap-2 border-t border-border/60 pt-2">
-						<span className="font-mono text-[10px] text-muted-foreground">replace mode</span>
+						<span className="font-mono text-ui-2xs text-muted-foreground">replace mode</span>
 						<button
 							type="button"
 							onClick={detach}

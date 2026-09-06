@@ -42,10 +42,15 @@ func failf(format string, args ...any) {
 // command is unreachable otherwise. The default below is the real prompt, so
 // production behaviour is unchanged.
 var confirm = func(title, description string) bool {
-	// Prompting is disabled (--no-input, or stdin is not a terminal): the form can
-	// never be answered, so decline without opening it. Callers for which a silent
-	// decline would be wrong go through confirmDestructive instead.
-	if noInputMode {
+	// Prompting is off, or the form has nowhere visible to draw: it can never be
+	// answered, so decline without opening it. Callers for which a silent decline
+	// would be wrong go through confirmDestructive instead.
+	//
+	// canPromptForm and not noInputMode: a confirm IS a huh form, so it draws on the
+	// stream ui.InteractiveOutput names and needs a terminal there. Reading noInputMode let
+	// `alethia alerts delete r1 2> log` open a Yes/No into the log file and wait for a
+	// keystroke against a blank terminal.
+	if !canPromptForm() {
 		ui.Muted("Cancelled.")
 		return false
 	}
@@ -73,8 +78,9 @@ var confirm = func(title, description string) bool {
 // this replaced — let a scripted teardown silently no-op while the cloud
 // resources it was meant to destroy kept billing.
 var errConfirmRequiresYes = errors.New(
-	"this command is destructive and interactive prompts are disabled " +
-		"(--no-input, or stdin is not a terminal): pass --yes to confirm",
+	"this command is destructive and interactive prompts are unavailable " +
+		"(--no-input, or stdin is not a terminal, or the stream the prompt draws on is redirected): " +
+		"pass --yes to confirm",
 )
 
 // confirmDestructive reports whether a destructive action may proceed. yes is the
@@ -85,7 +91,7 @@ func confirmDestructive(yes bool, title, description string) bool {
 	if yes {
 		return true
 	}
-	if noInputMode {
+	if !canPromptForm() {
 		fail(errConfirmRequiresYes)
 		return false
 	}

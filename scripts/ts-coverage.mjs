@@ -152,7 +152,7 @@ function currentEnv(projectDir) {
 		// what this comment used to claim:
 		//
 		//   pnpm exec turbo run test   -> dist PRESENT   (ci.yml:138, and a laptop running turbo)
-		//   pnpm -F console test       -> dist ABSENT    (scripts/env.sh, i.e. `pnpm env:check`)
+		//   pnpm -C apps/console run test       -> dist ABSENT    (scripts/env.sh, i.e. `pnpm env:check`)
 		//
 		// apps/console declares @alethia/ee under **optionalDependencies**, and turbo.json declares
 		// `test.dependsOn: ["^build"]` — so turbo builds the dist as part of the test task. That is
@@ -546,12 +546,12 @@ function runUpdate(project, { allowLower }) {
  *
  *   set -e
  *   for i in 1 2; do
- *     pnpm -F console test
+ *     pnpm -C apps/console run test
  *     node scripts/ts-coverage.mjs --project apps/console --print --per-file >"run.$i"
  *   done
  *   diff run.1 run.2
  *
- * `pnpm -F console test` — NOT `pnpm vitest --project apps/console`, which was written here first
+ * `pnpm -C apps/console run test` — NOT `pnpm vitest --project apps/console`, which was written here first
  * and cannot run: the root package.json declares no `test` script and no vitest dependency, there
  * is no root vitest config, and the invocation fails with `Command "vitest" not found` AND EXITS 0.
  * The original recipe also sent that to /dev/null, so a follower got two empty files (or two stale

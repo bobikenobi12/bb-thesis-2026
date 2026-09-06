@@ -4,18 +4,18 @@
 
 output "gke_cluster_name" {
   description = "Name of the GKE cluster"
-  value       = var.provision_gke ? module.gke[0].cluster_name : null
+  value       = try(module.gke[0].cluster_name, null) != null ? module.gke[0].cluster_name : null
 }
 
 output "gke_cluster_endpoint" {
   description = "Endpoint of the GKE cluster"
-  value       = var.provision_gke ? module.gke[0].cluster_endpoint : null
+  value       = try(module.gke[0].cluster_endpoint, null) != null ? module.gke[0].cluster_endpoint : null
   sensitive   = true
 }
 
 output "gke_cluster_ca_certificate" {
   description = "Base64-encoded CA certificate of the GKE cluster"
-  value       = var.provision_gke ? module.gke[0].cluster_ca_certificate : null
+  value       = try(module.gke[0].cluster_ca_certificate, null) != null ? module.gke[0].cluster_ca_certificate : null
   sensitive   = true
 }
 
@@ -25,17 +25,17 @@ output "gke_cluster_ca_certificate" {
 
 output "cloud_sql_connection_name" {
   description = "Cloud SQL instance connection name for Cloud SQL Proxy"
-  value       = var.create_cloud_sql ? module.cloud_sql[0].connection_name : null
+  value       = try(module.cloud_sql[0].connection_name, null) != null ? module.cloud_sql[0].connection_name : null
 }
 
 output "cloud_sql_ip" {
   description = "Private IP address of the Cloud SQL instance"
-  value       = var.create_cloud_sql ? module.cloud_sql[0].instance_ip : null
+  value       = try(module.cloud_sql[0].instance_ip, null) != null ? module.cloud_sql[0].instance_ip : null
 }
 
 output "cloud_sql_database" {
   description = "Name of the Cloud SQL database"
-  value       = var.create_cloud_sql ? module.cloud_sql[0].database_name : null
+  value       = try(module.cloud_sql[0].database_name, null) != null ? module.cloud_sql[0].database_name : null
 }
 
 # Keyless DB auth (#722): the app's IAM login identity + the GSA email the generated KSA is
@@ -43,12 +43,12 @@ output "cloud_sql_database" {
 # from cloud_sql_iam_user; the manifest lane annotates the app KSA with cloud_sql_app_gsa_email.
 output "cloud_sql_iam_user" {
   description = "Keyless app database username — the CLOUD_IAM_SERVICE_ACCOUNT user (#722)"
-  value       = local.enable_app_db_iam ? module.cloud_sql[0].app_iam_user : null
+  value       = local.enable_app_db_iam && try(module.cloud_sql[0].app_iam_user, null) != null ? module.cloud_sql[0].app_iam_user : null
 }
 
 output "cloud_sql_app_gsa_email" {
   description = "Email of the app Cloud SQL Workload-Identity GSA — annotated onto the generated app KSA (#722). The account adopted via cloud_sql_app_service_account_email; null when keyless is not wired."
-  value       = local.enable_app_db_iam ? data.google_service_account.app_db_adopted[0].email : null
+  value       = local.enable_app_db_iam ? one(data.google_service_account.app_db_adopted[*].email) : null
 }
 
 # Keyless bootstrap (#722 R5): the Secret Manager secret id holding the BUILT_IN admin (default user)
@@ -56,7 +56,7 @@ output "cloud_sql_app_gsa_email" {
 # ClusterSecretStore) to connect as admin and grant the app IAM user its scoped privileges.
 output "cloud_sql_credentials_secret" {
   description = "Secret Manager secret id of the Cloud SQL admin (default user) credentials — the keyless bootstrap Job's admin ExternalSecret RemoteKey (#722)"
-  value       = var.create_cloud_sql ? module.cloud_sql[0].credentials_secret_id : null
+  value       = try(module.cloud_sql[0].credentials_secret_id, null) != null ? module.cloud_sql[0].credentials_secret_id : null
 }
 
 #########################################################################
@@ -72,8 +72,12 @@ output "artifact_registry_urls" {
   # connector left this indexing [0] of an empty module and failed the WHOLE apply with "Invalid
   # index" — a crash a mile from its cause.
   #
-  # length(module...) can't drift from the count the way a duplicated predicate did.
-  value = length(module.artifact_registry) > 0 ? module.artifact_registry[0].repository_urls : {}
+  # Guarded by an instance PROBE rather than the `length(module.artifact_registry) > 0` this used
+  # to carry: `length()` reads the module as a WHOLE and closes dependency cycles elsewhere in
+  # these templates (#3509, measured in aws/rds.tf), so the probe is the one shape used
+  # everywhere — and neither can drift from the count the way a duplicated predicate did — the probe
+  # answers "does this instance have this output", which is the count's own answer.
+  value = try(module.artifact_registry[0].repository_urls, null) != null ? module.artifact_registry[0].repository_urls : {}
 }
 
 #########################################################################
@@ -103,16 +107,16 @@ output "custom_secret_names" {
 output "memorystore_host" {
   description = "Hostname or IP of the Memorystore Redis instance"
   value = try(coalesce(
-    var.create_memorystore ? module.memorystore[0].host : null,
-    var.create_memorystore_valkey ? module.memorystore_valkey[0].host : null,
+    try(module.memorystore[0].host, null) != null ? module.memorystore[0].host : null,
+    try(module.memorystore_valkey[0].host, null) != null ? module.memorystore_valkey[0].host : null,
   ), null)
 }
 
 output "memorystore_port" {
   description = "Port of the Memorystore Redis instance"
   value = try(coalesce(
-    var.create_memorystore ? module.memorystore[0].port : null,
-    var.create_memorystore_valkey ? module.memorystore_valkey[0].port : null,
+    try(module.memorystore[0].port, null) != null ? module.memorystore[0].port : null,
+    try(module.memorystore_valkey[0].port, null) != null ? module.memorystore_valkey[0].port : null,
   ), null)
 }
 
@@ -120,17 +124,19 @@ output "memorystore_port" {
 ##                     Cloud DNS Outputs                               ##
 #########################################################################
 
-# Every output in this block guards on the MODULE (`length(module.cloud_dns) > 0`), not on a copy of
+# Every output in this block guards on the MODULE INSTANCE, not on a copy of
 # its count predicate. `var.cloud_dns_enabled` alone is NOT that predicate: cloud-dns.tf also
 # requires `dns_provider == "native"`, because selecting the Cloudflare DNS connector means the zone
 # is not ours to create. The two outputs below used to index `[0]` off `var.cloud_dns_enabled`, so a
 # DNS-enabled project on the Cloudflare connector planned an "Invalid index" and failed the WHOLE
 # apply — the identical bug, and the identical fix, as `artifact_registry_urls` above (whose note
-# records how far from its cause that crash lands). A `length()` guard cannot drift from the count
-# the way a duplicated predicate did.
+# records how far from its cause that crash lands). The guard is the instance probe rather than the
+# `length(module.cloud_dns) > 0` these carried between then and #3509 — `length()` reads the module
+# as a WHOLE, which closes dependency cycles elsewhere (aws/rds.tf measured it). Neither can drift
+# from the count the way a duplicated predicate did; only the probe is safe in every position.
 output "cloud_dns_name_servers" {
   description = "Name servers for the Cloud DNS managed zone"
-  value       = length(module.cloud_dns) > 0 ? module.cloud_dns[0].name_servers : []
+  value       = try(module.cloud_dns[0].name_servers, null) != null ? module.cloud_dns[0].name_servers : []
 }
 
 # Resolves from EITHER source, because `cloud_dns_enabled` is the CREATE gate and not "a zone
@@ -172,17 +178,17 @@ output "cloud_dns_zone_name" {
 # rejects (the GCP shape of the empty-wafv2-annotation trap on AWS).
 output "cloud_armor_policy_name" {
   description = "Name of the Cloud Armor security policy — the value a GKE BackendConfig's spec.securityPolicy.name takes. Null when cloud_armor_enabled is false."
-  value       = length(module.cloud_armor) > 0 ? module.cloud_armor[0].policy_name : null
+  value       = try(module.cloud_armor[0].policy_name, null) != null ? module.cloud_armor[0].policy_name : null
 }
 
 output "cloud_armor_policy_id" {
   description = "Fully-qualified id of the Cloud Armor security policy. Null when cloud_armor_enabled is false."
-  value       = length(module.cloud_armor) > 0 ? module.cloud_armor[0].policy_id : null
+  value       = try(module.cloud_armor[0].policy_id, null) != null ? module.cloud_armor[0].policy_id : null
 }
 
 output "cloud_armor_policy_self_link" {
   description = "Self link of the Cloud Armor security policy, for cross-project references. Null when cloud_armor_enabled is false."
-  value       = length(module.cloud_armor) > 0 ? module.cloud_armor[0].policy_self_link : null
+  value       = try(module.cloud_armor[0].policy_self_link, null) != null ? module.cloud_armor[0].policy_self_link : null
 }
 
 #########################################################################
@@ -191,12 +197,12 @@ output "cloud_armor_policy_self_link" {
 
 output "network_self_link" {
   description = "Self-link of the VPC network"
-  value       = var.provision_network ? module.vpc_network[0].network_self_link : var.network_id
+  value       = try(module.vpc_network[0].network_self_link, null) != null ? module.vpc_network[0].network_self_link : var.network_id
 }
 
 output "private_subnet_self_link" {
   description = "Self-link of the private subnetwork"
-  value       = var.provision_network ? module.vpc_network[0].private_subnet_self_link : null
+  value       = try(module.vpc_network[0].private_subnet_self_link, null) != null ? module.vpc_network[0].private_subnet_self_link : null
 }
 
 #########################################################################
@@ -241,10 +247,10 @@ output "external_secrets_service_account" {
 # tofu's test harness can see (a *.tftest.hcl under modules/ is never executed).
 output "cloud_storage_public_access_prevention" {
   description = "Map of bucket suffixes to the public_access_prevention each bucket is planned with"
-  value       = var.create_cloud_storage ? module.cloud_storage[0].bucket_public_access_prevention : {}
+  value       = try(module.cloud_storage[0].bucket_public_access_prevention, null) != null ? module.cloud_storage[0].bucket_public_access_prevention : {}
 }
 
 output "cloud_storage_publicly_readable_buckets" {
   description = "Bucket suffixes that carry an allUsers reader binding"
-  value       = var.create_cloud_storage ? module.cloud_storage[0].publicly_readable_buckets : []
+  value       = try(module.cloud_storage[0].publicly_readable_buckets, null) != null ? module.cloud_storage[0].publicly_readable_buckets : []
 }

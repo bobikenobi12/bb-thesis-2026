@@ -74,7 +74,7 @@ export function PendingChangesBar({
                 className="flex items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm transition-colors hover:bg-muted"
               >
                 <span className="font-medium">Pending changes</span>
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 font-mono text-[10px] tabular-nums text-background">
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 font-mono text-ui-2xs tabular-nums text-background">
                   {changes.length}
                 </span>
               </button>
@@ -87,9 +87,9 @@ export function PendingChangesBar({
           >
             <div className="border-b border-border px-3.5 py-3">
               <div className="flex items-center justify-between">
-                <p className="text-[13px] font-medium">Pending changes</p>
+                <p className="text-ui-md font-medium">Pending changes</p>
                 {newCount > 0 && (
-                  <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
                     +{newCount} new
                   </span>
                 )}
@@ -109,7 +109,7 @@ export function PendingChangesBar({
                   >
                     <span
                       className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center border font-mono text-[11px] leading-none",
+                        "flex h-4 w-4 shrink-0 items-center justify-center border font-mono text-ui-xs leading-none",
                         c.op === "removed"
                           ? "border-destructive/40 text-destructive"
                           : "border-border text-muted-foreground",
@@ -120,10 +120,10 @@ export function PendingChangesBar({
                     </span>
                     <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] leading-tight">
+                      <div className="truncate text-ui-md leading-tight">
                         {c.name}
                       </div>
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <div className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
                         {OP_LABEL[c.op]} · {def.label}
                       </div>
                     </div>

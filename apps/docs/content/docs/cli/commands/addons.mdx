@@ -10,10 +10,28 @@ caches, … — OSS Helm charts deployed via ArgoCD) in an environment: enable o
 disable it, or list what is installed.
 
 <Callout type="info">
-The CLI is a client of the same Console API. `addon list` calls `/cli/projects/<project>/addons`
-with your [CLI token](/cli/authentication) and operates on the **active organization**
-(`alethia org switch`, or `--org <id>` per invocation). Browsing the full marketplace catalog stays
-in the console — the CLI works with add-ons by their catalog id.
+The CLI is a client of the same Console API. These subcommands call `/cli/projects/<project>/addons`
+with your [CLI token](/cli/authentication) and operate on the **active organization**
+(`alethia org switch`). Pass `--org <id>` to scope a single invocation to a different organization —
+it is refused with `403` if you are not a member of it.
+</Callout>
+
+## No id is copied between commands
+
+`enable` and `disable` take the add-on id as an **optional** first argument. Omit it on a terminal
+and the add-ons installed in the environment are offered to choose from, so nothing has to be read
+out of one command's output and pasted into the next. The add-on the CLI resolved is printed on
+**stderr**, so `-o json` still emits a document that parses.
+
+Pass `--project` and the id is the only thing missing; omit `--project` too and you are asked for
+that as well. With `--no-input` (or a non-terminal stdin/stdout) nothing is asked: the command
+fails naming the argument to pass, so a script never blocks on a prompt it cannot answer.
+
+<Callout type="warn">
+One handoff remains, and it is the CLI's only one here: installing an add-on that is **not yet
+enabled** needs its catalog id, and the CLI has no endpoint that enumerates the marketplace
+catalog — browse it in the console. The picker offers what is installed, which covers every
+reconfigure and every disable.
 </Callout>
 
 ## `alethia addon list`
@@ -28,18 +46,30 @@ alethia addon list -p my-project -o json
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
+| `--project`, `-p` | No | Project name or id. Omit it on a terminal and you are asked. |
 | `--env`, `-e` | No | Environment name, stage, or id. Omit to use the project's default environment. |
 
 Columns: **Add-on** (the catalog id), **Enabled** (✓ / —), **Mode** (`managed` | `gitops`),
-**Version**, **Status**, **Health**. Add `-o json` for the full view; `-o csv` for the rows.
-Backing call: `GET /cli/projects/<project>/addons`.
+**Version**, **Status**, **Sync**, **Health**, **Last synced**.
+
+**Sync, not Health, is the column to read first.** Health is the workload's own report — a chart
+with no readiness probe reports `Healthy` the moment its pods schedule. Sync is whether ArgoCD has
+applied the manifest the control plane asked for at all, so an add-on stuck `OutOfSync` is the
+failure that otherwise looks like a working install. `Last synced` reads `never` for an add-on
+whose Application has not synced once, which is a different statement from a sync whose timestamp
+we could not read.
+
+Add `-o json` for the full view, which also carries each add-on's `namespace`; `-o csv` for the
+rows. Backing call: `GET /cli/projects/<project>/addons`.
 
 ## `alethia addon enable`
 
 Enable an add-on in an environment, or reconfigure one already enabled.
 
 ```bash
+# Reconfigure: pick from what is installed
+alethia addon enable -p my-project
+
 # Enable with the catalog defaults
 alethia addon enable kube-prometheus-stack -p my-project
 
@@ -55,12 +85,15 @@ alethia addon enable loki -p my-project --values-file ./loki-values.yaml
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<addon-id>` | Yes | Catalog id (positional) — see `addon list`. |
-| `--project`, `-p` | Yes | Project name or id. |
+| `[addon-id]` | No | Catalog id (positional). Omit it on a terminal to pick from the installed add-ons. |
+| `--project`, `-p` | No | Project name or id. Omit it on a terminal and you are asked. |
 | `--env`, `-e` | No | Environment name, stage, or id. Omit for the project's default. |
-| `--mode` | No | `managed` (Alethia applies it) or `gitops` (written to your apps repo). |
-| `--set key=value` | No | An add-on setting. Repeatable; values are JSON-typed when they parse. |
+| `--mode` | No | Delivery mode: `managed` (Alethia applies it) or `gitops` (written to your apps repo). |
+| `--set` `key=value` | No | An add-on setting. Repeatable; values are JSON-typed when they parse. |
 | `--values-file` | No | Path to a raw Helm values YAML override (Advanced). |
+
+`--mode` is checked against the `addon_mode` database enum before anything is sent, so a typo is
+refused by name instead of costing a round trip; the two spellings are matched case-insensitively.
 
 Re-running `enable` on an installed add-on **updates** it. Settings are merged over what is stored,
 so you can change one value without restating the rest — and a secret you do not resend is
@@ -77,19 +110,22 @@ Disable an add-on in an environment.
 ```bash
 alethia addon disable falco -p my-project -e staging
 alethia addon disable falco -p my-project --yes
+alethia addon disable -p my-project
 ```
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<addon-id>` | Yes | Catalog id (positional). |
-| `--project`, `-p` | Yes | Project name or id. |
+| `[addon-id]` | No | Catalog id (positional). Omit it on a terminal to pick from the installed add-ons. |
+| `--project`, `-p` | No | Project name or id. Omit it on a terminal and you are asked. |
 | `--env`, `-e` | No | Environment name, stage, or id. |
-| `-y`, `--yes` | No | Skip the confirmation prompt. |
+| `--yes`, `-y` | No | Skip the confirmation prompt. Required with `--no-input`. |
 
 <Callout type="warn">
   Disabling removes the add-on's workloads from the cluster on the next sync. Data held in its
-  volumes may not survive — take a backup first if it matters. The command confirms before acting,
-  and requires `--yes` when it cannot prompt.
+  volumes may not survive — take a backup first if it matters. The add-on the CLI resolved is
+  named on stderr **before** the confirmation, so what you are confirming is always something you
+  can read. The command requires `--yes` when it cannot prompt, and fails rather than exiting 0
+  having done nothing.
 </Callout>
 
 ## See also

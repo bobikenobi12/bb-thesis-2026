@@ -27,6 +27,7 @@ import {
 	type CloudProviderSlug,
 } from "@/lib/cloud-providers";
 import { cidrForHosts } from "@/lib/cloud-providers/cidr";
+import { CLOUD_PROVIDER_SLUGS } from "@/lib/cloud-providers/provider-slug";
 import { computeCostItems } from "@/lib/cost/compute-cost-items";
 import {
 	ADDABLE_KINDS,
@@ -151,12 +152,17 @@ export function catalogTools() {
 
 		cidr_for_hosts: tool({
 			description:
-				"Compute the smallest VPC CIDR block that fits N hosts (e.g. 511 → 10.0.0.0/23). Use when the user gives a host count for a new network; pass the result as the network node's cidr_block.",
+				"Compute the smallest VPC CIDR block that fits N hosts AND that the target cloud's " +
+				"template can still carve its subnets out of. Pass `cloud` whenever it is known — the " +
+				"clouds disagree (AWS and Azure need a /18 or wider, Hetzner a /22, Alibaba a /28), and " +
+				"the apply gate rejects a network below its cloud's floor. Without `cloud` the answer is " +
+				"widened to a /18 so it is valid everywhere. Pass the result as the network node's cidr_block.",
 			inputSchema: z.object({
 				hosts: z.number().int().positive(),
 				base: z.string().optional(),
+				cloud: z.enum(CLOUD_PROVIDER_SLUGS).optional(),
 			}),
-			execute: async ({ hosts, base }) => cidrForHosts(hosts, base),
+			execute: async ({ hosts, base, cloud }) => cidrForHosts(hosts, base, cloud),
 		}),
 	};
 }

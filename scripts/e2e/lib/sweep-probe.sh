@@ -359,6 +359,41 @@ probe_warn_unverifiable() {
 	return 0
 }
 
+# ── THE POSITIVE DISCOVERY MARKER — the one thing above that an ABSENCE cannot fake. ────────────
+#
+# probe_report_discovery <cloud> <scope> — "this preflight's orphan discovery RAN TO ITS END, and
+# here is what it could not see on the way". Call it on EVERY path a preflight can leave after
+# discovery, and in particular BEFORE the `[ -z "$orphans" ] → exit 0` early return.
+#
+# WHY A POSITIVE MARKER AND NOT JUST THE WARNING ABOVE. Every preflight ends a quiet day with
+#
+#     ✓ preflight: no BILLING prior-run e2e orphans in us-east-1 — nothing to sweep
+#
+# and that line prints in BOTH of these situations:
+#
+#   · discovery answered, and the answer was "nothing";
+#   · discovery never answered — an expired session, a throttled tagging API, a CLI too old —
+#     so the orphan list came back empty and the early return fired.
+#
+# Exit 0, zero warnings, byte-identical logs. scripts/e2e/reaper-result.mjs then records `clean`
+# and PROGRAMME.md publishes "nothing is standing", about resources that BILL.
+#
+# `probe_warn_unverifiable` alone cannot close that, because a warning's ABSENCE is exactly what a
+# silent failure produces, and on four of five clouds its call site sat BELOW the early return so
+# it never ran at all. Only a line that must be PRESENT can: no marker in the log ⇒ discovery is
+# not known to have completed ⇒ the durable result is indeterminate, never clean. Same rule as the
+# rest of this file — a "nothing found" branch must not be indistinguishable from "nothing wrong" —
+# applied to the preflight itself rather than to one probe.
+#
+# ⚠️ THE STRING IS A CONTRACT WITH A READER IN ANOTHER LANGUAGE. `summarizeReaperLog` in
+# scripts/e2e/reaper-result.mjs matches this exact prefix, and its self-test sources THIS file and
+# runs THIS function rather than restating the literal — so the two cannot drift apart silently.
+# Changing the wording here without changing it there turns every cloud permanently indeterminate.
+probe_report_discovery() {
+	probe_warn_unverifiable "$1" "$2"
+	printf '✓ preflight discovery reported for %s: %s\n' "$1" "$2"
+}
+
 # ── Self-test. Runs only when this file is EXECUTED, never when it is sourced. ──
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
 	set -euo pipefail
@@ -577,6 +612,33 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
 	st_out="$(probe_confirm eks-cluster stub)" || true
 	if [ "$st_out" = "eks-ue1-x" ] && ! probe_has_unverifiable; then ok "a resource that still describes is LEAKED"; else bad "a resource that still describes is LEAKED" "out='${st_out}'"; fi
 	unset -f looks_gone
+
+	# ── THE POSITIVE DISCOVERY MARKER. Both directions, and on the RIGHT STREAM. ──
+	#
+	# The marker must be on STDOUT: probe_warn_unverifiable writes to stderr, and if the marker
+	# went there too then folding them with 2>&1 here would let a caller emit only the warning and
+	# still look correct. It must also print when discovery SUCCEEDED — that is the whole point,
+	# since a silent failure is defined by the absence of a warning.
+	probe_reset
+	st_out="$(probe_report_discovery aws "the preflight orphan scan in us-east-1" 2>/dev/null)"
+	case "$st_out" in
+	"✓ preflight discovery reported for aws: the preflight orphan scan in us-east-1") ok "a clean discovery still emits the marker, on STDOUT" ;;
+	*) bad "a clean discovery still emits the marker, on STDOUT" "got '${st_out}'" ;;
+	esac
+	probe_reset
+	probe_note_unverifiable orphan-scan "exit 255 — ExpiredToken"
+	st_rc=0
+	st_out="$(probe_report_discovery aws "the preflight orphan scan in us-east-1" 2>/dev/null)" || st_rc=$?
+	case "$st_out" in
+	"✓ preflight discovery reported for aws:"*) ok "a FAILED discovery still emits the marker (it reports, it does not vanish)" ;;
+	*) bad "a FAILED discovery still emits the marker" "got '${st_out}'" ;;
+	esac
+	st_out="$(probe_report_discovery aws "the preflight orphan scan in us-east-1" 2>&1 >/dev/null)"
+	case "$st_out" in
+	*"preflight for the preflight orphan scan in us-east-1 could not check"*) ok "…and the unverifiable warning travels with it" ;;
+	*) bad "…and the unverifiable warning travels with it" "got '${st_out}'" ;;
+	esac
+	if [ "$st_rc" -eq 0 ]; then ok "reporting discovery never gates — preflight does not block its caller"; else bad "reporting discovery never gates" "got rc=${st_rc}"; fi
 
 	rm -rf "$PROBE_ERR_DIR"
 	if [ "$st_fails" -ne 0 ]; then

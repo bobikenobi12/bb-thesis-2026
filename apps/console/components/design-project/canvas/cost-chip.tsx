@@ -21,7 +21,7 @@ export function CostChip() {
 	if (env.monthlyCost == null) {
 		return (
 			<span
-				className="flex h-8 items-center gap-1.5 border border-dashed border-border px-2.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+				className="flex h-8 items-center gap-1.5 border border-dashed border-border px-2.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground"
 				title="Run a plan to price this environment."
 			>
 				Not priced

@@ -198,7 +198,7 @@ export function PolicySheet({
 					{/* events */}
 					<section className="space-y-3">
 						<div className="flex items-center gap-1.5">
-							<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+							<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 								Trigger · events
 							</span>
 							<FieldHelp title="Events">
@@ -207,7 +207,7 @@ export function PolicySheet({
 								fires when any selected event occurs. Security (PDP) events require
 								an Enterprise plan.
 							</FieldHelp>
-							<span className="ml-auto font-mono text-[10px] text-muted-foreground">
+							<span className="ml-auto font-mono text-ui-2xs text-muted-foreground">
 								{v.event_patterns.length} selected
 							</span>
 						</div>
@@ -239,7 +239,7 @@ export function PolicySheet({
 					{/* routing */}
 					<section className="space-y-3">
 						<div className="flex items-center gap-1.5">
-							<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+							<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 								Routing · channels
 							</span>
 							<FieldHelp title="Routing">
@@ -265,7 +265,7 @@ export function PolicySheet({
 
 					{/* conditions */}
 					<section className="space-y-3">
-						<span className="font-mono text-[10px] uppercase tracking-wider text-foreground/70">
+						<span className="font-mono text-ui-2xs uppercase tracking-wider text-foreground/70">
 							Conditions
 						</span>
 						<PolicyConditions

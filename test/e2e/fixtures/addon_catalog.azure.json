@@ -27,17 +27,49 @@
 			"provider": {
 				"name": "azure"
 			},
+			"domainFilters": [
+				"addon-e2e.invalid"
+			],
 			"serviceAccount": {
-				"name": "addon-external-dns-sa",
+				"name": "addon-external-dns",
 				"annotations": {
-					"azure.workload.identity/client-id": "00000000-0000-0000-0000-000000000000"
+					"azure.workload.identity/client-id": "alethia-infra:external-dns-workload-identity"
 				}
 			},
 			"podLabels": {
 				"azure.workload.identity/use": "true"
-			}
+			},
+			"extraVolumes": [
+				{
+					"name": "azure-config",
+					"secret": {
+						"secretName": "alethia-addon-external-dns",
+						"items": [
+							{
+								"key": "azure.json",
+								"path": "azure.json"
+							}
+						]
+					}
+				}
+			],
+			"extraVolumeMounts": [
+				{
+					"name": "azure-config",
+					"mountPath": "/etc/kubernetes",
+					"readOnly": true
+				}
+			]
 		},
-		"syncWave": 2
+		"syncWave": 2,
+		"secretRef": {
+			"secretName": "alethia-addon-external-dns",
+			"namespace": "external-dns",
+			"keys": [],
+			"staticData": {
+				"azure.json": "{\n  \"cloud\": \"AzurePublicCloud\",\n  \"tenantId\": \"00000000-0000-0000-0000-000000000000\",\n  \"subscriptionId\": \"00000000-0000-0000-0000-000000000000\",\n  \"resourceGroup\": \"example-dns-rg\",\n  \"useWorkloadIdentityExtension\": true\n}\n"
+			}
+		}
 	},
 	{
 		"id": "falco",

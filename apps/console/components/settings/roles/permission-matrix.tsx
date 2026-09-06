@@ -70,14 +70,14 @@ export function PermissionMatrix({
           >
             <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-surface-muted">
               <span className="flex items-center gap-2">
-                <span className="text-[13px] font-medium text-text-primary">
+                <span className="text-ui-md font-medium text-text-primary">
                   {g.label}
                 </span>
                 <span
                   className={
                     granted > 0
-                      ? "rounded-full border border-border-strong px-1.5 py-0.5 font-mono text-[10px] text-text-secondary"
-                      : "rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] text-text-tertiary"
+                      ? "rounded-full border border-border-strong px-1.5 py-0.5 font-mono text-ui-2xs text-text-secondary"
+                      : "rounded-full border border-border px-1.5 py-0.5 font-mono text-ui-2xs text-text-tertiary"
                   }
                 >
                   {granted}/{g.permissions.length}
@@ -96,10 +96,10 @@ export function PermissionMatrix({
                     className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5 last:border-b-0"
                   >
                     <div className="min-w-0">
-                      <p className="text-[13px] capitalize text-text-primary">
+                      <p className="text-ui-md capitalize text-text-primary">
                         {p.action.replace(/_/g, " ")}
                       </p>
-                      <p className="truncate font-mono text-[10.5px] text-text-tertiary">
+                      <p className="truncate font-mono text-ui-2xs text-text-tertiary">
                         {p.key}
                       </p>
                     </div>

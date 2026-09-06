@@ -12,8 +12,9 @@ Alethia's notification system has three parts, all manageable from the CLI:
 - **Alert rules** bind product events (event-key patterns) to one or more channels.
 - The **activity log** is a durable record of every action, denial, and alert delivery.
 
-All commands operate on the **active organization** (set via `alethia org switch`); override
-per-invocation with `--org <id>`. Every command accepts the global
+All commands operate on the **active organization**, which you change with `alethia org switch`.
+Pass `--org <id>` to scope a single invocation to a different
+organization — it is refused with `403` if you are not a member of it. Every command accepts the global
 [`-o, --output <table|json|csv>`](/cli/identity#output-formats) flag.
 
 <Callout type="info">
@@ -22,11 +23,14 @@ keys) are encrypted at rest and never returned by the API — the CLI only shows
 configured.
 </Callout>
 
-## `alethia channels`
+<Callout type="info">
+**Nothing here asks you to copy an id.** `channels verify`, `channels delete` and `alerts delete`
+each take the record's **name** as readily as its id, and take nothing at all at a terminal — they
+show you what exists and you pick. `alerts create --channel` resolves a channel name too, so a rule
+can be created without ever running `channels list` first.
+</Callout>
 
-Alias: `channel`.
-
-### `channels list`
+## `alethia channels list`
 
 Lists the active organization's notification channels. On a TTY this opens the interactive table;
 with `--output json|csv` (or `--no-input`) it prints a static table.
@@ -36,18 +40,32 @@ alethia channels list
 alethia channels list -o json
 ```
 
-### `channels create`
+Columns: **Name**, **Type**, **Verified**, **Enabled**, **ID**. The command takes no input of its
+own; only the [global flags](/cli/commands) apply.
 
-Creates a channel. The destination depends on `--type`; the endpoint is **verified before the
+## `alethia channels create`
+
+Creates a channel. The destination depends on the type; the endpoint is **verified before the
 channel is saved** (a channel never exists unverified).
 
-| Type                         | Required destination flag(s)        |
-| ---------------------------- | ----------------------------------- |
-| `email`                      | one or more `--recipient <email>`   |
-| `slack` / `webhook` / others | `--url <url>` (+ `--signing-secret`)|
-| `pagerduty`                  | `--routing-key <key>`               |
+Every value is optional on the command line. At a terminal you are asked for whatever you left
+out — and the **type decides which destination question you get**, so a PagerDuty channel is never
+asked for a webhook URL. Under `--no-input` the flags are a complete substitute for that form.
+
+| Type | Destination it asks for |
+| ---- | ----------------------- |
+| `email` | one or more `--recipient <email>` |
+| `pagerduty` | `--routing-key <key>` |
+| every other type | `--url <url>` (optionally `--signing-secret`) |
+
+The nine types come from the product's own `alert_channel_type` set: `webhook`, `email`, `slack`,
+`rocketchat`, `discord`, `teams`, `mattermost`, `googlechat`, `pagerduty`. `--type --help` prints
+that list rather than an abbreviation of it.
 
 ```bash
+# Answer everything at a terminal
+alethia channels create
+
 # Slack/webhook
 alethia channels create "Ops Slack" --type slack --url https://hooks.slack.com/services/XXX
 
@@ -58,29 +76,57 @@ alethia channels create "On-call" --type email --recipient sre@example.com --rec
 alethia channels create "PD" --type pagerduty --routing-key R0UT1NGKEY
 ```
 
-### `channels verify <id>`
+{/* fieldspec: alethia channels create */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Name | What this destination is, so a list of channels is a list of destinations | `[name]` |
+| Type | Which integration delivers it; it decides which destination is asked for next | `--type` |
+| Recipients | Where an email channel delivers; repeat the flag, or separate them with commas | `--recipient` |
+| Webhook URL | Where a webhook or chat channel posts; the endpoint is called before the channel is saved | `--url` |
+| Signing secret | Optional shared secret the receiver checks the delivery signature against | `--signing-secret` |
+| Routing key | The PagerDuty Events API integration key the incident is raised against | `--routing-key` |
+
+## `alethia channels verify`
 
 Sends a synthetic test event through the channel and marks it verified.
 
 ```bash
-alethia channels verify 3f1c…
+alethia channels verify
+alethia channels verify "Ops Slack"
+alethia channels verify 3f1c8a2b
 ```
 
-### `channels delete <id>`
+{/* fieldspec: alethia channels verify */}
 
-Deletes a channel (prompts for confirmation). Alert rules bound to it lose this destination;
-delivery history is preserved.
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Channel | The channel to send a test event through, by name or id; omit it to choose from the list | `[channel]` |
+
+## `alethia channels delete`
+
+Deletes a channel (prompts for confirmation, and the prompt **names the channel** rather than
+asking about "this channel"). Alert rules bound to it lose this destination; delivery history is
+preserved.
 
 ```bash
-alethia channels delete 3f1c…
+alethia channels delete
+alethia channels delete "Ops Slack"
+alethia channels delete 3f1c8a2b --yes
 ```
 
-## `alethia alerts`
+{/* fieldspec: alethia channels delete */}
 
-Alias: `alert`. An alert rule binds one or more **event-key patterns** (e.g. `system.job.failed`,
-`authz.*.denied`) to notification channels.
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Channel | The channel to remove, by name or id; omit it to choose from the list | `[channel]` |
 
-### `alerts list`
+<Callout type="warn">
+Deleting is destructive, so with `--no-input` (or a non-terminal stdin) it **fails** rather than
+prompting. Pass `--yes` in a script.
+</Callout>
+
+## `alethia alerts list`
 
 Lists the active organization's alert rules with their bound channel count.
 
@@ -89,30 +135,57 @@ alethia alerts list
 alethia alerts list -o json
 ```
 
-### `alerts create`
+Columns: **Name**, **Severity**, **Events**, **Channels**, **Enabled**, **ID**. The command takes
+no input of its own.
 
-Creates a rule. Repeat `--event` and `--channel` for multiple values.
+## `alethia alerts create`
 
-```bash
-alethia alerts create "Job failures" \
-  --event system.job.failed \
-  --channel 3f1c… \
-  --severity critical
-```
+Creates a rule binding one or more **event-key patterns** (e.g. `system.job.failed`,
+`authz.*.denied`) to notification channels. Repeat `--event` and `--channel` for multiple values.
 
-| Flag         | Description                                          |
-| ------------ | ---------------------------------------------------- |
-| `--event`    | Event-key pattern (repeatable, required)             |
-| `--channel`  | Channel id to route to (repeatable, required)        |
-| `--severity` | `info`, `warning` (default), or `critical`           |
-
-### `alerts delete <id>`
-
-Deletes an alert rule (prompts for confirmation). Matching events will no longer be routed.
+`--channel` takes a channel's **name** as readily as its id, so a rule can be created without first
+copying an id out of `channels list`. Omit the channels entirely at a terminal and you get a
+multi-select over the org's channels.
 
 ```bash
-alethia alerts delete a1b2…
+# Answer everything at a terminal
+alethia alerts create
+
+alethia alerts create "Job failures" --event system.job.failed --channel "Ops Slack" --severity critical
 ```
+
+{/* fieldspec: alethia alerts create */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Name | What this rule is for, so a list of rules is a list of intentions | `[name]` |
+| Event patterns | Which event keys fire it, e.g. system.job.failed or authz.*.denied | `--event` |
+| Channels | Where it delivers, by channel name or id; omit them to choose from the list | `--channel` |
+| Severity | How loud the delivery is; one of the alert_severity values | `--severity` |
+
+The severities are the product's own `alert_severity` set: `info`, `warning` (the default), and
+`critical`. A value outside it is refused with the three named, rather than passed to the server.
+
+## `alethia alerts delete`
+
+Deletes an alert rule (prompts for confirmation, naming the rule). Matching events will no longer
+be routed.
+
+```bash
+alethia alerts delete
+alethia alerts delete "Job failures"
+alethia alerts delete a1b2c3d4 --yes
+```
+
+{/* fieldspec: alethia alerts delete */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Alert rule | The rule to remove, by name or id; omit it to choose from the list | `[rule]` |
+
+<Callout type="warn">
+As with `channels delete`, this is destructive: with `--no-input` it fails unless `--yes` is passed.
+</Callout>
 
 ## `alethia activity`
 
@@ -120,11 +193,26 @@ Reads the active organization's delivery/activity log — every recorded action 
 first, including alert deliveries.
 
 ```bash
-alethia activity              # latest 50
-alethia activity -n 200       # latest 200
+alethia activity
+alethia activity -n 200
 alethia activity -o json
 ```
 
-| Flag            | Description                                  |
-| --------------- | -------------------------------------------- |
-| `-n, --limit`   | Maximum number of entries to show (default 50)|
+{/* fieldspec: alethia activity */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Rows | How many entries to read back, newest first | `--limit` |
+
+Columns: **Time**, **Actor**, **Action**, **Resource**, **Decision** (`allow` / `deny`), and
+**Reason** — which is the point of a deny row, so it is always shown, and renders as `—` when the
+entry carries none. **Time** reads as an age (`3 minutes ago`) inside a week and as a date beyond
+it, and **Resource** pairs the kind with a shortened id: `project 4f3c1a92…`.
+
+Those are renderings for a person, and `-o csv` gives a script the values instead: **Time** is the
+RFC3339 stamp the API returned, and an absent **Reason** is an empty cell rather than `—`.
+
+**The machine table is one column wider**, and says so in its own header row. The shortened
+**Resource** cell holds two fields with the id cut to eight characters — the one cell in the CLI
+that destroys data rather than merely inconveniencing a parser — so under `-o csv` it becomes
+**Resource** (the bare kind) and **Resource ID** (the whole id, untruncated).

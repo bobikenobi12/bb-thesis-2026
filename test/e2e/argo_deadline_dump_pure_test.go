@@ -39,6 +39,7 @@ var dumpHelpers = []string{
 	"dumpDestinationWarnings",
 	"describeArgoApps",
 	"dumpOutOfSyncResources",
+	"dumpArgoHealthStaleness",
 	"dumpArgoAppDiffs",
 }
 

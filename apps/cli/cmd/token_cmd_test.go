@@ -56,7 +56,7 @@ func tokenEnv(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)
 	tokenCreateName, tokenCreateExpires = "", 0
 
 	return func(args ...string) error {
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		return rootCmd.Execute()
 	}, calls
 }

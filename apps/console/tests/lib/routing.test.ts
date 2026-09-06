@@ -8,32 +8,15 @@ import {
 	orgHref,
 	PERSONAL_ORG_SLUG,
 	pickFreeSlug,
+	projectGlobalHref,
 	projectHref,
 	projectSettingsHref,
 	RESERVED_PROJECT_CHILD_SLUGS,
 	RESERVED_SLUGS,
-	slugify,
 } from "@/lib/routing";
 
-describe("slugify", () => {
-	it("lowercases, trims, and hyphenates non-alphanumerics", () => {
-		expect(slugify("  Acme Cloud  ")).toBe("acme-cloud");
-		expect(slugify("Foo___Bar!!Baz")).toBe("foo-bar-baz");
-	});
-
-	it("strips leading/trailing dashes and collapses runs", () => {
-		expect(slugify("--Hello  World--")).toBe("hello-world");
-	});
-
-	it("returns empty string for input with no alphanumerics", () => {
-		expect(slugify("@#$%")).toBe("");
-	});
-
-	it("drops apostrophes and folds accents (Vercel-style)", () => {
-		expect(slugify("bobikenobi12's Org")).toBe("bobikenobi12s-org");
-		expect(slugify("José's Café")).toBe("joses-cafe");
-	});
-});
+// `slugify` no longer lives here (it never did — this module re-exported it). Its tests are in
+// tests/lib/slugify.test.ts, against @/lib/utils/slugify.
 
 describe("pickFreeSlug", () => {
 	it("returns the base when it's free", () => {
@@ -60,6 +43,12 @@ describe("href builders", () => {
 		expect(projectSettingsHref("acme", "api", "activity")).toBe(
 			"/acme/api/settings/activity",
 		);
+		// The project analogue of globalHref. Its `sub` is a RESERVED project-child segment, which
+		// is what keeps it from colliding with an environment name.
+		expect(projectGlobalHref("acme", "api", "jobs")).toBe("/acme/api/jobs");
+		for (const sub of RESERVED_PROJECT_CHILD_SLUGS) {
+			expect(projectGlobalHref("acme", "api", sub)).toBe(`/acme/api/${sub}`);
+		}
 	});
 
 	it("targets a project's Architecture directly (not the bare /{org}/{project})", () => {

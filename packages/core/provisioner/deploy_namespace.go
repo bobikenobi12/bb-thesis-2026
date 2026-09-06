@@ -16,6 +16,7 @@ import (
 	"github.com/alethialabs-io/alethialabs/packages/core/cloud"
 	coreaws "github.com/alethialabs-io/alethialabs/packages/core/cloud/aws"
 	"github.com/alethialabs-io/alethialabs/packages/core/k8s"
+	"github.com/alethialabs-io/alethialabs/packages/core/names"
 	"github.com/alethialabs-io/alethialabs/packages/core/telemetry"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
@@ -657,14 +658,14 @@ func bindACKNamespaceIdentity(ns, roleName string, stdout, stderr io.Writer) err
 	)
 }
 
-// dns1123LabelRe matches a strict Kubernetes DNS-1123 label (lowercase alnum + hyphens, not
-// hyphen-bounded). Used to fail-closed a namespace that isn't shell-safe / YAML-safe.
-var dns1123LabelRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-
 // isDNS1123Label reports whether s is a valid (≤63-char) DNS-1123 label — the k8s namespace grammar,
-// which by construction contains no shell metacharacters or YAML-breaking runes.
+// which by construction contains no shell metacharacters or YAML-breaking runes. Used to fail-closed
+// a namespace that isn't shell-safe / YAML-safe.
+//
+// The grammar itself is names.IsNamespace, generated from the console's names.ts (#3665), so this
+// package cannot come to disagree with the form that produced the namespace.
 func isDNS1123Label(s string) bool {
-	return len(s) > 0 && len(s) <= 63 && dns1123LabelRe.MatchString(s)
+	return names.IsNamespace(s)
 }
 
 // clusterNameRe matches the EKS cluster-name grammar (alnum start, then alnum/hyphen/underscore) —

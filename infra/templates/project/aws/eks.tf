@@ -20,9 +20,9 @@ module "eks" {
 
   cluster_log_retention_in_days = var.cluster_log_retention_in_days
 
-  vpc_id                   = var.provision_vpc ? module.common_vpc[0].vpc_id : var.vpc_id
-  subnet_ids               = var.provision_vpc ? module.common_vpc[0].private_subnets : var.vpc_private_subnet_ids
-  control_plane_subnet_ids = var.provision_vpc ? module.common_vpc[0].public_subnets : var.vpc_public_subnet_ids
+  vpc_id                   = try(module.common_vpc[0].vpc_id, null) != null ? module.common_vpc[0].vpc_id : var.vpc_id
+  subnet_ids               = try(module.common_vpc[0].private_subnets, null) != null ? module.common_vpc[0].private_subnets : var.vpc_private_subnet_ids
+  control_plane_subnet_ids = try(module.common_vpc[0].public_subnets, null) != null ? module.common_vpc[0].public_subnets : var.vpc_public_subnet_ids
 
 
   eks_ami_type       = var.eks_ami_type
@@ -44,5 +44,5 @@ module "eks" {
 
   allow_long_names = var.allow_long_names
 
-  external_dns_zone_id = var.cloud_dns_enabled ? module.route53[0].zone_id : var.dns_hosted_zone
+  external_dns_zone_id = try(module.route53[0].zone_id, null) != null ? module.route53[0].zone_id : var.dns_hosted_zone
 }

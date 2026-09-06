@@ -74,7 +74,8 @@ The phases below are **intent**. Their state is rendered under the marker; do no
    and touch no credential and no migration. This is where N-way agent parallelism actually lives.
 5. **The full bar, per cloud, by dispatch** — blocked on a durable ledger and on that cloud's floor.
 6. **Scenario layers, then the CLI bar** — one gate per dispatch, then unset it.
-7. **The MVP predicate, then UI.**
+7. **The MVP predicate, then UI.** See decision D5 — the UI conformance wave is qualified out of this
+   ordering, not exempted from it.
 
 ## §2 · Standing decisions
 
@@ -116,6 +117,46 @@ overtaken is more useful than a gap.
   a scheduled cron resolves to the full bar unless every cloud in the matrix is priced — see #2385,
   which also tracks pricing the four unpriced clouds. Restoring a schedule is a per-cloud decision
   gated on that cloud being priced _and_ having a committed full-bar proof row.
+
+- **D5 · 2026-09-01 · Console UI conformance runs as its own wave, in parallel — the phase ordering
+  above is not amended, it is qualified.** §1 puts UI last, and the one-sentence intent says "then,
+  and only then, UI". That ordering is about *spend and proof*: a UI phase that competes for the
+  five-cloud dispatch budget, the single branch-env slot, or the maintainer's review attention would
+  push the proof cells out, and that is still refused.
+
+  `wave:console-ui` (epic #3613) competes for **no cloud dispatch budget** — that is the resource the
+  ordering exists to protect, and the one this wave genuinely does not touch. Its recurring gate runs
+  in CI rather than against a real cloud, and its instrument half is pure-Node static analysis. Note
+  that gate is not free to wire: the config is `apps/console/playwright.config.ts` (there is no root
+  copy), Postgres comes from a per-job `services:` block in `ci.yml` rather than from the config, and
+  `assertNoDeadZone()` fails a run whose project has no CI job — so the wave needs a NEW ci.yml job,
+  which is #3632's scope. "Already boots one" understated that.
+
+  That is the whole of the argument; the two stronger claims an earlier draft made are not true and
+  are recorded here as refused rather than quietly dropped:
+
+  - **Its scopes are NOT disjoint from the rest of the tree.** They are mostly `apps/console/**`, but
+    #3614 owns a route-manifest module in the shared `scripts` tree, #3617 owns the sandbox env
+    scripts, and #3632 owns the CI workflow — and those last two are exactly the shared files a
+    disjointness argument would need to exclude. `ci.yml` was edited by e2e/infra/coverage work three
+    times last month (#3586, #3457, #3298) and `scripts/env.sh` by the isolation-ladder work (#3449).
+    Collision is possible and the mitigation is the ordinary one — `scripts/claim-work.sh` refuses an
+    overlapping claim — not a property of this wave.
+  - **It DOES compete for the maintainer's review attention**, the third protected resource. Four of
+    its units (#3628–#3631) carry `class:ui` + `needs:design`, which `.claude/COORDINATION.md`
+    defines as human-in-the-loop with a human-gated merge. That is a real cost and it is the one to
+    weigh when deciding whether to run this wave now.
+
+  On the branch-env slot: #3633 needs it; #3632 does not (its own body says it costs CI minutes, not
+  a sandbox box), so the `#3617 → #3632 → #3633` chain serialises correctly but its middle term is
+  ordering, not contention. Those edges live on the board and are hand-maintained — read them there
+  rather than trusting this paragraph, which is exactly the "this file ranks; it never claims"
+  rule from the preamble.
+
+  The decision is recorded here because the alternative is worse than the reordering: a ledger that
+  reads "then, and only then, UI" while a UI wave is being built is a ledger disagreeing with the
+  tree, which §1's own first phase exists to prevent. The ordering claim that remains true, and is
+  the one worth keeping: **no cell of the proof grid may be deferred for it.**
 
 ## §3 · Anti-patterns
 
@@ -163,11 +204,46 @@ is never reported unwired — there is no variable to set, and a dispatch reache
 maintainer must actually wire can be `unwired`, and a gate the workflow never mentions is
 `no vehicle`, which is a different remedy.
 
+## §5 · The CLI programme — epic #3612
+
+Predicate #4 asks for a `cli-demo` proof row per cloud. Reaching it is not one unit of work, so it
+is decomposed as a programme, and **#3612** is the umbrella: the census it starts from, the rulings
+the maintainer has made, the wave ordering, and the resume protocol.
+
+Two things sit under that predicate, and only the first is obvious:
+
+- **The CLI cannot be driven comfortably.** The bar asks whether `alethia <cmd> --help` exits 0,
+  which the enterprise-demo tutorial satisfies while asking a reader to hand-assemble a four-field
+  colon tuple three times and copy four opaque IDs between commands. So a `cli_ux` ratchet **will
+  join** `cli_gap` — it is not declared yet, and §0's ceiling table is the place it becomes real,
+  in the wave that implements it. Its intended numbers: copied placeholders in the golden-path
+  docs, commands with no interactive path, entries in the CLI surface allowlist, and `Mirrors the
+  Go X` claims with no mechanism behind them. Each may only decrease, and each must fail loudly at
+  a zero census.
+- **The CLI and the console are two implementations of one product.** A census of pure-logic pairs
+  found rules written twice on both sides, several of them disagreeing — including both ends of a
+  fail-closed gate and a path-traversal grammar looser than the shared one beside it. The tally
+  lives on #3612, where closing a lane updates it; a number typed here would be stale the first
+  time a wave lands and nothing would regenerate it.
+
+Sharing is decided by what the thing *is*, not by which language reached it first. Data — enums,
+vocabulary, regexes, limits, tokens — is codegen'd TS to Go and diff-gated. An algorithm gets a
+generated conformance table both sides are tested against, because what must agree is the output.
+A struct crossing the wire gets a fixture plus a strict decode in both directions.
+
+**Direction follows authority.** The console owns formatting, so TypeScript generates the formatter
+table; Go owns the apply gate, so Go generates the compat fixture. And the CLI's own validation is
+a provable subset: it may only ever reject what the server would certainly reject, so drift can
+make it too permissive — which the server catches — but never too strict.
+
+Work is claimed from the board, never hand-picked: `scripts/coordinate.sh --report`, then
+`scripts/claim-work.sh --class backend`.
+
 <!-- BEGIN GENERATED: programme-rollup · tree-derived · DO NOT EDIT BELOW -->
 
 ## Where the programme actually is
 
-**24 of 35 proof cells are proven.** 0 failing · 0 stale (cause fixed, needs a re-run) · 0 blocked · 11 never run.
+**23 of 35 proof cells are proven.** 1 failing · 0 contested (the ledger and the board disagree) · 0 stale (cause fixed, needs a re-run) · 0 blocked · 11 never run.
 
 A cell is `proven` only when the proof ledger's surviving claim is PASS **and** its bundle is a committed path that exists. A PASS carrying an expiring CI run tag is not a proof — that is why every 2026-07-22 row was retracted, and the rule is enforced here rather than remembered.
 
@@ -176,7 +252,7 @@ A cell is `proven` only when the proof ledger's surviving claim is PASS **and** 
 | cloud | floor | all kinds | 18 add-ons | GitOps repos | BYO-IaC | day-2 | CLI-driven |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | **aws** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
-| **gcp** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
+| **gcp** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
 | **azure** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
 | **alibaba** | · | · | · | · | · | · | · |
 | **hetzner** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
@@ -191,7 +267,7 @@ Legend: ✅ proven · ❌ failing · ⛔ blocked · · never-run · ♻️ stale
 - `aws/gitops` **proven** — ledger 2026-08-28, bundle `demos/proofs/aws/20260828T142417Z`
 - `aws/byo-iac` **proven** — ledger 2026-08-28, bundle `demos/proofs/aws/20260828T155743Z`
 - `aws/day2` **proven** — ledger 2026-08-28, bundle `demos/proofs/aws/20260828T190408Z`
-- `gcp/floor` **proven** — ledger 2026-08-28, bundle `demos/proofs/gcp/20260828T120037Z`
+- `gcp/floor` **failing** — ledger 2026-09-02 (#3855)
 - `gcp/maxconfig` **proven** — ledger 2026-08-28, bundle `demos/proofs/gcp/20260828T124233Z`
 - `gcp/addons` **proven** — ledger 2026-08-29, bundle `demos/proofs/gcp/20260829T093816Z` (⚠️ argocd counts unmeasured: pre-#3281 binary (A0.6's convergence loop wrote no summary); the assertion DID run and pass — run 33243600150 logs `all 20 asserted ArgoCD Applications are Healthy+Synced (1 withheld)`)
 - `gcp/gitops` **proven** — ledger 2026-08-25, bundle `demos/proofs/gcp/20260825T200519Z`
@@ -214,12 +290,13 @@ Legend: ✅ proven · ❌ failing · ⛔ blocked · · never-run · ♻️ stale
 
 ### The mechanical next
 
-**`alibaba/floor`** — never_run. no surviving ledger claim
+**`gcp/floor`** — failing. ledger 2026-09-02
 
 Failing cells rank above never-run ones: a red cell already has a diagnosed cause and costs nothing new to re-drive, where a never-run cell needs its gate enabled first. This RANKS; it never claims — `scripts/claim-work.sh` claims.
 
 <details><summary>The next 10</summary>
 
+1. `gcp/floor` — failing
 1. `alibaba/floor` — never_run
 1. `alibaba/maxconfig` — never_run
 1. `alibaba/addons` — never_run
@@ -229,7 +306,6 @@ Failing cells rank above never-run ones: a red cell already has a diagnosed caus
 1. `aws/cli-demo` — never_run
 1. `gcp/cli-demo` — never_run
 1. `azure/cli-demo` — never_run
-1. `alibaba/cli-demo` — never_run
 
 </details>
 
@@ -266,11 +342,11 @@ Whether a dimension can run at all. A gate the workflow never mentions cannot be
 
 | cloud | gate | state | evidence |
 |---|---|:---:|---|
-| **aws** | `E2E_AWS_ROLE_ARN` | ✅ wired | a leg reached the gate — run 33379005307 |
-| **gcp** | `E2E_GCP_WIF_PROVIDER` | ✅ wired | a leg reached the gate — run 33379005307 |
-| **azure** | `E2E_AZURE_CLIENT_ID` | ✅ wired | a leg reached the gate — run 33379005307 |
-| **alibaba** | `E2E_ALIBABA_ROLE_ARN` | ✅ wired | a leg reached the gate — run 33379005307 |
-| **hetzner** | `HCLOUD_TOKEN` | ✅ wired | a leg reached the gate — run 33379005307 |
+| **aws** | `E2E_AWS_ROLE_ARN` | ✅ wired | a leg reached the gate — run 33605830312 |
+| **gcp** | `E2E_GCP_WIF_PROVIDER` | ✅ wired | a leg reached the gate — run 33605830312 |
+| **azure** | `E2E_AZURE_CLIENT_ID` | ✅ wired | a leg reached the gate — run 33605830312 |
+| **alibaba** | `E2E_ALIBABA_ROLE_ARN` | ✅ wired | a leg reached the gate — run 33605830312 |
+| **hetzner** | `HCLOUD_TOKEN` | ✅ wired | a leg reached the gate — run 33605830312 |
 
 **Which dimensions can run.** A gate the nightly never mentions has no vehicle — setting a variable would not turn it on.
 
@@ -286,18 +362,43 @@ Whether a dimension can run at all. A gate the workflow never mentions cannot be
 
 ### Open REDs
 
-No cell is failing or blocked.
+⚠️ **This snapshot predates the truncation check**, so whether its issue list is complete is unknown — and it is not evidence that it is: the query that wrote it was capped at 500 and reported the same count whether or not it dropped the tail. The next refresh answers it.
+
+| cell | state | issue | issue state |
+|---|---|---|:---:|
+| `gcp/floor` | failing | #3855 | open |
+
+
+### Orphan reaper — nothing standing
+
+**0 of 5 clouds are verified clean.** A real reclaim result stays current for 48 hours.
+
+A run that reclaimed an orphan may still finish clean; the incident counts remain visible. Dry runs, skipped gates, failed or missing logs, unverifiable checks and unattributable resources never count as clean.
+
+| cloud | state | durable evidence |
+|---|:---:|---|
+| **aws** | ? indeterminate | no durable reclaim result |
+| **gcp** | ? indeterminate | no durable reclaim result |
+| **azure** | ? indeterminate | no durable reclaim result |
+| **alibaba** | ? indeterminate | no durable reclaim result |
+| **hetzner** | ? indeterminate | no durable reclaim result |
+
 ### Blocked on a human
 
+- #3754 — fix(authz): members stuck ungranted by the toOrgRole gap are not backfilled — and a naive backfill would restore revoked access
+- #3524 — e2e(addons): remove external-dns from addOnExclusions once a paid gcp/azure addons run is green
+- #3438 — release(runner): `release-runner` has never once succeeded — the ECR repo it pushes to does not exist, and nothing creates it
 - #3321 — feat(fleet): Hetzner Robot pools — held against the #3268 NO-GO, with the conditions that would reopen it
+- #3292 — infra: ssh_allowed_cidrs defaults to 0.0.0.0/0 on three boxes, two of which CI applies unattended
 - #3291 — infra(cp-hetzner): 11 email-routing resources are gated on a default CI takes on every push to main
 - #3290 — infra(azure): the state account's network default is Allow when its allowlist is empty — the unset value is the permissive one
 - #3145 — cli: two projects may share a name — silent-oldest is deterministic, but is it the contract?
 - #3038 — feat(e2e): the CLI demo bar proves reachability, not the demo — drive a real provision through the real binary
+- #2759 — ci: workflows red on every recent run
 - #2545 — e2e nightly: alibaba RED (floor)
 - #2482 — release: the console never learns about a new CLI version — the notification's credentials cannot mint from a tag
-- #2465 — programme: two of the six MVP predicates assert something no script can check
 - #2462 — infra(e2e): make the e2e-dev OIDC trust widening authoritative — four applies, currently hand-applied
+- #2385 — feat(e2e): price the full bar on gcp/azure/alibaba/hetzner, so a schedule can be restored
 - #2384 — e2e nightly: alibaba RED (full-bar)
 - #2283 — probe(alibaba-cr): does an AUTO scan rule fire with no VPC endpoint? (#2265 shipped the wiring, not the proof)
 - #1513 — feat(keyless): GA — default-on rollout and delete ALETHIA_KEYLESS_DB_AUTH_ENABLED
@@ -312,7 +413,7 @@ No cell is failing or blocked.
 |---|---|
 | `infra/offer-exclusions.yaml` | exclusions: 26 · baseline: 0 · wired: 2 · carried_in_cluster: 6 |
 | `infra/config-carriage-exclusions.yaml` | exclusions: 31 · baseline: 0 · wired: 2 · carried_in_cluster: 6 |
-| `infra/template-parity-exclusions.yaml` | exclusions: 0 · baseline: 301 · uniform: 12 |
+| `infra/template-parity-exclusions.yaml` | exclusions: 0 · baseline: 301 · uniform: 13 |
 
 ### Provenance
 
@@ -326,11 +427,13 @@ Every number above is derived from these, and from nothing else:
 - `demos/proofs/<cloud>/<stamp>/`
 - `docs/testing/programme-snapshot.json`
 
-Live board snapshot: taken **2026-08-31T13:27:13Z** — refreshed by `.github/workflows/programme.yml`, which opens a PR rather than pushing. Warns past 48h, fails past 7 days.
+Live board snapshot: taken **2026-09-02T11:16:57Z** — refreshed by `.github/workflows/programme.yml`, which opens a PR rather than pushing. Warns past 48h, fails past 7 days.
 
 The timestamp is printed VERBATIM from the snapshot, never as an age. An age is computed from the current clock, so it would drift with no change to any input and make this diff-gated region stale an hour after every refresh — redding CI for everyone. The clock is only ever used to FAIL on a snapshot older than 7 days, which is a deliberate exception: a refresh that has silently stopped produces no other signal.
 
-Ledger rows read: **61** · surviving claims: **27** (a `RETRACTED` row voids a claim rather than replacing it, so surviving < rows is expected).
+Gate inventory observed: **2026-08-27T19:15:55Z** — carried forward on every refresh whose token cannot list repo variables or secrets. Past 7 days behind the snapshot it stops being a measurement of today, and every declared gate degrades to `unknown`.
+
+Ledger rows read: **62** · surviving claims: **27** (a `RETRACTED` row voids a claim rather than replacing it, so surviving < rows is expected).
 
 _Generated by `scripts/programme-rollup.mjs`. Do not edit below the marker — run `pnpm gen:programme`._
 

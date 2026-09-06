@@ -70,9 +70,9 @@ func (f *InfraFacts) ExternalDNSWorkloadIdentity() string {
 // cloud it makes a broken install look configured. Dropping the block degrades to exactly the
 // shape the add-on had before any of this existed — the chart's own ServiceAccount, no identity —
 // which is a state the operator is warned about rather than misled by.
-func ResolveAddOnCloudIdentity(addons []types.AddOnInstall, f *InfraFacts, stdout, stderr io.Writer) {
+func ResolveAddOnCloudIdentity(addons []types.AddOnInstall, f *InfraFacts, stdout, stderr io.Writer) error {
 	if f == nil {
-		return
+		return fmt.Errorf("infra facts are missing")
 	}
 	identity := f.ExternalDNSWorkloadIdentity()
 	for i := range addons {
@@ -100,16 +100,9 @@ func ResolveAddOnCloudIdentity(addons []types.AddOnInstall, f *InfraFacts, stdou
 			continue // a customer-supplied identity, or none — nothing of ours to resolve
 		}
 		if identity == "" {
-			delete(addons[i].Values, "serviceAccount")
-			// podLabels only exists to make Azure's workload-identity webhook inject into the pod;
-			// with no identity to inject it is noise that implies one.
-			delete(addons[i].Values, "podLabels")
-			fmt.Fprintf(stderr, "Warning: external-dns add-on: this cluster exports no external-dns "+
-				"workload identity for provider %q, so the add-on is installed WITHOUT one — it will "+
-				"start and write no DNS records. Supply an identity on the add-on, or use the platform "+
-				"DNS rail.\n", f.Provider)
-			continue
+			return fmt.Errorf("provider %q exports no external-dns workload identity", f.Provider)
 		}
 		fmt.Fprintf(stdout, "   external-dns add-on: bound to this cluster's workload identity.\n")
 	}
+	return nil
 }

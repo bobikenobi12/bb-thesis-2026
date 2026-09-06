@@ -49,16 +49,16 @@ provider "google-beta" {
 # "cover" this — measured on aws: mocking the provider replaces the configuration wholesale, so
 # the body is never evaluated and the mock HIDES this class of bug instead of catching it.
 provider "kubernetes" {
-  host                   = var.provision_gke ? "https://${module.gke[0].cluster_endpoint}" : ""
+  host                   = try(module.gke[0].cluster_endpoint, null) != null ? "https://${module.gke[0].cluster_endpoint}" : ""
   token                  = data.google_client_config.default.access_token
-  cluster_ca_certificate = var.provision_gke ? base64decode(module.gke[0].cluster_ca_certificate) : ""
+  cluster_ca_certificate = try(module.gke[0].cluster_ca_certificate, null) != null ? base64decode(module.gke[0].cluster_ca_certificate) : ""
 }
 
 provider "helm" {
   kubernetes {
-    host                   = var.provision_gke ? "https://${module.gke[0].cluster_endpoint}" : ""
+    host                   = try(module.gke[0].cluster_endpoint, null) != null ? "https://${module.gke[0].cluster_endpoint}" : ""
     token                  = data.google_client_config.default.access_token
-    cluster_ca_certificate = var.provision_gke ? base64decode(module.gke[0].cluster_ca_certificate) : ""
+    cluster_ca_certificate = try(module.gke[0].cluster_ca_certificate, null) != null ? base64decode(module.gke[0].cluster_ca_certificate) : ""
   }
 }
 

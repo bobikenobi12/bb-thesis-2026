@@ -58,19 +58,28 @@ function hasRoute(dir) {
 }
 /** Top-level URL segments served by the marketing app (route groups `(x)` / slots `@x`
  * are transparent; `_private` and dotfiles are skipped; bare app/page.tsx → ""). */
-function collectSegments(dir) {
+function collectSegments(dir, includeMetadata = false) {
 	const segs = new Set();
+	const metadataRoute =
+		/^(icon|apple-icon|opengraph-image|twitter-image|manifest|sitemap|robots|favicon)\.(?:tsx?|jsx?|ico|png|jpe?g|svg|json|webmanifest|txt|xml)$/;
 	for (const e of readdirSync(dir)) {
 		const full = join(dir, e);
 		if (statSync(full).isDirectory()) {
 			if (/^[_.]/.test(e)) continue;
 			if (/^\(.*\)$/.test(e) || e.startsWith("@")) {
-				for (const s of collectSegments(full)) segs.add(s);
+				for (const s of collectSegments(full, includeMetadata)) segs.add(s);
 			} else if (hasRoute(full)) {
 				segs.add(e);
 			}
 		} else if (/^page\.(tsx?|jsx?)$/.test(e)) {
 			segs.add("");
+		} else if (includeMetadata && metadataRoute.test(e)) {
+			// Metadata convention files are URL-producing routes even without page/route handlers.
+			// They are checked here only when directly encountered in an app root (or route group),
+			// matching the top-level segment collection used by the shadowing guard.
+			segs.add(
+				e.replace(/\.(?:tsx?|jsx?|ico|png|jpe?g|svg|json|webmanifest|txt|xml)$/, ""),
+			);
 		}
 	}
 	return segs;
@@ -274,6 +283,115 @@ for (const root of navigationRoots) {
 	}
 }
 
+// ── Check 5: every top-level CONSOLE route is a reserved org slug ────────────────────
+//
+// The success line below reports this count, because a green that mentions only the marketing
+// half says nothing about whether this half ran.
+let consoleSegmentCount = 0;
+//
+// The marketing half of this file has been guarded since it was written; the console's own routes
+// never were, and #4133 is the bill. `RESERVED_SLUGS` is what tells a first path segment naming an
+// ORG from one naming a ROUTE, and five `(public)` segments — accept-terms, login, onboarding,
+// signup, sso — had never been in it. An org could be minted shadowing `/login`, and anything
+// reading segment 0 as an org slug read `accept-terms` as one.
+//
+// The severity is not uniform across the five, which is why this is a guard and not a one-time
+// list edit: `(private)/layout.tsx` redirects EVERY private route to /accept-terms while a Terms
+// version is unaccepted. So the omission that matters most is the one nobody would have picked out
+// of the five by inspection, and the next route added is equally unpredictable.
+//
+// NOTE the asymmetry with check 1. Marketing routes must be in microfrontends.json, which FEEDS
+// RESERVED_SLUGS. Console routes have no such registry — they are reserved by hand — so this
+// compares the app tree against the static list directly.
+const CONSOLE_APP = "app";
+const routingSrc = readFileSync("lib/routing.ts", "utf8");
+
+/**
+ * Strip comments so a quoted word inside PROSE is never read as a slug.
+ *
+ * LINE COMMENTS FIRST, and the order is not stylistic. `lib/routing.ts` carries the line
+ *
+ *     // PostHog reverse-proxy path (next.config.ts rewrites /ingest/* → eu.i.posthog.com).
+ *
+ * and `/ingest/*` opens a block comment as far as a naive block pass is concerned. Stripping
+ * blocks first therefore deleted from there to the next `*&#47;` far below — taking the rest of the
+ * array and its closing bracket with it, and leaving a list that ran on into the NEXT array in the
+ * file. Removing line comments first leaves that `/*` nothing to open.
+ */
+function stripComments(src) {
+	return src.replace(/(^|[^:])\/\/[^\n]*/gm, "$1").replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/**
+ * The literals in `const <name> = [ … ]`, read by BALANCING BRACKETS rather than by a regex.
+ *
+ * Both details are bought experience, from a review of the first version of this very check:
+ *
+ *  · A regex over the raw text counted any double-quoted token inside a COMMENT as a slug. The
+ *    array's own comment discusses `/login`; one edit from backticks to quotes and this guard went
+ *    green on the exact entry it exists to protect. Comments are stripped first.
+ *  · `/\[([\s\S]*?)\n\];/` terminates on `\n];`, so writing `] as const;` did not fail — the lazy
+ *    match ran on to the NEXT array in the file and silently absorbed its contents. Balancing
+ *    brackets ends where the array ends, however it is punctuated.
+ *
+ * Returns null when the declaration is absent, which the caller treats as a failure — a check that
+ * stops finding its input must not report the same thing as a check that found nothing wrong.
+ */
+function arrayLiterals(src, name) {
+	const start = src.indexOf(`const ${name} = [`);
+	if (start === -1) return null;
+	let depth = 0;
+	let i = src.indexOf("[", start);
+	const open = i;
+	for (; i < src.length; i++) {
+		if (src[i] === "[") depth++;
+		else if (src[i] === "]" && --depth === 0) break;
+	}
+	if (depth !== 0) return null;
+	return [...src.slice(open, i).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+const staticList = arrayLiterals(stripComments(routingSrc), "STATIC_RESERVED_SLUGS");
+if (staticList === null) {
+	failures.push(
+		"lib/routing.ts: could not read `const STATIC_RESERVED_SLUGS = [ … ]`. This check reads that\n" +
+			"    declaration from source; if it was renamed or reshaped, update this guard rather than\n" +
+			"    deleting it — a route-shadow check that silently stops finding its input is worse than none.",
+	);
+} else {
+	const staticSlugs = new Set(staticList);
+	// PERSONAL_ORG_SLUG is referenced by name, not as a literal, so it is not in the matches above.
+	staticSlugs.add("~");
+	// GUARD THE GUARD. Everything below is a set difference, and an empty or truncated left side
+	// makes it vacuously green. `dashboard` has been in this list since it was written; its absence
+	// means the read went wrong, not that the route stopped being reserved.
+	if (!staticSlugs.has("dashboard") || staticSlugs.size < 8) {
+		failures.push(
+			`lib/routing.ts: read only ${staticSlugs.size} slug(s) from STATIC_RESERVED_SLUGS and no ` +
+				"`dashboard`. That is a parse failure, not a small list — refusing rather than reporting\n" +
+				"    every console route as unreserved, or none of them.",
+		);
+	}
+	const consoleSegments = existsSync(CONSOLE_APP) ? collectSegments(CONSOLE_APP, true) : null;
+	consoleSegmentCount = consoleSegments === null ? 0 : consoleSegments.size;
+	if (consoleSegments === null) {
+		failures.push(`Console app dir not found at ${CONSOLE_APP}.`);
+	} else {
+		for (const seg of consoleSegments) {
+			// "" is `app/page.tsx`, the root. `[org]` IS the org segment, not a shadow of one.
+			if (seg === "" || /^\[.*\]$/.test(seg)) continue;
+			if (staticSlugs.has(seg) || mfSegments.has(seg)) continue;
+			failures.push(
+				`Console route "/${seg}" (apps/console/app/…/${seg}) is not a reserved org slug.\n` +
+					`    → add "${seg}" to STATIC_RESERVED_SLUGS in apps/console/lib/routing.ts.\n` +
+					"    Until it is, an organization can be minted with that slug and shadow the route, and\n" +
+					"    anything reading the first path segment as an org (lib/authz/org-scope.ts) reads this\n" +
+					"    route as an org slug and fails to resolve it. See #4133.",
+			);
+		}
+	}
+}
+
 // ── Report ───────────────────────────────────────────────────────────────────────────
 if (failures.length > 0) {
 	console.error(
@@ -288,5 +406,6 @@ if (failures.length > 0) {
 }
 
 console.log(
-	`OK — ${mfPaths.length} marketing paths and static first-party navigation targets resolve across every route mirror.`,
+	`OK — ${mfPaths.length} marketing paths and static first-party navigation targets resolve across every route mirror,` +
+		` and all ${consoleSegmentCount} top-level console route(s) are reserved org slugs.`,
 );

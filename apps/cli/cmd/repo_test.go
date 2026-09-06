@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 )
 
@@ -63,7 +64,7 @@ func TestRunRepoListError(t *testing.T) {
 
 // repoRows falls back to the short name when a repo has no full name.
 func TestRepoRowsFallbackName(t *testing.T) {
-	rows := repoRows([]api.Repository{{Name: "solo", DefaultBranch: ""}})
+	rows := repoRows([]api.Repository{{Name: "solo", DefaultBranch: ""}}, ui.FormatTable)
 	if rows[0][0] != "solo" {
 		t.Errorf("expected fallback to short name, got %q", rows[0][0])
 	}

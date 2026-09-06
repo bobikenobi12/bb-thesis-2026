@@ -42,7 +42,7 @@
 // in-cluster; Azure has no Valkey product). An exclusion is a decision on the record, not a mute —
 // the generated matrix prints them as documented exclusions.
 //
-// Run from apps/console (`pnpm -F console check:offer-parity`). `--matrix` writes the living board to
+// Run from apps/console (`pnpm -C apps/console run check:offer-parity`). `--matrix` writes the living board to
 // docs/testing/offer-parity.md instead of just reporting.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -250,7 +250,7 @@ function readOfferSurface() {
 	const surface = JSON.parse(readFileSync(OFFER_SURFACE, "utf8"));
 	if (!Array.isArray(surface.offers) || surface.offers.length === 0) {
 		throw new Error(
-			`${OFFER_SURFACE} lists no offers — regenerate it with \`pnpm -F console gen:offer-surface\`. ` +
+			`${OFFER_SURFACE} lists no offers — regenerate it with \`pnpm -C apps/console run gen:offer-surface\`. ` +
 				`An empty surface measures nothing and reports success.`,
 		);
 	}
@@ -1469,9 +1469,8 @@ Every row is something a user can **choose**. Every cell is whether that cloud c
 this enforces is already in \`CLAUDE.md\`: a per-cloud change covers all clouds in the same pass, and a
 cloud that cannot is an **explicit documented exclusion, never a silent gap**.
 
-Deliberately finer-grained than [\`provisioning-e2e-parity.md\`](./provisioning-e2e-parity.md), whose
-single "All kinds (11)" column is the granularity that let Azure MySQL hide: the kind was present, the
-*variant* was not.
+Deliberately finer-grained than the proof grid derived in [\`PROGRAMME.md\`](../../PROGRAMME.md), whose
+single "all kinds" granularity is what let Azure MySQL hide: the kind was present, the *variant* was not.
 
 Legend: 🟡 implemented, not yet proven on a real apply · ✅ real-apply proof in the e2e ledger ·
 🚫 offered but unbuildable (tracking issue in the cell) · ⚠️ carried only as a branch guard — the
@@ -1614,8 +1613,8 @@ proof · 🚫 data-bearing but **not** in \`day2StatefulTypes\` — the gate wou
 ? not evaluable from template text (the type is inside an external module; only a real plan shows it)
 
 As with day 1, **no cell goes ✅ from here.** The proof is a real apply recorded in
-[\`demos/proofs/provisioning-e2e-log.md\`](../../demos/proofs/provisioning-e2e-log.md) and promoted in
-[\`provisioning-e2e-parity.md\`](./provisioning-e2e-parity.md).
+[\`demos/proofs/provisioning-e2e-log.md\`](../../demos/proofs/provisioning-e2e-log.md) and promoted into the
+generated half of [\`PROGRAMME.md\`](../../PROGRAMME.md).
 
 | Offer | Cloud | Backing resource | Day-2 | Note |
 |---|---|---|:---:|---|
@@ -1705,7 +1704,7 @@ Only a cell that was measured and came out honored is asked for its entry back.
 		}
 	}
 
-	md += `\n---\n\nRegenerate with \`pnpm -F console check:offer-parity -- --matrix\`. CI runs the guard on every PR.\n`;
+	md += `\n---\n\nRegenerate with \`pnpm -C apps/console run check:offer-parity -- --matrix\`. CI runs the guard on every PR.\n`;
 	writeFileSync(MATRIX_OUT, md);
 	console.log(`✓ wrote ${MATRIX_OUT}`);
 }
@@ -1801,7 +1800,7 @@ reachable in one line: drop a cloud from \`offeredOn\` and the cell simply stops
 Settle it from the cloud's side, then do ONE of:
   · the product genuinely stopped offering it there → the gap is gone WITH the offer. Delete the
     entry, and say so in the issue it references — that issue is now moot, not done.
-  · the generated offer surface is stale → regenerate it (\`pnpm -F console gen:offer-surface\`) and
+  · the generated offer surface is stale → regenerate it (\`pnpm -C apps/console run gen:offer-surface\`) and
     re-run. The offer never went anywhere; ${OFFER_SURFACE} did.
   · the offer, its kind or its cloud was renamed, or a template directory moved → RE-KEY the entry to
     the name the guard measures now. The debt is unchanged; only its address moved.

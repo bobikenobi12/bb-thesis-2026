@@ -3,8 +3,9 @@
 
 package e2e
 
-// The SECOND assertion for in-cluster max-config cells whose ArgoCD Application converging does not
-// actually prove the kind was delivered.
+// The SECOND assertion for max-config cells whose PRIMARY evidence does not actually prove the kind
+// was delivered — a converged ArgoCD Application for an in-cluster cell, or the counted resource in
+// tofu state for a cloud one. Both carriages can carry a probe; see MaxConfigCell.ClusterProbe.
 //
 // For four of hetzner's five in-cluster kinds it does: `addon-db-appdb` Healthy+Synced means a CNPG
 // Cluster is running, and a running Postgres is the kind. `secrets` is the exception, and it is the
@@ -37,24 +38,90 @@ const maxConfigProbeInterval = 10 * time.Second
 // maxConfigProbeGetTimeout bounds one kubectl call, well under the overall deadline.
 const maxConfigProbeGetTimeout = 30 * time.Second
 
-// AssertMaxConfigClusterProbes runs every ClusterProbe this cloud's in-cluster cells declare, and
-// reports the first one that never became Ready.
+// maxConfigProbeTimeout is the budget for ONE probe, and it is deliberately far smaller than
+// ArgoAssertTimeout.
+//
+// This runs AFTER AssertArgoAppsHealthy and after the tofu state assertion, so the operator is
+// already converged and the cloud resource already exists; what is left is ESO reconciling one
+// store, which is seconds when it works. Ten minutes is generous for that and still bounded.
+//
+// It used to be handed ArgoAssertTimeout() — up to 40m on a full bar — against a ctx that reserved
+// NOTHING for it. Two things went wrong with that. A store that is genuinely absent (the case this
+// exists to catch) would poll until the ctx expired, and awaitClusterProbeReady would then return
+// ctx.Err() — reporting `context deadline exceeded` and throwing away the last observed Ready
+// condition, which is the entire diagnostic value of the probe. And a merely slow store would eat
+// unreserved minutes that a LATER reserved scenario then died of, attributing the failure to the
+// wrong thing entirely.
+const maxConfigProbeTimeout = 10 * time.Minute
+
+// MaxConfigProbeTimeout is the per-probe budget, exported so the ladder and the caller cannot
+// disagree about it.
+func MaxConfigProbeTimeout() time.Duration { return maxConfigProbeTimeout }
+
+// MaxConfigProbeBudget is what ResolveT2Budget must reserve for this cloud: one probe budget per
+// cell that actually declares a probe.
+//
+// Derived from the same selection the assertion walks, rather than from a constant somebody has to
+// remember to bump — adding a probed cell to the grid must move the ladder by construction. That is
+// the mirror-the-emitter rule the budget file already applies to the day-2 URL probe.
+func MaxConfigProbeBudget(provider string) time.Duration {
+	return time.Duration(len(MaxConfigProbedCells(provider))) * maxConfigProbeTimeout
+}
+
+// AssertMaxConfigClusterProbes runs every ClusterProbe this cloud's cells declare — of EITHER
+// provisioning carriage — and reports the first one that never became Ready.
 //
 // Called AFTER AssertMaxConfigKindsInState, never instead of it: the probe is additive evidence, and
-// a cell whose Application never converged has already failed. A no-op for a cloud whose cells
-// declare no probes, so the four managed clouds pay nothing for it.
+// a cell whose primary evidence never held has already failed. A no-op for a cloud whose cells
+// declare no probes.
+//
+// It does NOT filter on carriage. It used to skip everything but CarriedInCluster, which meant the
+// four managed clouds paid nothing for it — and that was the bug, not the saving: `secrets` on those
+// clouds is a TOFU cell whose counted resource is real while the ClusterSecretStore that is the only
+// way to read it may never have been created (#2652). A probe that cannot be declared where the
+// hazard lives is a guard for the case that was already safe.
 func AssertMaxConfigClusterProbes(ctx context.Context, kubeconfigPath, provider string, timeout time.Duration) error {
-	for _, k := range MaxConfigKinds {
-		cell, ok := k.Cell(provider)
-		if !ok || cell.Carriage != CarriedInCluster || cell.ClusterProbe == nil {
-			continue
-		}
-		if err := awaitClusterProbeReady(ctx, kubeconfigPath, *cell.ClusterProbe, timeout); err != nil {
-			return fmt.Errorf("max-config kind %q on %s: %w\n  the ArgoCD Application %s converged, but that is not the proof: %s",
-				k.Kind, provider, err, cell.ArgoApp, cell.ClusterProbe.Why)
+	for _, pc := range MaxConfigProbedCells(provider) {
+		if err := awaitClusterProbeReady(ctx, kubeconfigPath, *pc.Cell.ClusterProbe, timeout); err != nil {
+			return fmt.Errorf("max-config kind %q on %s: %w\n  %s, but that is not the proof: %s",
+				pc.Kind, provider, err, cellPrimaryEvidence(pc.Cell), pc.Cell.ClusterProbe.Why)
 		}
 	}
 	return nil
+}
+
+// ProbedCell pairs a kind with the cell that declares a probe for this cloud.
+type ProbedCell struct {
+	Kind string
+	Cell MaxConfigCell
+}
+
+// MaxConfigProbedCells is the SELECTION half of AssertMaxConfigClusterProbes, split out so it can be
+// asserted without a cluster.
+//
+// It is split out because the selection is where this went wrong: the loop used to require
+// CarriedInCluster, which silently excluded every tofu cell — so declaring a probe on `secrets` for
+// aws would have compiled, read correctly, and run nothing. A filter that drops the cells you care
+// about is indistinguishable from a passing probe, and nothing here would have said so.
+func MaxConfigProbedCells(provider string) []ProbedCell {
+	var out []ProbedCell
+	for _, k := range MaxConfigKinds {
+		cell, ok := k.Cell(provider)
+		if !ok || cell.ClusterProbe == nil {
+			continue
+		}
+		out = append(out, ProbedCell{Kind: k.Kind, Cell: cell})
+	}
+	return out
+}
+
+// cellPrimaryEvidence names what the cell had ALREADY established before the probe ran, so the
+// failure reads as "this much was true and it still was not enough" rather than as a bare timeout.
+func cellPrimaryEvidence(cell MaxConfigCell) string {
+	if cell.Carriage == CarriedByTofu {
+		return fmt.Sprintf("the tofu resource %s is in state", cell.Resource)
+	}
+	return fmt.Sprintf("the ArgoCD Application %s converged", cell.ArgoApp)
 }
 
 // awaitClusterProbeReady polls one object until its `Ready` condition is True, or the deadline

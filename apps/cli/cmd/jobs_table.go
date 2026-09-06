@@ -67,7 +67,7 @@ func jobColumns() []table.Column {
 
 // jobRows projects jobs into Bubble Tea table rows (TUI path).
 func jobRows(jobs []api.ProvisionJob) []table.Row {
-	plain := jobRowsPlain(jobs)
+	plain := jobRowsPlain(jobs, ui.FormatTable)
 	rows := make([]table.Row, len(plain))
 	for i, r := range plain {
 		rows[i] = table.Row(r)

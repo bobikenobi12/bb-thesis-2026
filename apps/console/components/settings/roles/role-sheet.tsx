@@ -140,7 +140,7 @@ export function RoleSheet({
 					/>
 					{!isEdit && templates.length > 0 && (
 						<div className="space-y-1.5">
-							<p className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
+							<p className="font-mono text-ui-2xs uppercase tracking-wider text-text-tertiary">
 								Start from
 							</p>
 							<div className="flex flex-wrap gap-1.5">
@@ -154,7 +154,7 @@ export function RoleSheet({
 												shouldValidate: true,
 											})
 										}
-										className="rounded-md border border-border px-2 py-1 text-[11.5px] capitalize text-text-secondary transition-colors hover:border-border-strong"
+										className="rounded-md border border-border px-2 py-1 text-ui-xs capitalize text-text-secondary transition-colors hover:border-border-strong"
 									>
 										{t.name}
 									</button>
@@ -212,7 +212,7 @@ export function RoleSheet({
 			complete: () => true,
 			summary: () => "",
 			body: (v) => (
-				<div className="space-y-1.5 text-[12.5px] text-text-secondary">
+				<div className="space-y-1.5 text-ui-sm text-text-secondary">
 					<div>
 						<span className="text-text-tertiary">Name:</span> {v.name || "—"}
 					</div>

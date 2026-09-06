@@ -28,6 +28,19 @@ browser and polls `<origin>/api/auth/cli/exchange` until you approve, then write
 
 </Steps>
 
+`init` asks for exactly one value, and one flag supplies it:
+
+{/* fieldspec: alethia init */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Control-plane URL | Use the hosted default, or your self-hosted or dev URL | `--web-origin` |
+
+```bash
+alethia init                                              # the guided form
+alethia init --no-input --web-origin https://alethia.internal.example.com
+```
+
 <Callout type="info">
 **On the hosted platform you can skip `init` entirely** — the default origin already points at
 `alethialabs.io`, so `alethia login` on its own is enough. Reach for `init` (or set `web-origin`
@@ -76,10 +89,11 @@ alethia login
 ```
 
 <Callout type="info">
-`init`'s **URL prompt** honors `--no-input`: with prompting disabled it takes the already-resolved
-origin without asking. The **login** step still needs a browser to approve the device code — for a
-fully non-interactive machine, provision credentials another way (`ALETHIA_WEB_ORIGIN` + a
-pre-seeded credentials file). See [Configuration](/cli/configuration).
+`init`'s **URL prompt** honors `--no-input`: with prompting disabled it takes `--web-origin` if you
+passed one, and otherwise keeps the already-resolved origin without asking. The **login** step still
+needs a browser to approve the device code — for a fully non-interactive machine, use a
+[service-account token](/cli/authentication#running-in-ci) instead of logging in at all. See
+[Configuration](/cli/configuration).
 </Callout>
 
 ## Where things are stored

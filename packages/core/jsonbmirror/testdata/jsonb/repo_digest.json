@@ -1,0 +1,65 @@
+{
+  "repo_url": "https://github.com/acme/acme-monorepo",
+  "ref": "main",
+  "scanned_at": "2026-08-30T09:41:00Z",
+  "file_count": 412,
+  "truncated": true,
+  "languages": {
+    "TypeScript": 271,
+    "Go": 88
+  },
+  "manifests": [
+    {
+      "path": "services/api/package.json",
+      "content": "{\n  \"name\": \"api\"\n}\n",
+      "truncated": true
+    }
+  ],
+  "dockerfiles": [
+    {
+      "path": "services/api/Dockerfile",
+      "content": "FROM node:22-alpine\nEXPOSE 3000\n",
+      "truncated": true
+    }
+  ],
+  "compose": [
+    {
+      "path": "docker-compose.yml",
+      "content": "services:\n  api:\n    build: ./services/api\n",
+      "truncated": true
+    }
+  ],
+  "k8s_manifests": [
+    {
+      "path": "deploy/api.yaml",
+      "content": "apiVersion: apps/v1\nkind: Deployment\n",
+      "truncated": true
+    }
+  ],
+  "ci_configs": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "content": "name: ci\n",
+      "truncated": true
+    }
+  ],
+  "env_examples": [
+    {
+      "path": "services/api/.env.example",
+      "content": "DATABASE_URL=\nREDIS_URL=\n",
+      "truncated": true
+    }
+  ],
+  "signals": ["postgres", "redis"],
+  "services": [
+    {
+      "path": "services/api",
+      "name": "api",
+      "hasDockerfile": true,
+      "runtime": "node",
+      "port": 3000,
+      "needs": ["postgres", "redis"],
+      "env": ["DATABASE_URL", "REDIS_URL"]
+    }
+  ]
+}

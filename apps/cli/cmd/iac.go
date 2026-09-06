@@ -29,28 +29,31 @@ var iacShowCmd = &cobra.Command{
 		if err != nil {
 			fail(err)
 		}
-		project, err := currentProject(cmd)
+		// The output format is resolved BEFORE the project: `-o bogus` is rejected without first
+		// opening a picker, and interactiveTable is what decides whether the picker may run at all.
+		outFmt := outputFormat(cmd)
+		project, err := byoProject(cmd, token, interactiveTable(cmd))
 		if err != nil {
 			fail(err)
 		}
 		env, _ := cmd.Flags().GetString("env")
-		if err := runIacShow(api.NewClient(token), os.Stdout, outputFormat(cmd), project, env); err != nil {
+		if err := runIacShow(api.NewClient(token), os.Stdout, outFmt, project, env); err != nil {
 			failf("Failed to get IaC source: %v", err)
 		}
 	},
 }
 
 // iacRows projects a BYO IaC source into field/value cells.
-func iacRows(s *api.IacSource) [][]string {
+func iacRows(s *api.IacSource, outFmt string) [][]string {
 	return [][]string{
 		{"name", s.Name},
 		{"repo", s.RepoURL},
 		{"path", s.Path},
-		{"ref", strOrDash(s.Ref)},
+		{"ref", ui.Cell(outFmt, ui.Wire(s.Ref), ui.StrOrDash(s.Ref))},
 		{"enabled", fmt.Sprintf("%t", s.Enabled)},
 		{"scan", s.ScanStatus},
-		{"pinned commit", strOrDash(s.CommitSha)},
-		{"deployed commit", strOrDash(s.DeployedCommitSha)},
+		{"pinned commit", ui.Cell(outFmt, ui.Wire(s.CommitSha), ui.StrOrDash(s.CommitSha))},
+		{"deployed commit", ui.Cell(outFmt, ui.Wire(s.DeployedCommitSha), ui.StrOrDash(s.DeployedCommitSha))},
 		{"status", s.Status},
 	}
 }
@@ -69,12 +72,12 @@ func runIacShow(c apiClient, out io.Writer, format, project, env string) error {
 		fmt.Fprintln(out, ui.MutedStyle.Render("No BYO IaC source attached."))
 		return nil
 	}
-	return ui.RenderCard(out, format, "alethia · IaC source", iacRows(src), src)
+	return ui.RenderCard(out, format, "alethia · IaC source", iacRows(src, format), src)
 }
 
 func init() {
-	iacCmd.PersistentFlags().StringP("project", "p", "", "Project name or id")
-	iacCmd.PersistentFlags().StringP("env", "e", "", "Environment name, stage, or id (default: the project's default environment)")
+	iacCmd.PersistentFlags().StringP("project", "p", "", byoFlagUsage("alethia iac", byoKeyProject))
+	iacCmd.PersistentFlags().StringP("env", "e", "", byoFlagUsage("alethia iac", byoKeyEnv))
 	iacCmd.AddCommand(iacShowCmd)
 	rootCmd.AddCommand(iacCmd)
 }

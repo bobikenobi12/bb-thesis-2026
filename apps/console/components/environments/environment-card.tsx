@@ -6,11 +6,10 @@
 // env" protection summary, and a right rail (auto-heal + duplicate + delete). Presentational; the
 // mutations are handled by the orchestrator.
 
-import { formatMonthlyRate } from "@repo/format";
+import { formatMonthlyRate, formatRelative } from "@repo/format";
 import { Badge } from "@repo/ui/badge";
 import { Button } from "@repo/ui/button";
 import { Switch } from "@repo/ui/switch";
-import { formatDistanceToNow, parseISO } from "date-fns";
 import { Check, Copy, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import type { EnvReconcileState } from "@/app/server/actions/reconcile";
@@ -100,22 +99,22 @@ export function EnvironmentCard({
 				<div className="flex flex-wrap items-center gap-2.5">
 					<Link
 						href={envHref(org, project, env.id)}
-						className="font-mono text-[15px] text-text-primary hover:underline"
+						className="font-mono text-ui-lg text-text-primary hover:underline"
 					>
 						{env.name}
 					</Link>
 					<StatusDot
 						tier={deployPending ? "live" : "active"}
 						label={deployPending ? "Deploying" : "Live"}
-						className="text-[11px]"
+						className="text-ui-xs"
 					/>
 					{env.is_default && (
-						<span className="shrink-0 rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+						<span className="shrink-0 rounded-full border px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 							Default
 						</span>
 					)}
 					{drifted && (
-						<Badge variant="secondary" className="gap-1.5 text-[10px]">
+						<Badge variant="secondary" className="gap-1.5 text-ui-2xs">
 							<TriangleAlert className="size-3" />
 							Drifted
 						</Badge>
@@ -123,7 +122,7 @@ export function EnvironmentCard({
 				</div>
 
 				{/* meta */}
-				<div className="mt-1.5 flex items-center gap-2 text-[12px] text-text-tertiary">
+				<div className="mt-1.5 flex items-center gap-2 text-ui-sm text-text-tertiary">
 					{drifted ? (
 						<span>Diverged from provisioned state</span>
 					) : (
@@ -133,7 +132,7 @@ export function EnvironmentCard({
 						</span>
 					)}
 					<span className="opacity-50">·</span>
-					<span>Updated {formatDistanceToNow(parseISO(env.updated_at), { addSuffix: true })}</span>
+					<span>Updated {formatRelative(env.updated_at)}</span>
 				</div>
 
 				{/* classification chips + picker */}
@@ -148,14 +147,14 @@ export function EnvironmentCard({
 				{/* protection summary */}
 				<div className="mt-3 border-t border-border-faint pt-3">
 					<div className="mb-2 flex items-center gap-2">
-						<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
+						<span className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-text-tertiary">
 							Gates into this env
 						</span>
 						{canEdit && (
 							<button
 								type="button"
 								onClick={onEditRules}
-								className="ml-auto text-[12px] text-text-secondary underline underline-offset-2 hover:text-text-primary"
+								className="ml-auto text-ui-sm text-text-secondary underline underline-offset-2 hover:text-text-primary"
 							>
 								Edit rules
 							</button>
@@ -167,7 +166,7 @@ export function EnvironmentCard({
 								c.on ? (
 									<span
 										key={c.label}
-										className="inline-flex items-center gap-1.5 rounded-[5px] border border-border-strong bg-surface-muted px-2 py-0.5 font-mono text-[11px] text-text-primary"
+										className="inline-flex items-center gap-1.5 rounded-[5px] border border-border-strong bg-surface-muted px-2 py-0.5 font-mono text-ui-xs text-text-primary"
 									>
 										<span className="size-[5px] rounded-full bg-[var(--signal-strong)]" />
 										{c.label}
@@ -175,7 +174,7 @@ export function EnvironmentCard({
 								) : (
 									<span
 										key={c.label}
-										className="rounded-[5px] border border-dashed border-border px-2 py-0.5 font-mono text-[11px] text-text-disabled"
+										className="rounded-[5px] border border-dashed border-border px-2 py-0.5 font-mono text-ui-xs text-text-disabled"
 									>
 										{c.label}
 									</span>
@@ -187,14 +186,14 @@ export function EnvironmentCard({
 					{/* Gates inherited from a classification value tagged on this env (label drives policy). */}
 					{inherited.length > 0 && (
 						<div className={hasRules ? "mt-2" : undefined}>
-							<div className="mb-1.5 text-[10.5px] text-text-tertiary">
+							<div className="mb-1.5 text-ui-2xs text-text-tertiary">
 								Inherited from classification
 							</div>
 							<div className="flex flex-wrap gap-1.5">
 								{inherited.map((c) => (
 									<span
 										key={`${c.label}-${c.source}`}
-										className="inline-flex items-center gap-1.5 rounded-[5px] border border-dashed border-border-strong bg-surface-muted px-2 py-0.5 font-mono text-[11px] text-text-primary"
+										className="inline-flex items-center gap-1.5 rounded-[5px] border border-dashed border-border-strong bg-surface-muted px-2 py-0.5 font-mono text-ui-xs text-text-primary"
 										title={`Required because this env is classified ${c.source}`}
 									>
 										<span className="size-[5px] rounded-full bg-[var(--signal-strong)]" />
@@ -207,7 +206,7 @@ export function EnvironmentCard({
 					)}
 
 					{!hasRules && inherited.length === 0 && (
-						<span className="text-[12px] italic text-text-tertiary">
+						<span className="text-ui-sm italic text-text-tertiary">
 							No protection — any editor can promote in.
 						</span>
 					)}
@@ -217,7 +216,7 @@ export function EnvironmentCard({
 			{/* right rail */}
 			<div className="flex min-w-[148px] flex-col items-end justify-between gap-3 border-t border-border-faint pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
 				<div className="w-full">
-					<div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
+					<div className="mb-1.5 font-mono text-ui-2xs uppercase tracking-[0.12em] text-text-tertiary">
 						Auto-heal
 					</div>
 					{canEdit ? (
@@ -227,12 +226,12 @@ export function EnvironmentCard({
 							aria-label={`Toggle auto-heal for ${env.name}`}
 						/>
 					) : (
-						<span className="font-mono text-[12px] text-text-secondary">
+						<span className="font-mono text-ui-sm text-text-secondary">
 							{reconcile?.autoHeal ? "On" : "Off"}
 						</span>
 					)}
 					{isProd && (
-						<div className="mt-1.5 text-[10.5px] leading-tight text-text-tertiary">
+						<div className="mt-1.5 text-ui-2xs leading-tight text-text-tertiary">
 							Gated for production
 						</div>
 					)}

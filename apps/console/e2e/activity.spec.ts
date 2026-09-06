@@ -4,7 +4,7 @@
 // E2E: the Settings → Activity feed. Asserts the page-level wiring on a fresh authed org: the
 // reusable filter bar renders, CSV export is gated on a fresh (Hobby) plan, and selecting a
 // server-side filter drives a refetch (narrowing to denials — which a fresh org has none of —
-// lands on the empty state). Run locally with `pnpm dev:up` + `pnpm -F console test:e2e`.
+// lands on the empty state). Run locally with `pnpm dev:up` + `pnpm -C apps/console run test:e2e`.
 //
 // Note: the bold actor/target rendering and the "Load more" trigger need seeded rows, so they
 // are covered by the unit tests (tests/components/activity-feed.test.tsx) rather than here.

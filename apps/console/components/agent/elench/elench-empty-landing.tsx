@@ -11,6 +11,13 @@ import { track } from "@/lib/analytics/track";
 import type { AgentThread } from "@/lib/db/schema";
 import { useArtifactStore } from "@/lib/stores/use-artifact-store";
 import { Button } from "@repo/ui/button";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@repo/ui/empty";
 import { cn } from "@repo/ui/utils";
 import { ElenchComposer } from "./elench-composer";
 import type { ElenchSuggestion } from "./elench-suggestions";
@@ -120,7 +127,7 @@ export function ElenchModalLanding({
 					<div className="flex items-start justify-between gap-3">
 						<div>
 							<div className="text-base font-semibold">Ready to keep going?</div>
-							<div className="mt-0.5 text-[13px] text-muted-foreground">
+							<div className="mt-0.5 text-ui-md text-muted-foreground">
 								Continue your recent exploration.
 							</div>
 						</div>
@@ -135,11 +142,11 @@ export function ElenchModalLanding({
 							>
 								<span
 									title={t.title}
-									className="line-clamp-2 min-w-0 break-words text-[13px] text-foreground"
+									className="line-clamp-2 min-w-0 break-words text-ui-md text-foreground"
 								>
 									{t.title}
 								</span>
-								<span className="mt-4 font-mono text-[11px] text-muted-foreground">
+								<span className="mt-4 font-mono text-ui-xs text-muted-foreground">
 									{relTime(new Date(t.updated_at))}
 								</span>
 							</button>
@@ -155,7 +162,7 @@ export function ElenchModalLanding({
 			<section className="flex items-center justify-between gap-4 border border-border bg-muted/40 p-5">
 				<div>
 					<div className="text-base font-semibold">Draw, describe, go.</div>
-					<div className="mt-0.5 text-[13px] text-muted-foreground">
+					<div className="mt-0.5 text-ui-md text-muted-foreground">
 						Build a live dashboard of your infrastructure — Elench gathers the data and
 						composes it into stat cards and charts in the side panel.
 					</div>
@@ -211,7 +218,7 @@ export function ElenchPanelEmpty({
 	return (
 		<div className="p-3.5">
 			<div className="flex items-center justify-between border border-border bg-background px-3.5 py-2.5">
-				<span className="text-[13px] text-foreground">Need more help?</span>
+				<span className="text-ui-md text-foreground">Need more help?</span>
 				{supportHref && (
 					<Button
 						variant="outline"
@@ -225,13 +232,22 @@ export function ElenchPanelEmpty({
 				)}
 			</div>
 
-			<div className="py-10 text-center">
-				<ElenchMark className="mb-4 h-14 w-auto" />
-				<div className="text-lg font-semibold">{greeting()}</div>
-				<div className="mt-1 text-sm text-muted-foreground">
-					What are we doing today?
-				</div>
-			</div>
+			{/* The panel's own empty state — nothing has been said yet, so this IS the region's
+			    "nothing here". Composed from the `@repo/ui/empty` PARTS rather than the one-call
+			    `EmptyState` because the mark is the surface's focal graphic at 56px, not an icon
+			    in a 40px muted tile, and the greeting is the agent's invitation rather than the
+			    name of a page — the reason this file's `<h1>` is already a recorded decision. */}
+			<Empty className="gap-3 p-0 py-10 md:p-0 md:py-10">
+				<EmptyHeader className="gap-1">
+					<EmptyMedia>
+						<ElenchMark className="mb-4 h-14 w-auto" />
+					</EmptyMedia>
+					<EmptyTitle className="text-lg font-semibold">{greeting()}</EmptyTitle>
+					<EmptyDescription className="text-sm">
+						What are we doing today?
+					</EmptyDescription>
+				</EmptyHeader>
+			</Empty>
 
 			<div className="flex flex-col gap-2.5">
 				{suggestions.map((s) => (
@@ -245,7 +261,7 @@ export function ElenchPanelEmpty({
 							<s.icon className="h-4 w-4" />
 						</span>
 						<span className="min-w-0">
-							<span className="block text-[13px] font-medium text-foreground">
+							<span className="block text-ui-md font-medium text-foreground">
 								{s.title}
 							</span>
 							<span className="block text-xs text-muted-foreground">

@@ -229,7 +229,7 @@ export function DuplicateProjectDialog({
 											<Icon className={cn("mt-0.5 h-4 w-4 shrink-0", meta.tone)} />
 											<div className="min-w-0 space-y-0.5">
 												<div className="flex items-center gap-2">
-													<span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+													<span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 														{meta.label}
 													</span>
 													<span className="text-xs font-medium">
@@ -365,7 +365,7 @@ export function DuplicateProjectDialog({
 					{sourceProvider && targetProvider && categories.length > 0 && (
 						<div className="space-y-2">
 							<Separator />
-							<p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+							<p className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 								Service mapping
 							</p>
 							<ul className="space-y-1">

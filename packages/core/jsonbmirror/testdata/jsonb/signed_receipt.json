@@ -1,0 +1,77 @@
+{
+  "receipt": {
+    "version": "1",
+    "plan_sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b",
+    "tofu_version": "1.9.0",
+    "provider_versions": {
+      "registry.opentofu.org/hashicorp/aws": "5.62.0"
+    },
+    "catalog_version": "elench-controls-0.5.2",
+    "provider": "aws",
+    "verdict": "fail",
+    "report": {
+      "verdict": "fail",
+      "catalog_version": "elench-controls-0.5.2",
+      "provider": "aws",
+      "controls": [
+        {
+          "id": "LEASTPRIV-001",
+          "title": "IAM policies avoid wildcard administrative grants",
+          "severity": "high",
+          "status": "fail",
+          "frameworks": [
+            "CIS-1.16"
+          ],
+          "provider": "aws",
+          "findings": [
+            {
+              "address": "aws_iam_policy.admin",
+              "message": "policy grants Action:* on Resource:*"
+            }
+          ],
+          "coverage": "1 policy body is computed until apply and was not inspected"
+        }
+      ],
+      "summary": {
+        "pass": 7,
+        "fail": 1,
+        "warn": 2,
+        "not_evaluable": 3
+      }
+    },
+    "exception": {
+      "controls": [
+        "LEASTPRIV-001"
+      ],
+      "reason": "waived for the migration window, tracked in ALE-4821",
+      "by": "user_01J8QK3ZTA",
+      "expiry": "2026-09-30T00:00:00Z"
+    },
+    "runner": "runner_01J8QK4T2P",
+    "evaluated_at": "2026-08-30T09:41:00Z"
+  },
+  "algorithm": "ed25519",
+  "key_id": "sk_01J8QK5V9Q",
+  "signature": "c2lnbmF0dXJlLW92ZXItY2Fub25pY2FsLXJlY2VpcHQtYnl0ZXM=",
+  "public_key": "cHVibGljLWtleS10aGUtc2lnbmF0dXJlLXZlcmlmaWVzLXVuZGVy",
+  "rekor": {
+    "log_url": "https://rekor.sigstore.dev",
+    "log_id": "c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d",
+    "log_index": 1049231,
+    "integrated_time": 1788000000,
+    "body": "eyJraW5kIjoiaGFzaGVkcmVrb3JkIn0=",
+    "inclusion_proof": {
+      "log_index": 1049231,
+      "root_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "tree_size": 1049232,
+      "hashes": [
+        "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+      ],
+      "checkpoint": "rekor.sigstore.dev - 2605736670972794746\n1049232\nBoZrJ/808c4Z1rgE7/Wj9XR62k6qIvHUnAHlLdt4dbQ=\n"
+    },
+    "signed_entry_timestamp": "MEUCIQDkZ3RleHRzaWduZWRlbnRyeXRpbWVzdGFtcA==",
+    "anchor_algorithm": "ecdsa-p256-sha256",
+    "anchor_signature": "MEQCIGFuY2hvcnNpZ25hdHVyZWJ5dGVzZm9ydGVzdGluZw==",
+    "anchor_public_key": "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0K"
+  }
+}

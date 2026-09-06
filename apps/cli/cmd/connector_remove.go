@@ -9,7 +9,6 @@ import (
 
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +20,7 @@ var connectorRemoveCmd = &cobra.Command{
 	Use:   "remove [provider]",
 	Short: "Disconnect a cloud account",
 	Long: `Disconnect a cloud account, resetting it to a pending state and orphaning
-any projects that referenced it. Pass a provider (aws, gcp, azure) to skip the
-picker.`,
+any projects that referenced it. Pass a provider to skip the picker.`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
@@ -32,7 +30,7 @@ picker.`,
 		apiClient := api.NewClient(token)
 
 		var identities []api.CloudIdentity
-		ui.RunSpinner("Fetching cloud connections...", func() {
+		runSpinner("Fetching cloud connections...", func() {
 			identities, err = apiClient.GetCloudIdentities()
 		})
 		if err != nil {
@@ -76,21 +74,18 @@ func pickIdentity(identities []api.CloudIdentity, args []string) (*api.CloudIden
 		return nil, fmt.Errorf("no connected %s account found", provider)
 	}
 
-	options := make([]huh.Option[string], len(identities))
-	for i, id := range identities {
-		options[i] = huh.NewOption(
-			fmt.Sprintf("%s — %s", strings.ToUpper(id.Provider), id.Label),
-			id.ID,
+	// Refuse before opening a form that can never be answered. Without this the scripted
+	// no-argument case died on huh's raw "could not open a new TTY" — a message about a device
+	// file, for a user whose actual mistake was omitting the provider argument.
+	if err := requireInteractiveForm(); err != nil {
+		return nil, fmt.Errorf(
+			"no connection given: pass a provider (%s) as the argument (%w)",
+			strings.Join(connectorProviderNames(), ", "), err,
 		)
 	}
 
-	var chosenID string
-	if err := runHuhForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Select a connection to remove").
-			Options(options...).
-			Value(&chosenID),
-	)); err != nil {
+	chosenID, err := pickConnectedIdentity("Select a connection to remove", identities)
+	if err != nil {
 		return nil, err
 	}
 

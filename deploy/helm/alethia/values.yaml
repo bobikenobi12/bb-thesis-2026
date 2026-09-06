@@ -106,6 +106,8 @@ runner:
 ingress:
   enabled: true
   className: nginx
+  # ingress-nginx overwrites X-Real-IP with the direct client's address.
+  trustedIpHeader: x-real-ip
   annotations: {}
   tls:
     enabled: true

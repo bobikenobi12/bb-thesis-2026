@@ -37,7 +37,7 @@ locals {
   # without it "1.3" would match "1.34.10-aliyun.1", and a typo'd minor would silently provision a
   # cluster the operator did not ask for.
   ack_version_candidates = var.provision_ack ? [
-    for m in data.alicloud_cs_kubernetes_version.available[0].metadata : m.version
+    for m in one(data.alicloud_cs_kubernetes_version.available[*].metadata) : m.version
     if startswith(m.version, "${var.ack_cluster_version}.")
   ] : []
 
@@ -64,7 +64,7 @@ resource "terraform_data" "ack_version_resolvable" {
       error_message = format(
         "ACK Kubernetes minor '%s' has no patch release in this region. ACK offers: %s. The compat window (packages/core/compat/matrix.json k8s_cloud.alibaba) says what Alethia supports; this says what the region ships — they disagree. Align ack_cluster_version with an offered minor, or the matrix if Alibaba has retired it.",
         var.ack_cluster_version,
-        join(", ", var.provision_ack ? [for m in data.alicloud_cs_kubernetes_version.available[0].metadata : m.version] : []),
+        join(", ", var.provision_ack ? [for m in one(data.alicloud_cs_kubernetes_version.available[*].metadata) : m.version] : []),
       )
     }
   }

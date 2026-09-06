@@ -24,7 +24,6 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write # assume the read-only vault role for the release-metadata bearer
 
 jobs:
   goreleaser:
@@ -159,53 +158,39 @@ jobs:
           SCOOP_TAP_GITHUB_TOKEN: ${{ steps.tap_token.outputs.token }}
           GORELEASER_CURRENT_TAG: ${{ env.MIRROR_TAG }}
 
-      # ── best-effort, like the step it exists to serve. ──
-      #
-      # This workflow triggers on `push: tags: ['cli-v*']`, so its OIDC subject is
-      # `repo:<repo>:ref:refs/tags/cli-vX.Y.Z`. `alethia-deploy-reader` trusts exactly two subjects —
-      # `ref:refs/heads/main` and `environment:production` — so the assume-role has never succeeded
-      # from a tag, and this step failed hard after twelve retries on EVERY release since v0.4.0.
-      #
-      # The step below already says a console blip "must not red an otherwise-successful publish",
-      # and carries `continue-on-error` to guarantee it. That guard was on the wrong step: the
-      # credential step it depends on had none, so it reddened the job anyway. GoReleaser had
-      # already published — v0.4.0 and v0.5.0 are both on alethialabs-io/alethia-cli with their full
-      # asset sets — and the release still reported FAILURE. A pipeline that is red on every
-      # successful run cannot tell anyone about an unsuccessful one.
-      #
-      # This makes the release report the truth. It does NOT make the notification work: the
-      # credentials still will not mint from a tag subject, so the console still never hears about a
-      # new CLI version. Fixing that needs either a trusted subject for the tag or a job-level
-      # `environment:` — and `production` carries a branch policy a tag push does not satisfy, so it
-      # is a real decision rather than a one-liner. Tracked separately.
-      - name: Configure AWS credentials (OIDC — read the release bearer)
-        continue-on-error: true
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.DEPLOY_READER_ROLE_ARN }}
-          aws-region: eu-central-1
-
-      # Best-effort console notification — never fails the release (a duplicate version or a console
-      # blip must not red an otherwise-successful publish).
-      - name: Publish release metadata to Alethia
-        continue-on-error: true
+      # The tag job cannot assume the main-bound vault role. Dispatch a second workflow whose
+      # repository_dispatch context is refs/heads/main; it validates this version against both the
+      # public release and the monorepo source tag before reading the publication bearer.
+      - name: Dispatch canonical release metadata publication
         env:
-          ALETHIA_URL: ${{ vars.PUBLIC_APP_URL }}
-          GH_TOKEN: ${{ steps.cli_token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_API_SECRET="$(aws secretsmanager get-secret-value --secret-id alethia/prod/env --region eu-central-1 --query SecretString --output text | jq -r '.RELEASE_API_SECRET // ""')"
-          echo "::add-mask::$RELEASE_API_SECRET"
-          NOTES=$(gh release view "${MIRROR_TAG}" --repo alethialabs-io/alethia-cli --json body -q .body 2>/dev/null || echo "")
-          curl -sf -X POST "${ALETHIA_URL}/api/releases/cli" \
-            -H "Authorization: Bearer ${RELEASE_API_SECRET}" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg v "${REL_VERSION}" \
-              --arg n "$NOTES" \
-              --arg u "https://github.com/alethialabs-io/alethia-cli/releases/tag/${MIRROR_TAG}" \
-              --arg s "${{ github.sha }}" \
-              '{version: $v, release_notes: $n, github_release_url: $u, commit_sha: $s}')"
+          jq -n \
+            --arg version "$REL_VERSION" \
+            '{event_type: "cli-release-published", client_payload: {version: $version}}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+      # The API is the updater's canonical source, so publishing binaries without making their
+      # metadata visible is an incomplete release. Poll the public read path to verify the whole
+      # dispatch → OIDC → vault → POST chain rather than trusting the dispatch acknowledgement.
+      - name: Verify canonical release metadata is visible
+        env:
+          ALETHIA_URL: ${{ vars.PUBLIC_APP_URL }}
+        run: |
+          set -euo pipefail
+          ALETHIA_URL="${ALETHIA_URL:-https://alethialabs.io}"
+          for attempt in $(seq 1 24); do
+            CURRENT="$(curl -fsS "${ALETHIA_URL}/api/releases/cli" | jq -r '.version // ""' 2>/dev/null || true)"
+            if [ "$CURRENT" = "$REL_VERSION" ]; then
+              echo "Canonical release metadata is live: $CURRENT"
+              exit 0
+            fi
+            echo "Waiting for release metadata ($attempt/24; current=${CURRENT:-none})…"
+            sleep 5
+          done
+          echo "::error::${ALETHIA_URL}/api/releases/cli did not converge to ${REL_VERSION}"
+          exit 1
 
       # Single-home: the release + binaries live on alethia-cli, so drop the changelog-only Release
       # release-please created on the monorepo. Keep the cli-v* TAG (release-please's version anchor)

@@ -19,7 +19,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const ROOTS = ["packages/core/verify", "apps/runner"];
+// packages/core/format joins the list because the whole package exists to BE a conformance
+// mirror: a test file there that asserts nothing would leave Go free to disagree with the
+// table while reporting green, which is the one failure the mirror is built to make impossible.
+const ROOTS = ["packages/core/verify", "packages/core/format", "apps/runner"];
 
 /** Recursively collect *_test.go files under a dir. */
 function goTestFiles(dir) {

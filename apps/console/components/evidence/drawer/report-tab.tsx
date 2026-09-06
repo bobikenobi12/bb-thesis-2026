@@ -62,15 +62,15 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 					className={cn("shrink-0", TONE_TEXT[CONTROL_STATUS_TONE[ctl.status]])}
 				/>
 				<div className="flex min-w-0 flex-1 items-baseline gap-2">
-					<span className="font-mono text-[11px] text-text-primary">{ctl.id}</span>
-					<span className="truncate text-[12.5px] text-text-secondary">
+					<span className="font-mono text-ui-xs text-text-primary">{ctl.id}</span>
+					<span className="truncate text-ui-sm text-text-secondary">
 						{ctl.title}
 					</span>
 				</div>
-				<span className="shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary">
+				<span className="shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 					{ctl.severity}
 				</span>
-				<span className="shrink-0 font-mono text-[9px] text-text-disabled">
+				<span className="shrink-0 font-mono text-ui-3xs text-text-disabled">
 					{ctl.provider}
 				</span>
 			</div>
@@ -81,7 +81,7 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 							{ctl.frameworks.map((fw) => (
 								<span
 									key={fw}
-									className="rounded-xs bg-surface-sunken px-1.5 py-0.5 font-mono text-[9.5px] text-text-tertiary"
+									className="rounded-xs bg-surface-sunken px-1.5 py-0.5 font-mono text-ui-3xs text-text-tertiary"
 								>
 									{fw}
 								</span>
@@ -93,20 +93,20 @@ function ControlCard({ ctl }: { ctl: VerifyControlResult }) {
 							key={`${f.address}-${i}`}
 							className="border-l-2 border-border-strong pl-2.5"
 						>
-							<div className="font-mono text-[11px] text-text-primary">
+							<div className="font-mono text-ui-xs text-text-primary">
 								{f.address}
 							</div>
-							<div className="mt-0.5 text-[11.5px] leading-relaxed text-text-tertiary">
+							<div className="mt-0.5 text-ui-xs leading-relaxed text-text-tertiary">
 								{f.message}
 							</div>
 						</div>
 					))}
 					{ctl.coverage && (
 						<div className="flex gap-2.5 rounded-sm border border-dashed border-border-strong bg-surface-sunken px-2.5 py-2">
-							<span className="shrink-0 pt-px font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary">
+							<span className="shrink-0 pt-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 								Blind spot
 							</span>
-							<span className="text-[11.5px] leading-relaxed text-text-secondary">
+							<span className="text-ui-xs leading-relaxed text-text-secondary">
 								{ctl.coverage}
 							</span>
 						</div>
@@ -138,7 +138,7 @@ export function ReportTab({
 				action={
 					<Link
 						href={row.projectSlug ? `/${org}/${row.projectSlug}` : `/${org}`}
-						className="inline-flex items-center gap-1.5 border-b border-border-strong pb-0.5 text-[12px] font-medium text-text-primary transition-colors hover:border-text-primary"
+						className="inline-flex items-center gap-1.5 border-b border-border-strong pb-0.5 text-ui-sm font-medium text-text-primary transition-colors hover:border-text-primary"
 					>
 						Open project
 						<EvIcon name="arrow-right" size={12} />
@@ -165,16 +165,16 @@ export function ReportTab({
 					)}
 				>
 					<EvIcon name={VERDICT_HEADER[report.verdict].icon} size={17} />
-					<span className="font-display text-[15px] font-semibold text-text-primary">
+					<span className="font-display text-ui-lg font-semibold text-text-primary">
 						{VERDICT_HEADER[report.verdict].label}
 					</span>
 				</span>
 				<span className="flex-1" />
-				<span className="font-mono text-[10px] text-text-tertiary">
+				<span className="font-mono text-ui-2xs text-text-tertiary">
 					{report.provider} · {report.catalog_version}
 				</span>
 			</div>
-			<div className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-disabled">
+			<div className="font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-disabled">
 				Controls
 			</div>
 			<div className="flex flex-col gap-2.5">
@@ -184,7 +184,7 @@ export function ReportTab({
 			</div>
 			{envWaivers.length > 0 && (
 				<>
-					<div className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-disabled">
+					<div className="font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-disabled">
 						Active waivers touching this environment
 					</div>
 					<div className="flex flex-col gap-2">
@@ -197,19 +197,19 @@ export function ReportTab({
 									{w.controls.map((c) => (
 										<span
 											key={c}
-											className="rounded-xs border bg-surface-sunken px-1.5 py-0.5 font-mono text-[10px] text-text-secondary"
+											className="rounded-xs border bg-surface-sunken px-1.5 py-0.5 font-mono text-ui-2xs text-text-secondary"
 										>
 											{c}
 										</span>
 									))}
 								</span>
-								<span className="min-w-0 flex-1 text-[12px] text-text-secondary">
+								<span className="min-w-0 flex-1 text-ui-sm text-text-secondary">
 									{w.reason}
 									<span className="text-text-tertiary"> · {w.by}</span>
 								</span>
 								<Link
 									href={`/${org}/~/jobs/${w.jobId}`}
-									className="shrink-0 font-mono text-[10px] text-text-tertiary underline-offset-2 hover:text-text-primary hover:underline"
+									className="shrink-0 font-mono text-ui-2xs text-text-tertiary underline-offset-2 hover:text-text-primary hover:underline"
 								>
 									View job
 								</Link>

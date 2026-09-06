@@ -27,10 +27,13 @@
 			"provider": {
 				"name": "google"
 			},
+			"domainFilters": [
+				"addon-e2e.invalid"
+			],
 			"serviceAccount": {
-				"name": "addon-external-dns-sa",
+				"name": "addon-external-dns",
 				"annotations": {
-					"iam.gke.io/gcp-service-account": "external-dns@example-project.iam.gserviceaccount.com"
+					"iam.gke.io/gcp-service-account": "alethia-infra:external-dns-workload-identity"
 				}
 			}
 		},

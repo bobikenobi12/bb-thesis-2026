@@ -12,7 +12,8 @@ latest one.
 <Callout type="info">
 The CLI is a client of the same Console API. `cost show` calls `/cli/projects/<project>/cost` with
 your [CLI token](/cli/authentication) and operates on the **active organization**
-(`alethia org switch`, or `--org <id>` per invocation).
+(`alethia org switch`). Pass `--org <id>` to scope a single invocation to a different organization —
+it is refused with `403` if you are not a member of it.
 </Callout>
 
 ## `alethia cost show`
@@ -20,6 +21,7 @@ your [CLI token](/cli/authentication) and operates on the **active organization*
 Show the latest cost for a project environment.
 
 ```bash
+alethia cost show                          # picks the project interactively (terminal, table output)
 alethia cost show --project my-project
 alethia cost show -p my-project -e staging
 alethia cost show -p my-project -o json
@@ -27,23 +29,53 @@ alethia cost show -p my-project -o json
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
+| `--project`, `-p` | No | Project name or id. Omit on a TTY for the interactive project picker. |
 | `--env`, `-e` | No | Environment name, stage, or id. Omit to use the project's default environment. |
+
+Run without `--project` on a terminal and the CLI shows the same project picker as `project plan`
+and `project apply`. The flag is the complete contract — it can set anything the picker can ask —
+so `--no-input` never needs a terminal. Under `--no-input` an omitted project is refused with a
+message that names `--project`.
+
+The picker appears **only** for the default table output on a terminal. `-o json`, `-o csv`,
+`--no-input` and a redirected stdout all refuse an omitted `--project` with that same message,
+because the picker draws on stdout and would otherwise put a spinner and a menu in the file you
+redirected the document into.
 
 The command prints a one-line headline — the total monthly cost, or **not priced** when no plan has
 ever costed the environment (an honest "we don't know yet", never a fabricated zero) — followed by a
 table of the priced resources:
 
 ```
-Cost [staging]: $123.45/mo USD (captured 2026-01-01T00:00:00.000Z)
-Address                Type              Monthly
-aws_db_instance.main   aws_db_instance   $100.00
-aws_s3_bucket.logs     aws_s3_bucket     $23.45
+Cost [staging]: $123.45/mo (captured 1 Jan 2026, 00:00)
+Address               Type             Monthly
+aws_db_instance.main  aws_db_instance  $100.00/mo
+aws_s3_bucket.logs    aws_s3_bucket    $23.45/mo
 ```
 
 Add `-o json` for the full cost object (`priced`, `total_monthly`, `currency`, `captured_at`,
-`plan_job_id`, `environment`, `resources[]`); `-o csv` emits the priced-resource rows. Backing call:
+`plan_job_id`, `environment`, `resources[]`); `-o csv` emits the priced-resource rows, with
+`Monthly` as a bare number (`1234.56`) so a script can parse it — no symbol, no thousands
+separator, no `/mo`. The currency is stated once, in the JSON object's `currency`. Backing call:
 `GET /cli/projects/<project>/cost?env=<env>`.
+
+### How the amounts are written
+
+Every amount — the headline and each row — is rendered by the same shared formatter the console
+uses, so a cost you read in the terminal and the same cost on the project canvas cannot disagree.
+
+- **One currency, once.** The amount is written in the environment's own currency: `€123.45/mo` for
+  a euro environment, never a dollar sign with the code `EUR` appended. A currency the formatter has
+  no symbol for is written with its ISO code instead — `123.45 HUF/mo` — and never with a guessed
+  symbol.
+- **Cents are never dropped.** Rows and headline round identically, so the column adds up to the
+  total.
+- **`captured` is a date, not a wire timestamp** — `1 Jan 2026, 00:00`, in UTC, so the same record
+  reads the same on every machine.
+
+All of that is the **table** render, which is written for a person. Use `-o json` when a script
+needs the raw number: `total_monthly` and each `monthly_cost` are plain numbers, and `currency` is
+the ISO code.
 
 ## See also
 

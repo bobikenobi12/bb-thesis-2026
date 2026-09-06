@@ -1341,60 +1341,12 @@ export const PromptInputHoverCardContent = ({
   <HoverCardContent align={align} {...props} />
 );
 
-export type PromptInputTabsListProps = HTMLAttributes<HTMLDivElement>;
-
-export const PromptInputTabsList = ({
-  className,
-  ...props
-}: PromptInputTabsListProps) => <div className={cn(className)} {...props} />;
-
-export type PromptInputTabProps = HTMLAttributes<HTMLDivElement>;
-
-export const PromptInputTab = ({
-  className,
-  ...props
-}: PromptInputTabProps) => <div className={cn(className)} {...props} />;
-
-export type PromptInputTabLabelProps = HTMLAttributes<HTMLHeadingElement>;
-
-export const PromptInputTabLabel = ({
-  className,
-  ...props
-}: PromptInputTabLabelProps) => (
-  // Content provided via children in props
-  // oxlint-disable-next-line eslint-plugin-jsx-a11y(heading-has-content)
-  <h3
-    className={cn(
-      "mb-2 px-3 font-medium text-muted-foreground text-xs",
-      className,
-    )}
-    {...props}
-  />
-);
-
-export type PromptInputTabBodyProps = HTMLAttributes<HTMLDivElement>;
-
-export const PromptInputTabBody = ({
-  className,
-  ...props
-}: PromptInputTabBodyProps) => (
-  <div className={cn("space-y-1", className)} {...props} />
-);
-
-export type PromptInputTabItemProps = HTMLAttributes<HTMLDivElement>;
-
-export const PromptInputTabItem = ({
-  className,
-  ...props
-}: PromptInputTabItemProps) => (
-  <div
-    className={cn(
-      "flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent",
-      className,
-    )}
-    {...props}
-  />
-);
+// The `PromptInputTab*` family — TabsList / Tab / TabLabel / TabBody / TabItem — was deleted here.
+// It had no caller anywhere in the repo, and three of the five were `<div className={cn(className)}/>`
+// with nothing else in them. `TabLabel` is why it surfaced: it hand-wrote an `<h3>`, the section-
+// heading drift CLAUDE.md §6 routes to `PageHeader level={3}` — and giving a heading nobody renders
+// a new home is not a fix, it is the drift with a shared import on it. Restore from git if a tabbed
+// prompt input is ever built; `@repo/ui/tabs` is the shared answer in the meantime.
 
 export type PromptInputCommandProps = ComponentProps<typeof Command>;
 

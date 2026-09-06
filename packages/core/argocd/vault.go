@@ -84,6 +84,26 @@ const (
 	hetznerVaultKVMount = "secret"
 )
 
+// PerCloudSecretStoreName is the ClusterSecretStore through which a workload reads THIS cloud's
+// secret store — `secretstore-aws` / `-gcp` / `-azure` / `-alibaba`, and `secretstore-hetzner` for
+// the in-cluster Vault that stands in where the cloud sells none.
+//
+// It exists so the name has ONE source. The reaper's render set, the max-config proof grid and the
+// template all name these stores, and the template is already pinned to them by install_test.go —
+// but a fourth hand-written copy is how #2038 lost secretstore-infisical from the reap set. An
+// empty return means the provider has no per-cloud store, which is not the same as "the store is
+// named after the provider" and must not be treated as one.
+func PerCloudSecretStoreName(provider string) string {
+	switch provider {
+	case "aws", "gcp", "azure", "alibaba":
+		return "secretstore-" + provider
+	case "hetzner":
+		return HetznerSecretStoreName
+	default:
+		return ""
+	}
+}
+
 // vaultCarriedSecretOffers maps a cloud to the in-cluster component that honours the `secret` kind's
 // switches there. Hetzner only, and that is the whole point: every other cloud creates a real secret
 // in its cloud store, so `generate` / `length` / `special_chars` ride tfvars (aws_provider.go

@@ -94,9 +94,40 @@ function cloudKnobs(addonId: string, cloud: CloudProvider): Record<string, unkno
 	if (addonId !== "external-dns") return {};
 	const native = EXTERNAL_DNS_NATIVE_PROVIDER[cloud];
 	if (native === null) return {};
-	const identity = EXTERNAL_DNS_FIXTURE_IDENTITY[native];
-	return { provider: native, ...(identity ? { workloadIdentity: identity } : {}) };
+	if (EXTERNAL_DNS_PROVIDERS[native].saAnnotation !== undefined) {
+		return {
+			provider: native,
+			workloadIdentity: INFRA_IDENTITY_PLACEHOLDER,
+			domainFilter: "addon-e2e.invalid",
+			// #3589: azure additionally REQUIRES the three identifiers its config file is built
+			// from, so without these the exporter's own fail-loud check below fires and no azure
+			// fixture is written at all. Supplied unconditionally rather than gated on the provider
+			// id: Zod strips the keys a provider does not declare a use for, and gating here would
+			// be a second copy of the table `EXTERNAL_DNS_PROVIDERS` already holds.
+			...EXTERNAL_DNS_FIXTURE_AZURE_CONFIG,
+		};
+	}
+	return { provider: native };
 }
+
+/**
+ * Syntactically real, deliberately NON-EXISTENT azure identifiers for the fixture (#3589).
+ *
+ * The same reasoning as `EXTERNAL_DNS_FIXTURE_IDENTITY` below, for the same reason: the fixture
+ * exists to pin the SHAPE the emitter produces — that azure's spec carries a mounted `azure.json`
+ * built from these knobs — and it proves nothing about the add-on working. The real values are a
+ * customer's own tenant, subscription and resource group; external-dns therefore stays on the
+ * withheld list in `test/e2e/addon_exclusions.go`.
+ *
+ * The GUIDs are the all-zero placeholder the worked example in `examples/addons/external-dns/`
+ * ships, so a reader who has seen one recognises the other as a stand-in rather than as something to
+ * copy.
+ */
+const EXTERNAL_DNS_FIXTURE_AZURE_CONFIG = {
+	azureTenantId: "00000000-0000-0000-0000-000000000000",
+	azureSubscriptionId: "00000000-0000-0000-0000-000000000000",
+	azureResourceGroup: "example-dns-rg",
+} as const;
 
 /**
  * A syntactically real, deliberately NON-EXISTENT cloud identity, per workload-identity provider.

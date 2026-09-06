@@ -75,6 +75,8 @@ spec:
               value: "3000"
             - name: HOSTNAME
               value: 0.0.0.0
+            - name: ALETHIA_TRUSTED_IP_HEADER
+              value: {{ .Values.ingress.trustedIpHeader | quote }}
           ports:
             - name: http
               containerPort: 3000

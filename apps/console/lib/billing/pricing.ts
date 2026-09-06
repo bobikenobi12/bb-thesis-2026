@@ -12,6 +12,7 @@ import { cache } from "react";
 import {
 	type AiPlanId,
 	aiPlanMeta,
+	asSupportedCurrency,
 	formatMoney,
 	formatSeatPrice,
 	type PlanId,
@@ -63,15 +64,21 @@ export const getPlanPrice = cache(async (plan: PlanId): Promise<LivePlanPrice> =
 			expand: ["currency_options"],
 		});
 		if (typeof price.unit_amount !== "number") return fallbackPrice(plan);
+		const baseCurrency = asSupportedCurrency(price.currency);
+		if (!baseCurrency) return fallbackPrice(plan);
 		const meta = planMeta(plan);
 		const label = meta.perSeat
-			? formatSeatPrice(price.unit_amount, price.currency, price.recurring?.interval)
-			: `${formatMoney(price.unit_amount, price.currency)} / ${shortInterval(price.recurring?.interval)}`;
+			? formatSeatPrice(price.unit_amount, baseCurrency, price.recurring?.interval)
+			: `${formatMoney(price.unit_amount, baseCurrency)} / ${shortInterval(price.recurring?.interval)}`;
 		const eurAmount = price.currency_options?.eur?.unit_amount;
+		const usdAmountCents = baseCurrency === "usd"
+			? price.unit_amount
+			: price.currency_options?.usd?.unit_amount;
 		return {
-			unitAmountUsd: price.unit_amount / 100,
+			unitAmountUsd:
+				typeof usdAmountCents === "number" ? usdAmountCents / 100 : (meta.priceMonthlyUsd ?? null),
 			unitAmountEur: typeof eurAmount === "number" ? eurAmount / 100 : (meta.priceMonthlyEur ?? null),
-			currency: price.currency,
+			currency: baseCurrency,
 			interval: price.recurring?.interval ?? "month",
 			label,
 		};
@@ -140,15 +147,21 @@ export const getAiPlanPrice = cache(async (tier: AiPlanId): Promise<LiveAiPrice>
 			expand: ["currency_options"],
 		});
 		if (typeof price.unit_amount !== "number") return aiFallbackPrice(tier);
+		const baseCurrency = asSupportedCurrency(price.currency);
+		if (!baseCurrency) return aiFallbackPrice(tier);
 		const meta = aiPlanMeta(tier);
 		const eurAmount = price.currency_options?.eur?.unit_amount;
+		const usdAmountCents = baseCurrency === "usd"
+			? price.unit_amount
+			: price.currency_options?.usd?.unit_amount;
 		return {
-			unitAmountUsd: price.unit_amount / 100,
+			unitAmountUsd:
+				typeof usdAmountCents === "number" ? usdAmountCents / 100 : (meta.priceMonthlyUsd ?? null),
 			unitAmountEur:
 				typeof eurAmount === "number" ? eurAmount / 100 : (meta.priceMonthlyEur ?? null),
-			currency: price.currency,
+			currency: baseCurrency,
 			interval: price.recurring?.interval ?? "month",
-			label: `${formatMoney(price.unit_amount, price.currency)} / ${shortInterval(price.recurring?.interval)}`,
+			label: `${formatMoney(price.unit_amount, baseCurrency)} / ${shortInterval(price.recurring?.interval)}`,
 		};
 	} catch {
 		return aiFallbackPrice(tier);

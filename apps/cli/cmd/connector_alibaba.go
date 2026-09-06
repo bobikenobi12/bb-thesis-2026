@@ -21,6 +21,7 @@ import (
 var (
 	connectorAlibabaRegion    string
 	connectorAlibabaDir       string
+	connectorAlibabaRoleArn   string
 	connectorAlibabaManual    bool
 	connectorAlibabaTerraform bool
 )
@@ -39,8 +40,18 @@ account-free: Alethia holds no Alibaba account.
 
 By default the setup runs with your local aliyun CLI. Use --manual to run it in the
 Alibaba Cloud Shell and paste back the role ARN, or --terraform to apply the OpenTofu
-module instead.`,
+module instead. Pass --role-arn to submit a role you already created — the flag form of
+that same paste, so the command works under --no-input with no aliyun CLI on the
+machine.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := refuseMultipleModes(
+			modeFlag{"--role-arn", strings.TrimSpace(connectorAlibabaRoleArn) != ""},
+			modeFlag{"--terraform", connectorAlibabaTerraform},
+			modeFlag{"--manual", connectorAlibabaManual},
+		); err != nil {
+			fail(err)
+		}
+
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
@@ -60,6 +71,10 @@ module instead.`,
 		ui.PrintStepper(steps, 1)
 		var roleArn string
 		switch {
+		case strings.TrimSpace(connectorAlibabaRoleArn) != "":
+			// The flag half of the manual/terraform flows: the RAM role already exists, so
+			// there is nothing to create and nothing to prompt for.
+			roleArn = strings.TrimSpace(connectorAlibabaRoleArn)
 		case connectorAlibabaTerraform:
 			roleArn, err = alibabaTerraformFlow(issuer)
 		case connectorAlibabaManual:
@@ -140,6 +155,9 @@ func alibabaTerraformFlow(issuer string) (string, error) {
 
 // promptAlibabaRoleArn asks the user to paste the RAM role ARN and validates it is non-empty.
 func promptAlibabaRoleArn() (string, error) {
+	if err := requireInteractiveForm(); err != nil {
+		return "", fmt.Errorf("no role ARN given: pass --role-arn (%w)", err)
+	}
 	var roleArn string
 	if err := runHuhForm(huh.NewGroup(
 		huh.NewInput().
@@ -159,6 +177,7 @@ func promptAlibabaRoleArn() (string, error) {
 func init() {
 	connectorCmd.AddCommand(connectorAlibabaCmd)
 	connectorAlibabaCmd.Flags().StringVar(&connectorAlibabaRegion, "region", "", "Alibaba region for the RAM provider (default cn-hangzhou)")
+	connectorAlibabaCmd.Flags().StringVar(&connectorAlibabaRoleArn, "role-arn", "", "ARN of a RAM role you already created — submits it instead of prompting (the flag form of --manual)")
 	connectorAlibabaCmd.Flags().StringVar(&connectorAlibabaDir, "dir", "", "Directory to write the OpenTofu module into (--terraform; default ./alethia-alibaba-connector)")
 	connectorAlibabaCmd.Flags().BoolVar(&connectorAlibabaManual, "manual", false, "Run setup in the Alibaba Cloud Shell and paste the result")
 	connectorAlibabaCmd.Flags().BoolVar(&connectorAlibabaTerraform, "terraform", false, "Apply the OpenTofu module instead of running the setup script")

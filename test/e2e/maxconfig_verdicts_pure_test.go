@@ -33,6 +33,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/argocd"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 )
 
@@ -352,6 +353,19 @@ func TestMaxConfigCellValidateRejectsHalfFilledCells(t *testing.T) {
 		"deferred that still names a resource": {Carriage: DeferredInProduct, Chart: "vault", Why: "because", Resource: "aws_vpc"},
 		"ceiling that names a chart":           {Carriage: CloudCeiling, Chart: "vault", Why: "because"},
 		"tofu that names a chart":              {Carriage: CarriedByTofu, Resource: "aws_vpc", Signals: []string{"x"}, Chart: "vault"},
+		// A ClusterProbe is now legal on BOTH provisioning carriages, so the shape checks that used
+		// to sit inside the in-cluster case have to hold for a tofu cell too — otherwise relaxing
+		// the carriage guard would have quietly stopped validating the probe itself.
+		"ceiling that names a ClusterProbe": {Carriage: CloudCeiling, Why: "because", ClusterProbe: &MaxConfigClusterProbe{
+			Resource: "clustersecretstores.external-secrets.io", Name: "secretstore-aws", Why: "because"}},
+		"deferred that names a ClusterProbe": {Carriage: DeferredInProduct, Chart: "vault", Why: "because", ClusterProbe: &MaxConfigClusterProbe{
+			Resource: "clustersecretstores.external-secrets.io", Name: "secretstore-aws", Why: "because"}},
+		"tofu probe with no Name": {Carriage: CarriedByTofu, Resource: "aws_vpc", Signals: []string{"x"}, ClusterProbe: &MaxConfigClusterProbe{
+			Resource: "clustersecretstores.external-secrets.io", Why: "because"}},
+		"tofu probe with no Resource": {Carriage: CarriedByTofu, Resource: "aws_vpc", Signals: []string{"x"}, ClusterProbe: &MaxConfigClusterProbe{
+			Name: "secretstore-aws", Why: "because"}},
+		"tofu probe with no Why": {Carriage: CarriedByTofu, Resource: "aws_vpc", Signals: []string{"x"}, ClusterProbe: &MaxConfigClusterProbe{
+			Resource: "clustersecretstores.external-secrets.io", Name: "secretstore-aws"}},
 	}
 	for name, cell := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -366,6 +380,11 @@ func TestMaxConfigCellValidateRejectsHalfFilledCells(t *testing.T) {
 		"in-cluster": inClusterCell("addon-db-appdb", "no managed service on this cloud"),
 		"ceiling":    ceilingCell("the cloud does not offer this kind"),
 		"deferred":   deferredCell("vault", "a shipped chart backs it; the mapping is missing"),
+		"tofu probed": tofuProbedCell("aws_secretsmanager_secret", MaxConfigClusterProbe{
+			Resource: "clustersecretstores.external-secrets.io",
+			Name:     "secretstore-aws",
+			Why:      "the secret is real but nothing can read it without the store",
+		}, "custom_secrets"),
 	} {
 		if err := cell.Validate(); err != nil {
 			t.Errorf("Validate rejected the well-formed %s cell: %v", name, err)
@@ -526,4 +545,105 @@ func programmeRatchetCeiling(name string) (int, error) {
 		return n, nil
 	}
 	return 0, fmt.Errorf("PROGRAMME.md declares no ratchet named %q — it was renamed or removed, and this guard now enforces nothing", name)
+}
+
+// Every cloud that provisions `secrets` must prove its ClusterSecretStore, not just the secret.
+//
+// This is #2652's point 3, the half #3452 left as `Part of`. The counted tofu resource — an
+// `aws_secretsmanager_secret` and its three siblings — is real evidence that the SECRET exists, and
+// no evidence at all that anything can read it: a workload reaches a cloud secret only through the
+// ESO ClusterSecretStore. On aws/full run 32883119943 that store's apply failed with
+// `no matches for kind "ClusterSecretStore"` and the runner's retry absorbed it, so the cell would
+// have been green on a cluster where the store was never created — and every cross-account-secrets
+// claim resting on it would have been vacuous.
+//
+// The probe is safe to require on every provisioning cloud because each template already asserts the
+// ESO identity exists whenever the cluster does (checks_secrets.tf on all four), so the store is
+// rendered unconditionally rather than gated on something a run might legitimately lack.
+func TestMaxConfigSecretsCellsProveTheirClusterSecretStore(t *testing.T) {
+	var secrets *MaxConfigKind
+	for i := range MaxConfigKinds {
+		if MaxConfigKinds[i].Kind == "secrets" {
+			secrets = &MaxConfigKinds[i]
+		}
+	}
+	if secrets == nil {
+		t.Fatal("no `secrets` kind in MaxConfigKinds — this guard would pass vacuously")
+	}
+	clouds := maxConfigClouds()
+	if len(clouds) == 0 {
+		t.Fatal("t2ProviderTable is empty — this guard would pass vacuously")
+	}
+	proven := 0
+	for _, provider := range clouds {
+		t.Run(provider, func(t *testing.T) {
+			cell, ok := secrets.Cell(provider)
+			if !ok {
+				t.Fatalf("cloud %q has no `secrets` cell", provider)
+			}
+			// A cloud that provisions nothing for this kind has nothing to probe, and saying so is
+			// the point: the guard must not silently pass on a ceiling it never looked at.
+			if cell.Carriage != CarriedByTofu && cell.Carriage != CarriedInCluster {
+				t.Logf("`secrets` on %s is %q, so there is no store to prove", provider, cell.Carriage)
+				return
+			}
+			proven++
+			if cell.ClusterProbe == nil {
+				t.Fatalf("`secrets` on %s provisions (%q) but names no ClusterProbe — the cell would go green "+
+					"on evidence fully compatible with the ClusterSecretStore never having been created (#2652)",
+					provider, cell.Carriage)
+			}
+			want := argocd.PerCloudSecretStoreName(provider)
+			if want == "" {
+				t.Fatalf("argocd.PerCloudSecretStoreName(%q) is empty, so the probe below cannot name a store", provider)
+			}
+			if got := cell.ClusterProbe.Name; got != want {
+				t.Errorf("`secrets` on %s probes store %q, but the platform renders %q — a probe on the wrong "+
+					"name is unfalsifiable: it can never be Ready, so it proves nothing and reds every run", provider, got, want)
+			}
+			if got := cell.ClusterProbe.Resource; got != "clustersecretstores.external-secrets.io" {
+				t.Errorf("`secrets` on %s probes resource %q, want the group-qualified clustersecretstores.external-secrets.io", provider, got)
+			}
+		})
+	}
+	if proven == 0 {
+		t.Fatal("no cloud provisions `secrets`, so this guard asserted nothing")
+	}
+}
+
+// The probe SELECTION must not drop the carriage the hazard lives on.
+//
+// AssertMaxConfigClusterProbes used to filter on `cell.Carriage != CarriedInCluster`, which meant a
+// probe declared on a tofu cell was accepted by Validate, read correctly in the table, and then ran
+// against nothing. That failure is invisible from the outside: a probe that is never executed and a
+// probe that passed are the same green. So this asserts the selection directly, and it asserts that
+// a TOFU cell reaches it — the case the old filter excluded.
+func TestMaxConfigProbedCellsIncludesTofuCells(t *testing.T) {
+	sawTofu := false
+	for _, provider := range maxConfigClouds() {
+		for _, pc := range MaxConfigProbedCells(provider) {
+			if pc.Cell.ClusterProbe == nil {
+				t.Errorf("%s/%s was selected for probing with no ClusterProbe", provider, pc.Kind)
+			}
+			if pc.Cell.Carriage == CarriedByTofu {
+				sawTofu = true
+			}
+		}
+	}
+	if !sawTofu {
+		t.Fatal("no TOFU cell reached the probe selection — either the table stopped declaring one or the " +
+			"selection is filtering them out again, and both make the managed clouds' `secrets` proof inert")
+	}
+	// The four managed clouds are the ones the old filter silently excluded, so name them.
+	for _, provider := range []string{"aws", "gcp", "azure", "alibaba"} {
+		found := false
+		for _, pc := range MaxConfigProbedCells(provider) {
+			if pc.Kind == "secrets" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("`secrets` on %s is not selected for probing — its ClusterSecretStore would go unproven", provider)
+		}
+	}
 }

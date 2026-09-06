@@ -34,12 +34,15 @@ jobs:
         run: |
           args=()
           [ -n "$MSI_ISSUE" ] && args=(--issue "$MSI_ISSUE")
-          report="$(bash scripts/merge-signal-health.sh "${args[@]}")"
+          code=0
+          report="$(bash scripts/merge-signal-health.sh "${args[@]}")" || code=$?
           echo "$report"
-          # Always surface it as the run's job summary, even without a tracking issue.
+          # Always surface the report before preserving a refusal's non-zero verdict. Without the
+          # explicit capture, bash -e exits on the assignment and the summary is never written.
           {
             echo '## Merge-signal health'
             echo '```'
             echo "$report"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"

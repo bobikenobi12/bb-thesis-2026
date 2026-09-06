@@ -34,7 +34,7 @@ var repoListCmd = &cobra.Command{
 		client := api.NewClient(token)
 		if interactiveTable(cmd) {
 			var repos []api.Repository
-			ui.RunSpinner("Fetching repositories...", func() {
+			runSpinner("Fetching repositories...", func() {
 				repos, err = client.GetRepositories(provider)
 			})
 			if err != nil {
@@ -44,7 +44,7 @@ var repoListCmd = &cobra.Command{
 				ui.Muted(fmt.Sprintf("No %s repositories found.", provider))
 				return
 			}
-			_ = ui.ShowTable(repoColumns, repoRows(repos), "repositories")
+			_ = ui.ShowTable(repoColumns, repoRows(repos, ui.FormatTable), "repositories")
 			return
 		}
 		if err := runRepoList(client, os.Stdout, outputFormat(cmd), provider); err != nil {
@@ -56,7 +56,7 @@ var repoListCmd = &cobra.Command{
 var repoColumns = []string{"Name", "Visibility", "Default branch", "URL"}
 
 // repoRows projects repositories into table cells.
-func repoRows(repos []api.Repository) [][]string {
+func repoRows(repos []api.Repository, outFmt string) [][]string {
 	rows := make([][]string, len(repos))
 	for i, r := range repos {
 		visibility := "public"
@@ -67,7 +67,7 @@ func repoRows(repos []api.Repository) [][]string {
 		if name == "" {
 			name = r.Name
 		}
-		rows[i] = []string{name, visibility, orDash(r.DefaultBranch), r.URL}
+		rows[i] = []string{name, visibility, ui.Cell(outFmt, r.DefaultBranch, ui.OrDash(r.DefaultBranch)), r.URL}
 	}
 	return rows
 }
@@ -85,12 +85,12 @@ func runRepoList(c apiClient, out io.Writer, format, provider string) error {
 	}
 	return ui.Render(out, format, ui.TableSpec{
 		Columns: repoColumns,
-		Rows:    repoRows(repos),
+		Rows:    repoRows(repos, format),
 	}, repos)
 }
 
 func init() {
-	repoListCmd.Flags().String("provider", "github", "Git provider (github, gitlab, bitbucket)")
+	repoListCmd.Flags().String("provider", gitProviders[0], byoFlagUsage("alethia repo list", byoKeyProvider)+" ("+gitProvidersLabel()+")")
 	repoCmd.AddCommand(repoListCmd)
 	rootCmd.AddCommand(repoCmd)
 }

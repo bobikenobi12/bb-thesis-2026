@@ -87,7 +87,9 @@
   --gray-300:  oklch(0.882 0 0);
   --gray-400:  oklch(0.788 0 0);
   --gray-500:  oklch(0.664 0 0);
+  --gray-550:  oklch(0.610 0 0);
   --gray-600:  oklch(0.556 0 0);
+  --gray-625:  oklch(0.527 0 0);
   --gray-700:  oklch(0.440 0 0);
   --gray-800:  oklch(0.345 0 0);
   --gray-900:  oklch(0.268 0 0);
@@ -104,7 +106,7 @@
   --surface-muted:  var(--gray-100);
   --text-primary:   var(--gray-1000);
   --text-secondary: var(--gray-700);
-  --text-tertiary:  var(--gray-600);
+  --text-tertiary:  var(--gray-625);
   --text-disabled:  var(--gray-400);
   --text-on-ink:    var(--gray-50);
   --border-strong:  var(--gray-300);
@@ -199,7 +201,7 @@
   --surface-muted:  var(--gray-950);
   --text-primary:   var(--gray-50);
   --text-secondary: var(--gray-500);
-  --text-tertiary:  var(--gray-600);
+  --text-tertiary:  var(--gray-550);
   --text-disabled:  var(--gray-700);
   --text-on-ink:    var(--gray-1000);
   --border-strong:  oklch(1 0 0 / 0.17);
@@ -785,7 +787,7 @@
 
 
 /* ── Display type ────────────────────────────────────────────────────────────
-   Three sizes, and no more. Every headline in the repo used to be a hardcoded
+   Four sizes, and no more. Every headline in the repo used to be a hardcoded
    `fontSize:` number — 36/32/42/56/58/64 across five files, all slightly
    different — because the ladder lived in the design skill's typography.css,
    which no app imports.
@@ -803,19 +805,143 @@
    the build on this pairing.
 
    `inline` earns its place only where a theme value is itself a `var()` — the font
-   block at the top of this file is the real case for it. A literal length never is. */
+   block at the top of this file is the real case for it. A literal length never is.
+
+   --text-display-xs is the fourth rung and the only one the CONSOLE reaches for. It
+   exists because the two ladders in this file did not meet: --text-ui-xl tops out at
+   17px and --text-display-sm started at 30px, and five console sites sat in that gap
+   writing their own number — a plan name at 21px, a price at 26px, an onboarding h1 at
+   26px and the two purchase-page h1s at 22px. Those are display voice that happens to
+   render inside the shell (#3806), so the honest fix is a rung on THIS ladder rather
+   than stretching the UI one upward.
+
+   ITS TWO @media VALUES ARE NOT A RATIO APPLIED TO 24. --text-display-sm falls to 23px
+   at the narrow end, so a fixed 24px rung would be LARGER than the rung above it on a
+   phone and the ladder would invert — at the one width where nobody would notice from a
+   desktop. 24/22/20 keeps it strictly under -sm at all three widths (30>24, 26>22,
+   23>20) and strictly over --text-ui-xl's 17px at all three, which is the other bound: a
+   display rung that falls into the UI ladder is not a display rung. The steps shrink
+   less than -sm's do (0.917 and 0.909 against 0.867 and 0.885), continuing this ladder's
+   own pattern — 56px loses a fifth of itself on a phone, 30px loses a fraction of that,
+   and small display type has less to give. */
 @theme {
-  --text-display-lg: 56px;  /* h1 on / and /enterprise */
-  --text-display-md: 40px;  /* h1 on /pricing          */
-  --text-display-sm: 30px;  /* band h2                 */
+  --text-display-lg: 56px;  /* h1 on / and /enterprise      */
+  --text-display-md: 40px;  /* h1 on /pricing               */
+  --text-display-sm: 30px;  /* band h2                      */
+  --text-display-xs: 24px;  /* display voice inside a shell */
   --tracking-display: -0.022em;
   --leading-display: 0.96;
 }
 @media (max-width: 900px) {
-  :root { --text-display-lg: 44px; --text-display-md: 34px; --text-display-sm: 26px; }
+  :root { --text-display-lg: 44px; --text-display-md: 34px; --text-display-sm: 26px; --text-display-xs: 22px; }
 }
 @media (max-width: 620px) {
-  :root { --text-display-lg: 34px; --text-display-md: 28px; --text-display-sm: 23px; }
+  :root { --text-display-lg: 34px; --text-display-md: 28px; --text-display-sm: 23px; --text-display-xs: 20px; }
+}
+
+
+/* ── UI type scale ───────────────────────────────────────────────────────────
+   Seven rungs for the product surface, and they are DERIVED, not designed:
+   measured by the shared-surface guard, apps/console carries hardcoded
+   `text-[Npx]` sites across 23 distinct values in 194 files, and this file had
+   no UI type scale at all — only the display sizes above, which are marketing
+   headlines and, when this was measured, started at 30px. So every console file
+   picked its own number, and the same rung of the same page is typeset at five
+   sizes.
+
+   The 23 values are not 23 intentions. They cluster, and the clusters are what
+   these rungs are:
+
+     8–9.5px    155 sites (14.4%)  ->  --text-ui-3xs   9px
+     10–10.5px  280 sites (25.9%)  ->  --text-ui-2xs  10px
+     11–11.5px  302 sites (28.0%)  ->  --text-ui-xs   11px
+     12–12.5px  155 sites (14.4%)  ->  --text-ui-sm   12px
+     13–13.5px  132 sites (12.2%)  ->  --text-ui-md   13px
+     14–15px     37 sites ( 3.4%)  ->  --text-ui-lg   15px
+     16–17px      7 sites ( 0.6%)  ->  --text-ui-xl   17px
+
+   The rung inside each band is that band's own MODE, never a number picked
+   here: 11px beats 11.5px 250 to 52, 10px beats 10.5px 231 to 49, 13px beats
+   13.5px 119 to 13. Seven rungs cover every site the bands above account for —
+   and the bands do not account for all of them: eleven sit above the top one.
+
+   THE OTHER 11 SIT AT 18/19/20/21/22/26px ACROSS NINE FILES, and they are not
+   one thing. Enumerated, because the ceiling of a ladder is where a ladder gets
+   argued about and "they are all marketing" is the answer that would end the
+   argument wrongly:
+
+     5  outside the console shell, where the heading is the only thing naming
+        the page — org-purchase-ui (x2), onboarding-form, cli/login,
+        error-state's full-page branch. Every one is already a page-title
+        DECISION in apps/console/shared-surface-allowlist.yaml. Display voice.
+     1  an OTP code input (auth-form, font-mono 22px). Typeset for legibility of
+        a code being typed, not a rung of a reading ladder.
+     2  SHEET HEADINGS, in shell, at 18px (create-org-sheet) and 20px
+        (upgrade-ai-sheet) — the SAME role --text-ui-xl names below, written at
+        two more numbers. A third sheet already writes it at 17px. That is not a
+        counterexample to the top rung; it is the drift the top rung exists to
+        end, and #3742 rounds all three onto it.
+     1  an in-page <h2> at 19px (classification-manager) — a section heading two
+        rungs above the section rung, same story.
+     2  the billing plan card's NAME (21px) and PRICE (26px). These are the one
+        genuinely open case: a figure rendered as display inside the console
+        shell, which neither this ladder nor --text-display-* (which starts at
+        30px) has an answer for. #3742 decides it; it is not decided here.
+
+   So a rung invented for the top band would be a rung nobody measured — six
+   values across eleven sites is no cluster — but FIVE of the eleven are
+   ordinary in-shell console surfaces rather than the display voice, and the
+   sweep must judge them one at a time rather than as a group.
+
+   #3806 SETTLED THE FIVE ABOVE THAT ARE NOT DRIFT, and the answer was not a rung
+   here. Three of the first group (org-purchase-ui x2, onboarding-form) and both of
+   the last group (the plan NAME and PRICE) are display voice, so they took
+   --text-display-xs on the DISPLAY ladder above — which is why that ladder now has
+   four rungs and this one still has seven. The OTP input took neither: it is
+   legibility of a code being typed rather than reading type, and it is a recorded
+   `reason:` decision in the allowlist rather than a size waiting for a rung. That
+   leaves four of the eleven, all #3742's: the one still-open member of the first
+   group (error-state), the two sheet headings and the one <h2>. cli/login was the
+   fifth and is settled — it consumes --text-display-xs, the same answer #3806 gave
+   the other display-voice sites, so it left this list rather than waiting on a rung.
+
+   THE NAMES CARRY A `ui-` PREFIX BECAUSE THIS LADDER IS NOT TAILWIND'S. Tailwind's
+   `text-sm` is 14px and its `text-xs` is 12px; the console's body rung is 13px and
+   its most common rung is 11px. That mismatch is not an accident to be corrected —
+   it is WHY every one of those sites bypassed Tailwind's scale in the first
+   place. A dense console reads at sizes Tailwind's default ladder does not
+   offer, and there is nothing at all below 12px. `text-ui-sm` is visibly not
+   `text-sm`, so the two can sit in one class string without either being
+   mistaken for the other.
+
+   Roles, so a reader picks a rung rather than a size:
+     3xs  a mono eyebrow, a badge caption — the smallest thing on screen
+     2xs  a mono label over a value, a column header
+     xs   secondary metadata: a timestamp, a hint, a helper line
+     sm   control text — a chip, a filter, a small button
+     md   body: a row's own text, a paragraph in a panel
+     lg   a SECTION heading (@repo/ui/section-heading renders this rung)
+     xl   the largest heading a console page carries — a dialog or sheet title.
+          Three sheets write that heading today at 17px, 18px and 20px; 17px is
+          the one with company (a DialogTitle, a SheetTitle and a sheet's own
+          <h2> all sit there), which is why the rung is 17 and the other two are
+          drift rather than evidence for a taller rung
+
+   NOT `@theme inline`, for the reason the display block above spells out at
+   length: `inline` compiles a utility to the variable's VALUE, so a later
+   reassignment on :root is read by nothing. A literal length never earns it, and
+   `scripts/check-theme-inline-overrides.mjs` fails the build on the pairing.
+
+   `pnpm check:shared-surface` records the measured sites as DEBT, per file and per
+   occurrence, so the drift can only shrink. */
+@theme {
+  --text-ui-3xs:  9px;
+  --text-ui-2xs: 10px;
+  --text-ui-xs:  11px;
+  --text-ui-sm:  12px;
+  --text-ui-md:  13px;
+  --text-ui-lg:  15px;
+  --text-ui-xl:  17px;
 }
 
 /* The headline resolves out of blur. It never animates opacity: an element at

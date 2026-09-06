@@ -154,6 +154,36 @@ fi
 # The single, non-empty selector every call is scoped by. Asserted before each use.
 SELECTOR="cluster=${CLUSTER_NAME}"
 
+# ── THE ONE THING THIS SCRIPT DELIBERATELY DOES NOT DELETE, NAMED (#3027). ──────────────────────
+#
+# infra/templates/project/hetzner/image.tf caches the Talos snapshot per
+# (talos_version × architecture × location × extension set), because rebuilding a byte-identical
+# one cost 5–15 minutes on the critical path of every apply and was the floor's dominant flake (it
+# blew its tofu deadline twice — #2458 and run 33080748841 — on the resource that runs before any
+# cluster exists, so losing it lost the whole run).
+#
+# A cache entry carries `alethia.io/cache=talos-image` and, deliberately, NO `cluster` label. That
+# absence is the entire mechanism: this script's selector is `cluster=<name>`, so a cache entry is
+# outside it BY CONSTRUCTION. Nothing here was weakened to allow that — the labelled purge below
+# still deletes every image it ever deleted, including the per-cluster snapshot the template still
+# builds under `talos_image_cache = "disabled"`.
+#
+# The constant exists anyway, and is REPORTED on every sweep, for two reasons:
+#
+#   1. An unswept type nobody mentions is indistinguishable from a swept one. This file's header
+#      already makes that argument for the CCM load balancer and the imager upload helpers; the
+#      cache is the third such type and the only one that is unswept ON PURPOSE.
+#   2. It is the SKIP-LIST BY NAME that #3027 asks for. `scripts/check-hetzner-image-cache.mjs`
+#      fails CI when this string, the template's label and hcloud-image-cache.sh's selector stop
+#      being the same string — so the sweeper and the emitter cannot drift apart silently, which is
+#      the failure mode where a "cached" image quietly starts being deleted every run again.
+#
+# Reclaiming cache entries is a separate, explicitly-flagged operation:
+# `scripts/e2e/hcloud-image-cache.sh --prune-superseded --yes-delete`.
+IMAGE_CACHE_LABEL_KEY="alethia.io/cache"
+IMAGE_CACHE_LABEL_VALUE="talos-image"
+IMAGE_CACHE_SELECTOR="${IMAGE_CACHE_LABEL_KEY}==${IMAGE_CACHE_LABEL_VALUE}"
+
 # Hetzner Object Storage is a SEPARATE PRODUCT from the Hetzner Cloud API — S3 at
 # <region>.your-objectstorage.com, its own access-key pair, no hcloud labels, invisible to the
 # hcloud CLI. So it can only be swept with S3 credentials, and only reported honestly without them.
@@ -624,6 +654,42 @@ s3_available() {
 # below): it makes the daily reaper the standing observer, which is the only thing that watches this
 # account when no nightly is running. #2463 is where the real fix lives — a label from the provider
 # would let the ordinary selector reach them and retire this function entirely.
+# report_image_cache — say what the Talos snapshot cache holds, and that it was NOT swept.
+#
+# Read-only, always. This is the one type whose survival is the DESIGN (see IMAGE_CACHE_SELECTOR
+# above), so it is reported and never deleted, and it touches NEITHER ledger:
+#
+#   · not UNVERIFIABLE, because nothing is left undone — this script owes the cache no action, and
+#     recording it there would red every hetzner teardown on a listing blip, which is exactly the
+#     over-application #3138 made and sweep-probe.sh's header warns about;
+#   · not UNATTRIBUTABLE, because the entries are perfectly attributable — they belong to the
+#     PROJECT rather than to any run, on purpose.
+#
+# What it must not do is collapse its three answers into one. The listing is captured WITHOUT a
+# pipe so its real exit status survives (a pipe would substitute the last stage's, which is how
+# `2>/dev/null | grep` turned an expired token into "nothing found" throughout this file's
+# history) — and "could not list", "none" and "n entries" print three different sentences.
+report_image_cache() {
+	local ids rc=0 count
+	ids="$(hcloud image list --selector "$IMAGE_CACHE_SELECTOR" -o noheader -o columns=id 2>/dev/null)" || rc=$?
+	if [ "$rc" -ne 0 ]; then
+		echo "  · talos image cache: COULD NOT LIST (hcloud exit ${rc}). Not swept — it never is — and not counted."
+		echo "    (This does not affect the verdict below: the cache is outside this script's selector by design.)"
+		return 0
+	fi
+	count="$(printf '%s\n' "$ids" | grep -c . || true)"
+	if [ "$count" -eq 0 ]; then
+		echo "  · talos image cache (${IMAGE_CACHE_SELECTOR}): empty — the next hetzner apply will build a snapshot and stamp one."
+		return 0
+	fi
+	echo "  · talos image cache (${IMAGE_CACHE_SELECTOR}): ${count} entr(y/ies) present and DELIBERATELY NOT SWEPT."
+	echo "    They carry no \`cluster\` label, so this script's selector cannot reach them; that is what makes the"
+	echo "    cache survive a run's teardown (#3027). Reclaim them explicitly with:"
+	echo "      scripts/e2e/hcloud-image-cache.sh                                   # list"
+	echo "      scripts/e2e/hcloud-image-cache.sh --prune-superseded --yes-delete   # duplicates only"
+	return 0
+}
+
 report_imager_helpers() {
 	local servers keys found
 	servers="$(probe_run imager-upload-helpers hcloud server list -o noheader -o columns=id,name | grep -F 'hcloud-upload-image-' || true)"
@@ -801,9 +867,17 @@ if [ "$PREFLIGHT" = "1" ]; then
 		# only; the function never deletes. On the branch below, the per-orphan child sweep reports
 		# them already, so this is not duplicated there.
 		report_imager_helpers
+		# Same argument, for the type that survives ON PURPOSE: on the quiet day this branch runs,
+		# the daily reaper would otherwise never mention the one hcloud type nothing ever deletes.
+		report_image_cache
 		# Reports BOTH states: the unattributable finding, and — if the listing itself failed —
 		# the fact that it could not answer. Preflight never blocks its caller, so both warn.
-		probe_warn_unverifiable hcloud "the preflight scan"
+		#
+		# It also emits the POSITIVE marker, which is what makes this early return readable from
+		# outside: "discovery answered nothing" and "discovery never answered" print the same ✓ line
+		# below, and only a line that must be PRESENT can separate them. See
+		# scripts/e2e/lib/sweep-probe.sh's probe_report_discovery header.
+		probe_report_discovery hcloud "the preflight scan"
 		echo "✓ preflight: no prior-run e2e orphans — nothing to sweep$(probe_clean_suffix)"
 		exit 0
 	fi
@@ -847,7 +921,7 @@ if [ "$PREFLIGHT" = "1" ]; then
 		# ⚠️ Not "the account is clean" — "every orphan this preflight could SEE is swept". The
 		# discovery listing itself can fail, and preflight is explicitly non-blocking, so the honest
 		# report here is a warning; the always() teardown is what gates.
-		probe_warn_unverifiable hcloud "the preflight orphan scan"
+		probe_report_discovery hcloud "the preflight orphan scan"
 		echo "✓ preflight complete — all prior-run e2e orphans swept"
 	fi
 	exit 0 # preflight never blocks its caller
@@ -862,11 +936,15 @@ fi
 #   5. firewalls        — now unreferenced by any server
 #   6. networks         — now unreferenced by any server
 #   7. primary-ips      — template sets auto_delete=false, so delete explicitly
-#   8. images           — the Talos snapshots the template built (labelled cluster=…)
+#   8. images           — the per-cluster Talos snapshots the template built (labelled cluster=…).
+#                         NOT the cached snapshots: those carry alethia.io/cache=talos-image and no
+#                         `cluster` label, so this selector cannot reach them. They are REPORTED
+#                         instead, by report_image_cache — see IMAGE_CACHE_SELECTOR (#3027)
 #   9. zones            — hcloud_zone (dns.tf, #1816); already labelled cluster=<name>, just never
 #                         swept. A standing zone is a small forever-charge nothing else would notice
 #  10. object storage   — a separate product; see sweep_object_storage
 #  11. imager helpers   — REPORTED, never deleted; see report_imager_helpers
+#  12. image cache      — REPORTED, never deleted, ON PURPOSE; see report_image_cache
 #
 # The CCM load balancer and the network it is discovered through must both go BEFORE `purge
 # network`, or the network delete fails with the LB still attached and the id we bind to is gone.
@@ -1365,6 +1443,62 @@ if [ "$SELF_TEST" = "1" ]; then
 
 	unset -f s3_available
 
+	# ── THE IMAGE CACHE REPORT (#3027). Three answers that share one stdout shape, plus the
+	#    property that makes it safe to add to a gating script at all: it touches NEITHER ledger.
+	#
+	# The failure this pins is the one this whole file exists to refuse, arriving from a new
+	# direction: a cache listing that FAILED must not print the sentence a cache that is genuinely
+	# EMPTY prints. And it must not gate — the cache is nothing this sweeper owes an action on, so
+	# routing it into the unverifiable ledger would red every hetzner teardown on an unrelated blip.
+	#
+	# ⚠️ It carries its OWN stub. A `hcloud()` defined inside a function is defined GLOBALLY in
+	# bash, so `st_imager_finalize` above has already replaced the file-level stub with one whose
+	# first pattern is `*--selector*) return 0`. Reusing it here would answer every case with
+	# "exit 0, no output" — every assertion below would read the same "empty" sentence and three of
+	# the four would fail for a reason that has nothing to do with the code under test. (Worse, had
+	# the expectations happened to match, they would have passed while testing the stub.)
+	st_image_cache_case() { # <name> <ST_LIST> <ST_LIST_RC> <substring that MUST appear> <substring that must NOT>
+		probe_reset
+		ST_LIST="$2"
+		ST_LIST_RC="$3"
+		hcloud() {
+			case "$1 ${2:-}" in
+			"image list")
+				[ -n "${ST_LIST:-}" ] && printf '%s\n' "$ST_LIST"
+				return "${ST_LIST_RC:-0}"
+				;;
+			*) : ;;
+			esac
+		}
+		local out
+		out="$(report_image_cache 2>&1 || true)"
+		local why=""
+		case "$out" in *"$4"*) ;; *) why="missing '$4'" ;; esac
+		if [ -z "$why" ]; then
+			case "$out" in *"$5"*) why="unexpectedly contains '$5'" ;; *) ;; esac
+		fi
+		# Both ledgers, both directions — the same pairing st_imager_case uses, for the same reason.
+		[ -z "$why" ] && probe_has_unverifiable && why="recorded UNVERIFIABLE (it must not gate)"
+		[ -z "$why" ] && probe_has_unattributable && why="recorded UNATTRIBUTABLE (it is attributable)"
+		if [ -z "$why" ]; then
+			echo "  ✓ $1"
+		else
+			echo "  ✗ $1 — ${why}" >&2
+			echo "      output was: ${out}" >&2
+			st_fails=$((st_fails + 1))
+		fi
+	}
+	st_image_cache_case "a populated cache is reported as DELIBERATELY NOT SWEPT" \
+		"163001" 0 "DELIBERATELY NOT SWEPT" "COULD NOT LIST"
+	st_image_cache_case "...and it counts what it saw" "163001" 0 "1 entr" "COULD NOT LIST"
+	st_image_cache_case "an EMPTY cache says empty" "" 0 "empty" "COULD NOT LIST"
+	# THE PAIR. Identical (empty) stdout from the CLI; the exit code is the only thing that differs,
+	# and it must produce a different sentence — otherwise a dead token reads as an empty cache.
+	st_image_cache_case "a FAILED listing says COULD NOT LIST, never 'empty'" "" 1 "COULD NOT LIST" "empty"
+	ST_LIST=""
+	ST_LIST_RC=0
+	probe_reset
+
 	unset -f hcloud
 
 	if [ "$st_fails" -ne 0 ]; then
@@ -1384,6 +1518,7 @@ purge firewall "firewalls"
 purge network "networks"
 purge primary-ip "primary IPs"
 purge image "images (talos snapshots)"
+report_image_cache
 [ "$ZONE_SUPPORTED" = "1" ] && purge zone "dns zones"
 sweep_object_storage
 report_imager_helpers

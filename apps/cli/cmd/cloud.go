@@ -22,15 +22,33 @@ connected cloud account. Show that inventory for a cloud identity.`,
 }
 
 var cloudInventoryCmd = &cobra.Command{
-	Use:   "inventory <cloud-identity-id>",
-	Short: "Show the discovered networking + regions for a cloud identity",
-	Args:  cobra.ExactArgs(1),
+	Use:   "inventory [provider|cloud-identity-id]",
+	Short: "Show the discovered networking + regions for a connected cloud account",
+	Long: `Show the networking (VPCs/VNets, subnets) and regions Alethia discovered in a
+connected cloud account.
+
+Name the account by its PROVIDER — ` + "`alethia cloud inventory aws`" + ` — or omit the
+argument entirely for a picker. The opaque cloud-identity id is still accepted, so an id a
+script already holds keeps working, but nothing makes you copy one out of another command's
+output any more.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		if err := runCloudInventory(api.NewClient(token), os.Stdout, outputFormat(cmd), args[0]); err != nil {
+		client := api.NewClient(token)
+
+		ref := ""
+		if len(args) == 1 {
+			ref = args[0]
+		}
+		identityID, err := resolveCloudIdentityRef(client, ref)
+		if err != nil {
+			fail(err)
+		}
+
+		if err := runCloudInventory(client, os.Stdout, outputFormat(cmd), identityID); err != nil {
 			failf("Failed to get cloud inventory: %v", err)
 		}
 	},
@@ -40,19 +58,19 @@ var networkColumns = []string{"Network", "Name", "Region", "CIDR", "Default"}
 var subnetColumns = []string{"Subnet", "Name", "Region", "AZ", "CIDR", "Public"}
 
 // networkRows projects discovered networks into plain table cells.
-func networkRows(networks []api.CloudNetwork) [][]string {
+func networkRows(networks []api.CloudNetwork, outFmt string) [][]string {
 	rows := make([][]string, len(networks))
 	for i, n := range networks {
-		rows[i] = []string{n.NativeID, strOrDash(n.Name), strOrDash(n.Region), strOrDash(n.CidrBlock), gateGlyph(n.IsDefault)}
+		rows[i] = []string{n.NativeID, ui.Cell(outFmt, ui.Wire(n.Name), ui.StrOrDash(n.Name)), ui.Cell(outFmt, ui.Wire(n.Region), ui.StrOrDash(n.Region)), ui.Cell(outFmt, ui.Wire(n.CidrBlock), ui.StrOrDash(n.CidrBlock)), ui.Cell(outFmt, ui.WireBool(n.IsDefault), ui.GateGlyph(n.IsDefault))}
 	}
 	return rows
 }
 
 // subnetRows projects discovered subnets into plain table cells.
-func subnetRows(subnets []api.CloudSubnet) [][]string {
+func subnetRows(subnets []api.CloudSubnet, outFmt string) [][]string {
 	rows := make([][]string, len(subnets))
 	for i, s := range subnets {
-		rows[i] = []string{s.NativeID, strOrDash(s.Name), strOrDash(s.Region), strOrDash(s.AvailabilityZone), strOrDash(s.CidrBlock), gateGlyph(s.IsPublic)}
+		rows[i] = []string{s.NativeID, ui.Cell(outFmt, ui.Wire(s.Name), ui.StrOrDash(s.Name)), ui.Cell(outFmt, ui.Wire(s.Region), ui.StrOrDash(s.Region)), ui.Cell(outFmt, ui.Wire(s.AvailabilityZone), ui.StrOrDash(s.AvailabilityZone)), ui.Cell(outFmt, ui.Wire(s.CidrBlock), ui.StrOrDash(s.CidrBlock)), ui.Cell(outFmt, ui.WireBool(s.IsPublic), ui.GateGlyph(s.IsPublic))}
 	}
 	return rows
 }
@@ -73,14 +91,14 @@ func runCloudInventory(c apiClient, out io.Writer, format, cloudIdentityID strin
 		return nil
 	}
 	if format == ui.FormatCSV {
-		return ui.Render(out, format, ui.TableSpec{Columns: networkColumns, Rows: networkRows(inv.Networks)}, inv.Networks)
+		return ui.Render(out, format, ui.TableSpec{Columns: networkColumns, Rows: networkRows(inv.Networks, format)}, inv.Networks)
 	}
 	// Table: networks, then subnets, then a regions line.
 	fmt.Fprintln(out, ui.MutedStyle.Render("Networks"))
-	_ = ui.Render(out, format, ui.TableSpec{Columns: networkColumns, Rows: networkRows(inv.Networks)}, inv.Networks)
+	_ = ui.Render(out, format, ui.TableSpec{Columns: networkColumns, Rows: networkRows(inv.Networks, format)}, inv.Networks)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, ui.MutedStyle.Render("Subnets"))
-	_ = ui.Render(out, format, ui.TableSpec{Columns: subnetColumns, Rows: subnetRows(inv.Subnets)}, inv.Subnets)
+	_ = ui.Render(out, format, ui.TableSpec{Columns: subnetColumns, Rows: subnetRows(inv.Subnets, format)}, inv.Subnets)
 	if len(inv.Regions) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Regions: "+strings.Join(inv.Regions, ", "))

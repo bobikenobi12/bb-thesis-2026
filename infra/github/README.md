@@ -17,17 +17,12 @@ manual fallback only.
   promotion falsely conflict.
 - **`staging`**: PR + CI (lighter — allows hotfix merges).
 - **`dev`** (`protect-dev`): created off `staging`; feature PRs target it. **PR + green CI, 0 approvals,
-  MERGE QUEUE.** No force-push/deletion. Instances don't merge directly — they enqueue on green
-  (`gh pr merge --auto --squash`); the queue rebuilds each PR on the projected `dev` tip, re-runs the
-  required checks (the CI list minus `branch-flow-guard`, which only runs on PRs into main/staging) via
-  the `merge_group` event, and squash-merges in FIFO order — killing the stale-green race where two
-  PRs each green against a moved `dev` broke the branch. `strict_required_status_checks_policy` stays
-  `false` (the queue supersedes "branch up to date" by building on the projected tip). The heavy
-  real-runner `provision-e2e` + browser E2Es run at queue time as **observe-only** signals (not in
-  `var.required_status_checks`); `scripts/merge-signal-health.sh` + the weekly *Merge-signal health*
-  workflow report their pass-rate and say when to promote one to a required gate. This is the gate into
-  the shared integration branch; the maintainer reviews the integrated `dev` (dev.alethialabs.io) and
-  promotes `dev → staging → main`.
+  MERGIFY QUEUE.** No force-push/deletion. Mergify builds speculative branches on the projected `dev`
+  tip, reruns the required checks, and squash-merges in FIFO order. It does **not** emit GitHub's native
+  `merge_group` event. The `provision-e2e` job and `scripts/merge-signal-health.sh` still read that dead
+  event source, so T1 currently has no live queue trigger and the weekly report fails loudly instead of
+  promoting stale evidence (#4173). The maintainer reviews the integrated `dev`
+  (`dev.alethialabs.io`) and promotes `dev → staging → main`.
   - **Repo settings prerequisite** (not TF-managed — the repo resource isn't in this stack): the queue
     needs `allow_auto_merge` **on** so `--auto` can enqueue. Set once:
     `gh api -X PATCH repos/:owner/:repo -F allow_auto_merge=true -F allow_update_branch=true`.

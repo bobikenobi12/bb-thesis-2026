@@ -324,7 +324,7 @@ export function RepositorySelector({
             variant="ghost"
             size="sm"
             onClick={() => setIsManual(false)}
-            className="text-[11px] text-muted-foreground h-auto py-0.5 px-1.5"
+            className="text-ui-xs text-muted-foreground h-auto py-0.5 px-1.5"
           >
             Use provider select
           </Button>
@@ -374,7 +374,16 @@ export function RepositorySelector({
               handleProviderChange(coerceEnum(val, GIT_PROVIDERS, "github"))
             }
           >
+            {/* Icon-only, so there is no text node to fall back on even if the role allowed one:
+                the trigger is a `<button role="combobox">` whose whole content is an `<svg>`. The
+                UI conformance audit never scored this because the audit user has no linked git
+                provider and the component renders its "connect a provider" branch instead. That is
+                the exact failure mode #3756 is about: not a control that is fine, a control that is
+                unnamed on every route reaching it and that nothing has reached yet. */}
             <SelectTrigger
+              aria-label={
+                selectedProvider ? `Git provider: ${selectedProvider}` : "Git provider"
+              }
               className={cn(
                 "w-[50px] shrink-0 justify-center rounded-none border-0 border-r bg-muted/20 px-0 focus:ring-0 focus:ring-offset-0",
                 variant === "settings" &&
@@ -438,10 +447,28 @@ export function RepositorySelector({
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger
                 render={
+                  // NO `role="combobox"`, and no hand-written `aria-expanded`. The role was untrue
+                  // — there is no text input and no owned listbox here, and base-ui's popover
+                  // already reports `aria-haspopup="dialog"` plus `aria-expanded`/`aria-controls`
+                  // from `useRole` — and it was ACTIVELY harmful, because `combobox` is
+                  // name-from-author-only: with it on, the repository name the button displays was
+                  // not the button's accessible name and the control had none.
+                  //
+                  // With the role gone the visible text names the button, so a name is written only
+                  // where the visible text does not state the purpose: once a repo is picked the
+                  // button reads "acme/shop", which says what is selected but not what the control
+                  // does. Empty, it already reads "Select repository..." and a second name would
+                  // only be something new to keep in sync.
                   <Button
                     variant="ghost"
-                    role="combobox"
-                    aria-expanded={open}
+                    aria-label={
+                      value
+                        ? `Select repository: ${
+                            repositories.find((r) => r.url === value)?.full_name ??
+                            value
+                          }`
+                        : undefined
+                    }
                     className={cn(
                       "flex-1 justify-start rounded-none border-0 hover:bg-transparent font-normal px-3",
                       !value && "text-muted-foreground",
@@ -456,7 +483,7 @@ export function RepositorySelector({
                             ?.full_name || value}
                         </span>
                         {repositories.find((r) => r.url === value)?.private && (
-                          <span className="text-[10px] bg-muted text-muted-foreground px-1 py-0 rounded shrink-0">
+                          <span className="text-ui-2xs bg-muted text-muted-foreground px-1 py-0 rounded shrink-0">
                             Private
                           </span>
                         )}
@@ -492,7 +519,7 @@ export function RepositorySelector({
                               {repo.full_name}
                             </span>
                             {repo.private && (
-                              <span className="text-[10px] bg-muted text-muted-foreground px-1 py-0 rounded shrink-0 ml-2">
+                              <span className="text-ui-2xs bg-muted text-muted-foreground px-1 py-0 rounded shrink-0 ml-2">
                                 Private
                               </span>
                             )}
@@ -545,7 +572,7 @@ export function RepositorySelector({
 
       {showLinkOptions && (
         <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20 animate-in fade-in slide-in-from-top-1">
-          <p className="text-[10px] uppercase font-bold text-muted-foreground w-full mb-1">
+          <p className="text-ui-2xs uppercase font-bold text-muted-foreground w-full mb-1">
             Link Platform
           </p>
           {!linkedProviders.includes("github") && (

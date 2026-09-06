@@ -6,7 +6,7 @@ import { Skeleton } from "@repo/ui/skeleton";
 /** Instant skeleton shown while the org overview prefetches projects on the server. */
 export default function OverviewLoading() {
 	return (
-		<div className="mx-auto w-full max-w-[1360px] space-y-5">
+		<div className="space-y-5">
 			<Skeleton className="h-9 w-full max-w-md rounded-md" />
 			<div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(312px,0.35fr)_minmax(0,0.65fr)]">
 				<div className="flex flex-col gap-4">

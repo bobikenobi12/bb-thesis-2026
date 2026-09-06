@@ -5,7 +5,11 @@
 import { notFound } from "next/navigation";
 import { evaluate } from "@/lib/compat";
 import { asCloudProviderSlug } from "@/lib/cloud-providers/provider-slug";
-import { helmRegistryProviderConfigSchema } from "@/lib/validations/project-form.schema";
+import {
+	PROJECT_NAME_MAX_LENGTH,
+	helmRegistryProviderConfigSchema,
+	pickFreeProjectName,
+} from "@/lib/validations/project-form.schema";
 import { signedJob } from "@/lib/db/signed-job";
 import { authorize, currentActor } from "@/lib/authz/guard";
 import { assertRunnerInOrg } from "@/lib/authz/runner-org";
@@ -59,6 +63,7 @@ import { isByoIacEnabled } from "@/lib/addons/byo-iac-flag";
 import type { AddOnInstallSpec } from "@/lib/addons/types";
 import { resolveClassificationSnapshot } from "@/lib/classification/snapshot";
 import { resolveServingCluster } from "@/lib/queries/cluster-for-env";
+import { pickDefaultEnvironment } from "@/lib/queries/default-environment";
 import {
 	envScope,
 	readEnvComponents,
@@ -67,10 +72,14 @@ import { listAssignmentsFor } from "@/lib/queries/classification";
 import {
 	type EnvironmentSpec,
 	insertProjectWithDefaultFabric,
+	isProjectNameTaken,
+	ProjectNameTakenError,
 } from "@/lib/queries/projects";
 import {
 	HETZNER_DB_ENGINES,
 	hetznerDataServicesToAddOns,
+	hetznerNodeNameProblem,
+	type HetznerChartedKind,
 } from "@/lib/cloud-providers/hetzner-services";
 import { unsupportedKindsFor } from "@/lib/cloud-providers/unsupported-kinds";
 import {
@@ -96,9 +105,13 @@ import type {
 	ServiceBinding,
 	TopicSubscription,
 } from "@/types/jsonb.types";
-import { RESERVED_PROJECT_CHILD_SLUGS, slugify } from "@/lib/routing";
+import {
+	environmentNameProblem,
+	normalizeEnvironmentName,
+} from "@/lib/validations/names";
+import { slugify } from "@/lib/utils/slugify";
 import { repoLabel } from "@/lib/repos/repo-label";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 /**
  * Mirrors the Go provisioner gate (packages/core/provisioner/placement.go):
@@ -295,11 +308,15 @@ async function writeComponents(
 	// unreachable, because `namespace`/`vcluster` envs own no cluster row and resolve ONLY by
 	// Fabric (lib/queries/cluster-for-env.ts). See the same fix in lib/cli/project-components.ts.
 	const [envRow] = await tx
-		.select({ fabric_id: projectEnvironments.fabric_id })
+		.select({
+			fabric_id: projectEnvironments.fabric_id,
+			placement_mode: projectEnvironments.placement_mode,
+		})
 		.from(projectEnvironments)
 		.where(eq(projectEnvironments.id, environmentId))
 		.limit(1);
-	const clusterBase = envRow?.fabric_id
+	const clusterBase =
+		envRow?.placement_mode === "dedicated" && envRow.fabric_id
 		? { ...base, fabric_id: envRow.fabric_id }
 		: base;
 
@@ -611,12 +628,30 @@ export async function getProject(
 				desc(projectEnvironments.is_default),
 				projectEnvironments.created_at,
 			);
-		const defaultEnv =
-			environments.find((e) => e.is_default) ?? environments[0] ?? null;
-		const activeEnv =
-			(environmentId
-				? environments.find((e) => e.id === environmentId)
-				: undefined) ?? defaultEnv;
+		// `?? environments[0]` is gone (#4127): the database now refuses to commit a project whose
+		// environments carry no default (`project_environments_one_default_check`,
+		// lib/db/programmables.sql), so the fallback could only ever hide a broken invariant behind a
+		// header, an "Env" column and a deploy target that each looked authoritative and could each
+		// name a different environment. A project with NO environments still yields null, which every
+		// consumer below already handles.
+		// LAZY, and that is the whole point of the ordering. `pickDefaultEnvironment` THROWS on a
+		// project whose environments carry no default, so calling it unconditionally made a broken
+		// project 500 even when the caller had named a perfectly good `environment_id` — i.e. on the
+		// one page an operator would open to look at the damage. An explicit id is answered from the
+		// list without consulting the default at all.
+		const named = environmentId
+			? environments.find((e) => e.id === environmentId)
+			: undefined;
+		// `defaultEnv` is still needed on its own — `default_environment_id` in the return is the
+		// project's DEFAULT, not the env being viewed — so it cannot simply collapse into `activeEnv`.
+		// It follows the same lazy rule: when the caller named an environment, a broken project
+		// degrades this field to `null` (already its value for a project with no environments) rather
+		// than throwing, so the inspection page renders. When no id was named the default IS the
+		// answer, and a violation is reported instead of guessed.
+		const defaultEnv = named
+			? (environments.find((e) => e.is_default) ?? null)
+			: pickDefaultEnvironment(projectId, environments);
+		const activeEnv = named ?? defaultEnv;
 
 		/** Reads one environment's component rows (env-scoped). */
 		async function readComponents(envId: string) {
@@ -1067,6 +1102,51 @@ async function buildConfigSnapshot(
 		}
 
 		if (identity.provider === "hetzner") {
+			// #3588: a node name becomes a Kubernetes object name ONLY here. `db-<name>` /
+			// `cache-<name>` / `queue-<name>` / `topic-<name>` / `nosql-<name>` / `registry-<name>`
+			// are Applications, CNPG Clusters, Services and the Secrets the runner seeds credentials
+			// into, and the runner validates them against the DNS-LABEL charset because they
+			// interpolate into `kubectl` through `bash -c`. A name outside it renders a VALID Secret
+			// and a VALID Application, both apply, and the StatefulSet then sits at
+			// CreateContainerConfigError forever with no credential — the only human in that whole
+			// sequence being the one person not told.
+			//
+			// MIRRORS THE EMITTER: the kinds and their prefixes come from
+			// HETZNER_ADDON_ID_PREFIXES, the same constants hetznerDataServicesToAddOns
+			// interpolates, so a seventh charted kind is covered the day it ships. `secret` and
+			// `chart repo` are absent because they get no id — a secret is one KV entry inside the
+			// single project-wide Vault release, not an object of its own.
+			//
+			// AND ONLY ON THE PATHS THAT CREATE, exactly like the DNS gate above. This lived in
+			// project-form.schema.ts first, which was wrong twice over: the schema cannot see the
+			// provider, so it refused names that are legal on AWS (a table's name IS
+			// `table_name_suffix`, the `for_each` KEY of the DynamoDB module — `Orders.v2` deploys
+			// there today), and every write path re-parses the document, so those projects became
+			// unsavable rather than merely un-deployable. Worse, the rename the message demanded
+			// re-keys that `for_each` and REPLACES the table. Refusing to create more of a broken
+			// config is the point; wedging one that already exists is not.
+			const nameGateApplies = jobKind === "plan" || jobKind === "deploy";
+			if (nameGateApplies) {
+				const charted: [HetznerChartedKind, { name: string }[]][] = [
+					["databases", databases],
+					["caches", caches],
+					["queues", queues],
+					["topics", topics],
+					["tables", nosqlTables],
+					["registries", containerRegistries],
+				];
+				for (const [kind, rows] of charted) {
+					for (const row of rows) {
+						const problem = hetznerNodeNameProblem(kind, row.name);
+						if (problem) {
+							throw new Error(
+								`Component name: ${problem} Rename it in the canvas and save, then deploy again.`,
+							);
+						}
+					}
+				}
+			}
+
 			// Fail-closed engine gate: the mapper only charts what it supports (a NULL
 			// engine_family defaults to postgres), so anything else must throw here rather
 			// than be dropped from the deploy silently. Caches/queues need no gate — the
@@ -1650,12 +1730,19 @@ async function resolveTargetEnvironment(
 	}
 
 	// Effective ArgoCD destination namespace. `dedicated` owns the whole Fabric → no namespace
-	// (legacy behaviour); shared placements use the env's explicit namespace, else an RFC-1123
-	// slug of its name (via slugify, capped at 63 chars — the k8s namespace length limit).
+	// (legacy behaviour); shared placements use the env's explicit namespace, else a DNS-1123 slug
+	// of its name.
+	//
+	// The environment id is the fallback, and it is not decorative: `slugify` used to be able to
+	// return "" here and the result went straight into the ArgoCD destination unchecked, which
+	// renders `namespace: ` and applies into whatever ArgoCD defaults to. Env names created from
+	// now on are validated to slug to something (lib/validations/names.ts), but rows that predate
+	// that validation are still in the table — and a uuid is itself a valid DNS-1123 label, so the
+	// fallback is a legal namespace rather than another guess.
 	const namespace =
 		environment.placement_mode === "dedicated"
 			? null
-			: (environment.namespace ?? slugify(environment.name, 63));
+			: (environment.namespace ?? slugify(environment.name, environment.id));
 
 	return { environment, fabric, namespace };
 }
@@ -2400,13 +2487,17 @@ export async function duplicateProjectForProvider(
 	const { formData, provider: sourceProvider } =
 		await getProjectAsFormData(sourceProjectId);
 
-	const targetIdentity = await withActorScope(actor, async (tx) => {
+	const { targetIdentity, takenNames } = await withActorScope(actor, async (tx) => {
 		const [row] = await tx
 			.select({ provider: cloudIdentities.provider })
 			.from(cloudIdentities)
 			.where(eq(cloudIdentities.id, targetCloudIdentityId))
 			.limit(1);
-		return row;
+		const names = await tx
+			.select({ project_name: projects.project_name })
+			.from(projects)
+			.where(eq(projects.org_id, actor.orgId));
+		return { targetIdentity: row, takenNames: names.map((n) => n.project_name) };
 	});
 
 	if (!targetIdentity) throw new Error("Target cloud identity not found");
@@ -2421,6 +2512,16 @@ export async function duplicateProjectForProvider(
 
 	converted.project.region = targetRegion;
 	converted.project.cloud_identity_id = targetCloudIdentityId;
+	// THE CLONE NEEDS ITS OWN NAME. `convertProjectConfig` translates services and never touches
+	// `project_name`, and the same-provider branch is a bare `structuredClone` — so without this the
+	// name handed to `createProject` is the SOURCE project's, in the source project's own org, and
+	// #3145's uniqueness check matches the source row itself. The dialog has no name field, so the
+	// cross-cloud duplicate would end in "A project named … already exists" every single time and no
+	// project would ever be created.
+	converted.project.project_name = pickFreeProjectName(
+		`${formData.project.project_name} (${targetProvider})`,
+		takenNames,
+	);
 
 	const { project } = await createProject(converted);
 	if (!project.slug) throw new Error("Duplicated project is missing a slug");
@@ -2498,12 +2599,12 @@ export async function addEnvironment(
 ) {
 	const actor = await authorize("edit", { type: "project", id: projectId });
 	const owner = actor.userId;
-	const name = slugify(input.name);
-	if (!name) throw new Error("Environment name is required");
-	if (RESERVED_PROJECT_CHILD_SLUGS.includes(name))
-		throw new Error(
-			`"${name}" is reserved and can't be used as an environment name`,
-		);
+	// One definition of what an environment name may be, shared with the CLI's `project env add`
+	// and with `project create --env` (lib/validations/names.ts). The two used to disagree: this
+	// path slugified `Prod` to `prod`, the create path 400'd on it.
+	const problem = environmentNameProblem(input.name);
+	if (problem) throw new Error(problem);
+	const name = normalizeEnvironmentName(input.name);
 	return withActorScope(actor, async (tx) => {
 		const [project] = await tx
 			.select({ org_id: projects.org_id })
@@ -2520,7 +2621,22 @@ export async function addEnvironment(
 				name,
 				stage: input.stage,
 				status: "DRAFT",
-				is_default: false,
+				// TRUE WHEN THE PROJECT HAS NONE, not a flat `false`. The constraint trigger makes
+				// "some environments, none of them default" illegal at COMMIT, and a project CAN
+				// legitimately reach zero environments — the SCOPE note in programmables.sql keeps
+				// that a reported state (`CliEnvTarget.no-environments`) rather than an error. A
+				// hard-coded `false` therefore made such a project UNREPAIRABLE: the one insert that
+				// would fix it is refused, from the console and the CLI alike, with a raw
+				// `has 1 environment(s) but 0 default` 500.
+				//
+				// Same expression as the integration fixtures' `defaultIfFirst`, and correct for the
+				// same reason: this is a ONE-ROW insert, so the subquery is evaluated once against
+				// the pre-statement snapshot. A multi-row VALUES would see that snapshot for every
+				// row and set them all true.
+				is_default: sql<boolean>`NOT EXISTS (
+					SELECT 1 FROM public.project_environments e
+					 WHERE e.project_id = ${projectId}::uuid AND e.is_default
+				)`,
 				region: input.region ?? null,
 			})
 			.returning();
@@ -2541,12 +2657,9 @@ export async function duplicateEnvironment(
 ) {
 	const actor = await authorize("edit", { type: "project", id: projectId });
 	const owner = actor.userId;
-	const slug = slugify(name);
-	if (!slug) throw new Error("Environment name is required");
-	if (RESERVED_PROJECT_CHILD_SLUGS.includes(slug))
-		throw new Error(
-			`"${slug}" is reserved and can't be used as an environment name`,
-		);
+	const problem = environmentNameProblem(name);
+	if (problem) throw new Error(problem);
+	const slug = normalizeEnvironmentName(name);
 	// The base env's design (form shape = config only; provisioned outputs already stripped). Null
 	// when the base env has no design yet (an empty env) → the duplicate is created empty too.
 	const baseConfig = await getProjectAsFormData(projectId, baseEnvironmentId)
@@ -2577,7 +2690,22 @@ export async function duplicateEnvironment(
 				name: slug,
 				stage: base.stage,
 				status: "DRAFT",
-				is_default: false,
+				// TRUE WHEN THE PROJECT HAS NONE, not a flat `false`. The constraint trigger makes
+				// "some environments, none of them default" illegal at COMMIT, and a project CAN
+				// legitimately reach zero environments — the SCOPE note in programmables.sql keeps
+				// that a reported state (`CliEnvTarget.no-environments`) rather than an error. A
+				// hard-coded `false` therefore made such a project UNREPAIRABLE: the one insert that
+				// would fix it is refused, from the console and the CLI alike, with a raw
+				// `has 1 environment(s) but 0 default` 500.
+				//
+				// Same expression as the integration fixtures' `defaultIfFirst`, and correct for the
+				// same reason: this is a ONE-ROW insert, so the subquery is evaluated once against
+				// the pre-statement snapshot. A multi-row VALUES would see that snapshot for every
+				// row and set them all true.
+				is_default: sql<boolean>`NOT EXISTS (
+					SELECT 1 FROM public.project_environments e
+					 WHERE e.project_id = ${projectId}::uuid AND e.is_default
+				)`,
 				region: base.region,
 			})
 			.returning();
@@ -2744,6 +2872,12 @@ export async function getProjectGeneral(
 /**
  * Renames a project. The slug is intentionally left stable so existing URLs / bookmarks keep
  * resolving — only the display name changes.
+ *
+ * This was the SECOND path that minted duplicate names (#3145): it wrote the new name with no
+ * uniqueness check at all, so one project could be renamed onto another's name deliberately — the
+ * stable slug is what made that survivable, and what made it invisible. It is now refused, with the
+ * same error and the same wording the create path uses, because "that name is taken" should not
+ * depend on which screen you are standing on.
  */
 export async function updateProjectName(
 	projectId: string,
@@ -2752,16 +2886,63 @@ export async function updateProjectName(
 	const actor = await authorize("edit", { type: "project", id: projectId });
 	const project_name = name.trim();
 	if (!project_name) throw new Error("A project name is required");
-	if (project_name.length > 100)
-		throw new Error("Project name must be 100 characters or fewer");
+	if (project_name.length > PROJECT_NAME_MAX_LENGTH)
+		throw new Error(
+			`Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+		);
 	return withActorScope(actor, async (tx) => {
-		const [row] = await tx
-			.update(projects)
-			.set({ project_name, updated_at: new Date() })
+		// Scoped on the project's OWN org rather than trusting the RLS session alone — the same
+		// reasoning insertProjectWithDefaultFabric records, and it keeps the predicate identical
+		// to the index whether or not a future caller arrives service-role.
+		const [current] = await tx
+			.select({ org_id: projects.org_id })
+			.from(projects)
 			.where(eq(projects.id, projectId))
-			.returning({ project_name: projects.project_name });
-		if (!row) notFound(); // stale/deleted id → 404, not a captured error
-		return row;
+			.limit(1);
+		if (!current) notFound();
+
+		// Case-insensitive and excluding the project itself, matching
+		// `projects_org_id_project_name_key` (UNIQUE on (org_id, lower(project_name))). Excluding
+		// self matters: re-saving a name unchanged, or changing only its case, must not be refused
+		// as a collision with itself.
+		//
+		// The null-org branch mirrors the INDEX rather than being tidier than it. `org_id` is
+		// nullable in the column list, and a btree unique treats NULLs as DISTINCT — so a row with
+		// no org is not constrained by that index at all, and pre-checking it with
+		// `IS NOT DISTINCT FROM` would refuse a rename Postgres would happily accept. In practice
+		// the state is unreachable (the projects_set_org_id trigger coalesces to user_id, which is
+		// NOT NULL, and programmables.sql sweeps any historical NULL), which is exactly why the
+		// friendly check is skipped rather than guessed: the constraint below remains the
+		// authority either way.
+		if (current.org_id !== null) {
+			const clash = await tx
+				.select({ id: projects.id })
+				.from(projects)
+				.where(
+					and(
+						eq(projects.org_id, current.org_id),
+						sql`lower(${projects.project_name}) = lower(${project_name})`,
+						ne(projects.id, projectId),
+					),
+				)
+				.limit(1);
+			if (clash.length > 0) throw new ProjectNameTakenError(project_name);
+		}
+
+		try {
+			const [row] = await tx
+				.update(projects)
+				.set({ project_name, updated_at: new Date() })
+				.where(eq(projects.id, projectId))
+				.returning({ project_name: projects.project_name });
+			if (!row) notFound(); // stale/deleted id → 404, not a captured error
+			return row;
+		} catch (err) {
+			// The read above is optimistic at READ COMMITTED; the index is what enforces it. Map
+			// the loser of a concurrent rename onto the same error rather than a raw 23505.
+			if (isProjectNameTaken(err)) throw new ProjectNameTakenError(project_name);
+			throw err;
+		}
 	});
 }
 

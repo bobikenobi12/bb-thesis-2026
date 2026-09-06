@@ -1,0 +1,11 @@
+# A pending-enrolment record. See scripts/check-coverage-exclusions.mjs.
+#
+# Measured on 2026-09-03: the coverage `include` hand-lists 12 files while `src/` holds 60, so
+# 48 peer files are excluded by their ABSENCE from it and the `exclude:` sweep sees none of them.
+# One `exclude:` entry on top of that (`src/**/*.d.ts`). The ratchet is armed over that hand-picked
+# scope, so the floor is honest only about the 12.
+#
+# Deleting this file is part of the enrolment PR: the guard fails the moment
+# packages/ui/coverage-exclusions.yaml exists while this record still stands.
+issue: #4104
+reason: classifying 48 unlisted files is a scope decision about this package and must be separately attributable from the guard

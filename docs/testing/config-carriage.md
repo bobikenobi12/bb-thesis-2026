@@ -245,4 +245,4 @@ Decisions, not silence: this cloud will not honor the setting, and here is what 
 
 ---
 
-Measured this run: 370 schema columns examined, 73 of them user-settable, 164 cloud verdicts. Regenerate with `pnpm -F console gen:config-carriage`. CI runs the guard on every PR.
+Measured this run: 370 schema columns examined, 73 of them user-settable, 164 cloud verdicts. Regenerate with `pnpm -C apps/console run gen:config-carriage`. CI runs the guard on every PR.

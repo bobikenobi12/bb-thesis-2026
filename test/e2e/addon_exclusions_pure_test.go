@@ -8,6 +8,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -232,7 +233,28 @@ func TestDescribeWithheldAddOnsIsNotVacuous(t *testing.T) {
 	}
 	app := argocd.AddOnAppName("external-dns")
 	got := DescribeWithheldAddOns(cloud, []string{app})
-	for _, want := range []string{app, string(NeedsUserConfig), "#2717", "CUSTOMER action"} {
+	// The issue is READ FROM THE ENTRY, not restated. It was hardcoded "#2717" here, so this
+	// assertion and the entry agreed with each other about a number that had been closed since
+	// 2026-08-29 — the same drift, in a second place, and pinning the literal is what made the
+	// second place possible.
+	//
+	// BUT DE-HARDCODING IT ALONE MADE THE ASSERTION VACUOUS, which is worse than the drift. `Why`
+	// now ends "…which is #3524", and DescribeWithheldAddOns prints Kind, Issue AND Why — so a bare
+	// `Contains(got, "#3524")` is satisfied by the Why text, and deleting `e.Issue` from the format
+	// string entirely would leave this test green. With the old literal the number could only have
+	// arrived via `e.Issue`, so the check was real; the fix traded one drift for a dead assertion.
+	//
+	// So it asserts the RENDERED PREFIX — `[kind] issue — ` — which only `e.Issue` can supply, in
+	// that position, next to that kind. That is what the test claims to prove.
+	ex := addOnExclusions["external-dns"]
+	if ex.Issue == "" {
+		t.Fatal("the external-dns exclusion records no Issue — this test would assert nothing")
+	}
+	wantRendered := fmt.Sprintf("[%s] %s — ", NeedsUserConfig, ex.Issue)
+	if !strings.Contains(got, wantRendered) {
+		t.Errorf("description does not render the entry's own Issue beside its Kind (%q):\n%s", wantRendered, got)
+	}
+	for _, want := range []string{app, string(NeedsUserConfig), "CUSTOMER action"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("description does not mention %q:\n%s", want, got)
 		}

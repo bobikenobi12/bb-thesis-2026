@@ -29,15 +29,17 @@ var stagedListCmd = &cobra.Command{
 		if err != nil {
 			fail(err)
 		}
-		project, err := currentProject(cmd)
+		outFmt := outputFormat(cmd)
+		rich := interactiveTable(cmd)
+		project, err := byoProject(cmd, token, rich)
 		if err != nil {
 			fail(err)
 		}
 		env, _ := cmd.Flags().GetString("env")
 		client := api.NewClient(token)
-		if interactiveTable(cmd) {
+		if rich {
 			var view *api.StagedChanges
-			ui.RunSpinner("Fetching staged changes...", func() {
+			runSpinner("Fetching staged changes...", func() {
 				view, err = client.GetProjectStagedChanges(project, env)
 			})
 			if err != nil {
@@ -47,10 +49,10 @@ var stagedListCmd = &cobra.Command{
 				ui.Muted("No staged changes.")
 				return
 			}
-			_ = ui.ShowTable(stagedColumns, stagedRows(view.Changes), "staged changes")
+			_ = ui.ShowTable(stagedColumns, stagedRows(view.Changes, ui.FormatTable), "staged changes")
 			return
 		}
-		if err := runStagedList(client, os.Stdout, outputFormat(cmd), project, env); err != nil {
+		if err := runStagedList(client, os.Stdout, outFmt, project, env); err != nil {
 			failf("Failed to list staged changes: %v", err)
 		}
 	},
@@ -59,12 +61,35 @@ var stagedListCmd = &cobra.Command{
 var stagedColumns = []string{"Op", "Component", "Component ID", "Created"}
 
 // stagedRows projects staged changes into plain table cells.
-func stagedRows(changes []api.StagedChange) [][]string {
+//
+// outFmt is taken for the reason ui.Render's doc states: its CSV branch writes these rows
+// VERBATIM, so both humanised cells here are cells a script receives.
+//
+//   - Created is `9 Mar 2026, 15:04` for a person — the console's spelling of the same instant,
+//     which is why it stopped being the wire's RFC3339 echoed back — and the wire's RFC3339 for a
+//     machine, which is the only form that sorts, parses, and still carries the seconds and zone.
+//   - Component ID is the dash for a person and an EMPTY cell for a machine. A CREATE has no
+//     component id yet; "" is already how CSV says "absent", and `—` is a value a reader would
+//     have to special-case.
+func stagedRows(changes []api.StagedChange, outFmt string) [][]string {
 	rows := make([][]string, len(changes))
 	for i, c := range changes {
-		rows[i] = []string{c.Op, c.ComponentType, strOrDash(c.ComponentID), c.CreatedAt}
+		id, created := ptrOrEmpty(c.ComponentID), c.CreatedAt
+		if ui.HumanReadable(outFmt) {
+			id, created = ui.StrOrDash(c.ComponentID), ui.Stamp(c.CreatedAt)
+		}
+		rows[i] = []string{c.Op, c.ComponentType, id, created}
 	}
 	return rows
+}
+
+// ptrOrEmpty is the machine reading of a nullable string cell: the value, or "" when there is not
+// one. The counterpart to ui.StrOrDash, which is the person's.
+func ptrOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // runStagedList fetches and renders an environment's staged changes. json emits the whole view;
@@ -87,13 +112,13 @@ func runStagedList(c apiClient, out io.Writer, format, project, env string) erro
 	}
 	return ui.Render(out, format, ui.TableSpec{
 		Columns: stagedColumns,
-		Rows:    stagedRows(changes),
+		Rows:    stagedRows(changes, format),
 	}, changes)
 }
 
 func init() {
-	stagedCmd.PersistentFlags().StringP("project", "p", "", "Project name or id")
-	stagedCmd.PersistentFlags().StringP("env", "e", "", "Environment name, stage, or id (default: the project's default environment)")
+	stagedCmd.PersistentFlags().StringP("project", "p", "", byoFlagUsage("alethia staged", byoKeyProject))
+	stagedCmd.PersistentFlags().StringP("env", "e", "", byoFlagUsage("alethia staged", byoKeyEnv))
 	stagedCmd.AddCommand(stagedListCmd)
 	rootCmd.AddCommand(stagedCmd)
 }

@@ -12,6 +12,7 @@ import { scanRepo } from "@/app/server/actions/scanner";
 import { RepositorySelector } from "@/components/repository-selector";
 import { cn } from "@repo/ui/utils";
 import { Button } from "@repo/ui/button";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 interface RepoImportPanelProps {
 	/** Optional wrapper class so the front door can slot the panel into its layout. */
@@ -64,15 +65,11 @@ export function RepoImportPanel({ className }: RepoImportPanelProps) {
 					<span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border border-border text-muted-foreground">
 						<GitBranch className="size-4" />
 					</span>
-					<div className="min-w-0 flex-1">
-						<h2 className="text-[15px] font-semibold tracking-tight">
-							Import a repository
-						</h2>
-						<p className="mt-0.5 text-[12.5px] text-muted-foreground">
-							Scan a git repo — Alethia infers the stack and opens it on the
-							canvas to review before you provision.
-						</p>
-					</div>
+					<SectionHeading
+						className="min-w-0 flex-1"
+						title="Import a repository"
+						description="Scan a git repo — Alethia infers the stack and opens it on the canvas to review before you provision."
+					/>
 				</div>
 				<div className="space-y-3 px-4 pb-4">
 					<RepositorySelector
@@ -83,7 +80,7 @@ export function RepoImportPanel({ className }: RepoImportPanelProps) {
 						placeholder="Select a repository to import…"
 					/>
 					<div className="flex items-center justify-between gap-3">
-						<span className="truncate font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+						<span className="truncate font-mono text-ui-2xs uppercase tracking-wider text-muted-foreground">
 							{repoUrl
 								? ref
 									? `branch · ${ref}`

@@ -1,45 +1,137 @@
 ---
 title: Cluster Commands
-description: List provisioned Kubernetes clusters from the CLI.
+description: List the Kubernetes clusters your projects run on, and inspect one — status, sizing, cost and ArgoCD access.
 ---
 
 # Cluster Commands
 
-The command is `alethia cluster` (singular) with a `clusters` alias, so both forms work
-interchangeably.
+A cluster is what a project environment runs on. You do not create one here: provisioning an
+environment creates it, and this group reads it back. The command is `alethia cluster` (singular)
+with a `clusters` alias, so both forms work interchangeably.
+
+<Callout type="info">
+The CLI is a client of the same Console API. These commands call `/cli/clusters` with your
+[CLI token](/cli/authentication) and operate on the **active organization**, which you change with
+`alethia org switch`. For one invocation, `alethia cluster list --org <id>` scopes the call to a
+different organization instead — `--org` is a global flag, accepted on every command, and refused
+with `403` if you are not a member of the organization you name.
+</Callout>
 
 ## `alethia cluster list`
 
-List all provisioned Kubernetes clusters.
+List every cluster across your projects — one row per project environment.
 
 ```bash
 alethia cluster list
-# or, equivalently:
 alethia clusters list
+alethia cluster list -o json
 ```
 
-Output:
+The command takes no input of its own; only the [global flags](/cli/commands) apply.
+
+| Column | Meaning |
+|--------|---------|
+| Project | The project and its environment — the same label `cluster get` titles its card with. |
+| Cluster | The cloud's name for the cluster, or `—` before it is provisioned. |
+| Version | The Kubernetes version. |
+| Status | A glyph and the status, with the status message appended when a cluster is degraded or failed. |
+| ArgoCD | `exposed` when a managed-ingress URL exists, `port-fwd` when access is by port-forward, `—` when the cluster is not provisioned yet. |
+| Nodes | Min / desired / max node count. |
+| Region | The cloud region. |
+| Cost | The estimated monthly cost, rendered exactly as the console's billing pages render it. |
 
 ```
-PROJECT               CLUSTER                 VERSION  STATUS     ARGOCD    NODES  REGION      COST
-api-backend (prod)    api-backend-production  1.30     ● active   exposed   1/3/5  eu-west-1   $210/mo
-data-pipeline (stg)   data-pipeline-staging   1.29     ● active   port-fwd  1/2/3  us-east4    $95/mo
+Project                   Cluster                 Version  Status    ArgoCD    Nodes  Region     Cost
+api-backend (production)  api-backend-production  1.30     ● active  exposed   1/3/5  eu-west-1  $210.00/mo
+data-pipeline (staging)   data-pipeline-staging   1.29     ● active  port-fwd  1/2/3  us-east4   $95.00/mo
 ```
 
-Shows clusters across your projects with:
-- Project (with its environment) and cluster name
-- Kubernetes version
-- Status — the status message is shown inline when a cluster is degraded or failed
-- ArgoCD access — `exposed` (a managed-ingress URL exists) or `port-fwd`
-- Node count (min/desired/max)
-- Region
-- Estimated monthly cost
+At a terminal this is a navigable table; in a pipe, with `--no-input`, or with `-o json` / `-o csv`
+it prints statically. Backing call: `GET /cli/clusters`.
 
-Pass `-o json` for the full records (including each cluster's ArgoCD URL, instance types, and node sizes).
+## `alethia cluster get`
 
-## Accessing a Cluster
+Show one cluster in full, including how to reach its ArgoCD.
 
-After identifying a cluster, configure kubectl using the provider-specific command:
+```bash
+alethia cluster get
+alethia cluster get api-backend
+alethia cluster get api-backend-production -o json
+```
+
+| Input | Required | Description |
+|-------|----------|-------------|
+| `[selector]` | No — at a terminal | Matches a project name, a cluster name, or a cluster id, case-insensitively. Falls back to a project-name substring. |
+
+**Run it with no selector and the CLI asks which cluster**, listing every one you have with its
+status. That is the whole reason the selector is optional: you never have to run `cluster list`
+first and copy a name out of it.
+
+The selector is required when a prompt could not work: with `--no-input`, with a piped stdin that
+could never answer one, and with a redirected stdout that has no screen to draw one on. In each
+case the command exits non-zero explaining what to pass. The last is the easy one to hit —
+`alethia cluster get -o json > clusters.json` refuses rather than writing a form into your file.
+A selector that matches **nothing** is an error too, not an empty screen —
+`alethia cluster get typo || echo missing` prints `missing`.
+
+A selector that matches **more than one** cluster — the usual case is one project with a production
+and a staging environment — asks which you meant rather than picking for you. With `--no-input` it
+refuses and names the candidates, so you can re-run with the cluster name or id, both of which are
+unique.
+
+```
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  A P I - B A C K E N D   ( P R O D U C T I O N )                                                                    │
+│                                                                                                                     │
+│  Status        ● active                                                                                             │
+│  Cluster       api-backend-production                                                                               │
+│  Version       K8s 1.30                                                                                             │
+│  Region        eu-west-1                                                                                            │
+│  Nodes         1 / 3 / 5  (min/desired/max)                                                                         │
+│  Est. cost     $210.00/mo                                                                                           │
+│  ArgoCD        https://argocd.api-backend.example.com                                                               │
+│  ArgoCD admin  kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d  │
+│  GitOps        6/6 synced · 5/6 healthy · rev 9c1f0a3                                                               │
+│  Apps repo     github.com/acme/api-backend-apps                                                                     │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+Only the fields a cluster actually has are shown: a cluster that is still provisioning has no name,
+no version and no ArgoCD block.
+
+Backing calls: `GET /cli/clusters`, then `GET /cli/clusters/{id}` for the GitOps posture. The
+second one is best-effort — if it fails you still get the cluster, without the GitOps lines.
+
+### ArgoCD access
+
+ArgoCD is installed on every provisioned cluster. The **ArgoCD** row is its URL where a managed
+ingress exists, and a note to port-forward where the cloud does not have one yet.
+
+The admin password is **never stored by Alethia** — it would be plaintext in the control-plane
+database — so the card prints the command that reads it from the cluster's own initial-admin
+secret. Copy that line and run it against the cluster:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+```
+
+Where there is no managed ingress, reach the UI through a port-forward first:
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8080:443
+```
+
+### GitOps posture
+
+The **GitOps** row summarises the cluster's ArgoCD applications: how many are synced, how many are
+healthy, and the short revision they are deployed at. It reads `failed at <step>` when the last
+deploy failed, and `unknown (no snapshot yet)` when there is no trustworthy reading — which is a
+different statement from "nothing is deployed", and deliberately not rendered as one.
+
+## Accessing a cluster with kubectl
+
+`cluster get` prints the two things a kubeconfig command needs — the cluster name and the region —
+so the credentials command is assembled from one screen rather than several:
 
 <Tabs items={["AWS", "GCP", "Azure"]}>
   <Tab value="AWS">
@@ -56,8 +148,14 @@ After identifying a cluster, configure kubectl using the provider-specific comma
   </Tab>
   <Tab value="Azure">
     ```bash
-    az aks get-credentials --name my-cluster --resource-group my-rg
+    az aks get-credentials --name api-backend-production --resource-group api-backend-production
     kubectl get nodes
     ```
   </Tab>
 </Tabs>
+
+## See also
+
+- [Project Commands](/cli/commands/project) — creating the environments that create clusters.
+- [Probe Commands](/cli/commands/probes) — the "is it still up?" signal per environment.
+- [Command Reference](/cli/commands) — the full command tree and global flags.

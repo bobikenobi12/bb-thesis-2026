@@ -26,30 +26,79 @@ read and re-verify an existing one.`,
 }
 
 var providerStatusCmd = &cobra.Command{
-	Use:   "status <provider>",
+	Use:   "status [provider]",
 	Short: "Show the connection status of a cloud provider identity",
-	Args:  cobra.ExactArgs(1),
+	Long: `Show the connection status of a cloud provider identity.
+
+Omit the provider for a picker over the accounts you have connected.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		if err := runProviderStatus(api.NewClient(token), os.Stdout, outputFormat(cmd), args[0]); err != nil {
-			failf("Failed to get %s status: %v", args[0], err)
+		client := api.NewClient(token)
+		provider, err := resolveProviderRef(client, args)
+		if err != nil {
+			fail(err)
+		}
+		if err := runProviderStatus(client, os.Stdout, outputFormat(cmd), provider); err != nil {
+			failf("Failed to get %s status: %v", provider, err)
 		}
 	},
 }
 
+// resolveProviderRef turns the optional `[provider]` argument into a provider slug, showing a
+// picker over the CONNECTED accounts when it is omitted.
+//
+// The picker lists what you have connected rather than every provider Alethia supports: these
+// two commands read and re-probe an existing connection, so offering a provider with no
+// identity behind it can only ever produce "no connected X identity".
+func resolveProviderRef(lister cloudIdentityLister, args []string) (string, error) {
+	if len(args) == 1 {
+		return args[0], nil
+	}
+	if err := requireInteractiveForm(); err != nil {
+		return "", fmt.Errorf(
+			"no provider given: pass one (%s) as the argument (%w)",
+			strings.Join(connectorProviderNames(), ", "), err,
+		)
+	}
+
+	var identities []api.CloudIdentity
+	var err error
+	runSpinner("Fetching cloud connections...", func() {
+		identities, err = lister.GetCloudIdentities()
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch cloud connections: %w", err)
+	}
+	if len(identities) == 0 {
+		return "", fmt.Errorf("no cloud accounts connected — run `alethia connector` first")
+	}
+
+	chosenID, err := pickConnectedIdentity("Select a cloud account", identities)
+	if err != nil {
+		return "", err
+	}
+	for _, id := range identities {
+		if id.ID == chosenID {
+			return id.Provider, nil
+		}
+	}
+	return "", fmt.Errorf("no cloud account selected")
+}
+
 // providerStatusRows projects a ProviderStatus into field/value cells, showing
 // only the identity fields relevant to the connected provider.
-func providerStatusRows(s *api.ProviderStatus) [][]string {
+func providerStatusRows(s *api.ProviderStatus, outFmt string) [][]string {
 	connected := "disconnected"
 	if s.Connected {
 		connected = "connected"
 	}
 	rows := [][]string{
 		{"status", connected},
-		{"identity", orDash(s.IdentityID)},
+		{"identity", ui.Cell(outFmt, s.IdentityID, ui.OrDash(s.IdentityID))},
 	}
 	add := func(label, value string) {
 		if value != "" {
@@ -72,19 +121,28 @@ func runProviderStatus(c apiClient, out io.Writer, format, provider string) erro
 	if err != nil {
 		return err
 	}
-	return ui.RenderCard(out, format, "alethia · "+provider+" status", providerStatusRows(status), status)
+	return ui.RenderCard(out, format, "alethia · "+provider+" status", providerStatusRows(status, format), status)
 }
 
 var providerVerifyCmd = &cobra.Command{
-	Use:   "verify <provider>",
+	Use:   "verify [provider]",
 	Short: "Re-run the server-side health probe against a connected identity",
-	Args:  cobra.ExactArgs(1),
+	Long: `Re-run the server-side health probe (auth + provisioning-capability check) against
+the connected identity for a provider.
+
+Omit the provider for a picker over the accounts you have connected.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		if err := runProviderVerify(api.NewClient(token), os.Stdout, outputFormat(cmd), args[0]); err != nil {
+		client := api.NewClient(token)
+		provider, err := resolveProviderRef(client, args)
+		if err != nil {
+			fail(err)
+		}
+		if err := runProviderVerify(client, os.Stdout, outputFormat(cmd), provider); err != nil {
 			failf("%v", err)
 		}
 	},

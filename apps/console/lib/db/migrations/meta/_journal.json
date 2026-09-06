@@ -1037,6 +1037,27 @@
       "when": 1787928696802,
       "tag": "0147_wooden_amphibian",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1788279010245,
+      "tag": "0148_odd_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1788380249782,
+      "tag": "0149_wakeful_vengeance",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1788419779162,
+      "tag": "0150_slippery_shape",
+      "breakpoints": true
     }
   ]
 }

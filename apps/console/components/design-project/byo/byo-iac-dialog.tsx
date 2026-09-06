@@ -15,6 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Boxes, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import {
 	Dialog,
 	DialogContent,
@@ -157,7 +158,7 @@ export function ByoIacDialog({
 							/>
 							<span
 								className={cn(
-									"font-mono text-[10px] uppercase tracking-wide",
+									"font-mono text-ui-2xs uppercase tracking-wide",
 									i === step ? "text-foreground" : "text-muted-foreground",
 								)}
 							>
@@ -240,9 +241,11 @@ export function ByoIacDialog({
 									</Button>
 								</div>
 								{fields.length === 0 ? (
-									<div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-										No variables. The module runs with its own defaults.
-									</div>
+									<EmptyState
+										className="border px-3 py-6 md:px-3 md:py-6"
+										title="No variables"
+										description="The module runs with its own defaults."
+									/>
 								) : (
 									<div className="flex flex-col gap-2">
 										{fields.map((f, i) => (
@@ -255,7 +258,7 @@ export function ByoIacDialog({
 														aria-label={`Variable ${i + 1} name`}
 													/>
 													{errors.variables?.[i]?.key && (
-														<p className="mt-1 text-[11px] text-destructive">
+														<p className="mt-1 text-ui-xs text-destructive">
 															{errors.variables[i]?.key?.message}
 														</p>
 													)}
@@ -289,7 +292,7 @@ export function ByoIacDialog({
 														aria-label={`Variable ${i + 1} value`}
 													/>
 													{errors.variables?.[i]?.value && (
-														<p className="mt-1 text-[11px] text-destructive">
+														<p className="mt-1 text-ui-xs text-destructive">
 															{errors.variables[i]?.value?.message}
 														</p>
 													)}
@@ -317,7 +320,7 @@ export function ByoIacDialog({
 
 						{step === 3 && (
 							<div className="flex flex-col gap-3">
-								<div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-[11px] text-muted-foreground">
+								<div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-ui-xs text-muted-foreground">
 									<div className="text-foreground">
 										{repoUrl.replace(/^https?:\/\/(www\.)?/, "").replace(/\.git$/, "") || "—"}
 									</div>

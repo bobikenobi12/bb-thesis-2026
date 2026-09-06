@@ -73,7 +73,7 @@ resource "azurerm_federated_identity_credential" "app_db" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.app_db[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:${local.azure_app_ksa_namespace}:${local.azure_app_ksa_name}"
 }
 
@@ -95,7 +95,7 @@ resource "azurerm_federated_identity_credential" "db_admin" {
   resource_group_name = azurerm_resource_group.main.name
   parent_id           = one(azurerm_user_assigned_identity.db_admin[*].id)
   audience            = ["api://AzureADTokenExchange"]
-  issuer              = module.aks[0].oidc_issuer_url
+  issuer              = try(module.aks[0].oidc_issuer_url, null) != null ? module.aks[0].oidc_issuer_url : ""
   subject             = "system:serviceaccount:${local.azure_app_ksa_namespace}:${local.azure_bootstrap_ksa_name}"
 }
 
@@ -103,7 +103,7 @@ resource "azurerm_federated_identity_credential" "db_admin" {
 # bootstrap Job can create the app's scoped role. The app identity holds no admin rights.
 resource "azurerm_postgresql_flexible_server_active_directory_administrator" "db_admin" {
   count               = local.enable_app_db_aad ? 1 : 0
-  server_name         = module.azure_db[0].server_name
+  server_name         = try(module.azure_db[0].server_name, null) != null ? module.azure_db[0].server_name : ""
   resource_group_name = azurerm_resource_group.main.name
   tenant_id           = data.azurerm_client_config.current.tenant_id
   object_id           = one(azurerm_user_assigned_identity.db_admin[*].principal_id)
@@ -119,7 +119,7 @@ resource "azurerm_postgresql_flexible_server_active_directory_administrator" "db
 resource "azurerm_mysql_flexible_server_active_directory_administrator" "db_admin" {
   count = local.enable_mysql_entra ? 1 : 0
 
-  server_id   = module.azure_db[0].server_id
+  server_id   = try(module.azure_db[0].server_id, null) != null ? module.azure_db[0].server_id : ""
   identity_id = one(azurerm_user_assigned_identity.db_admin[*].id)
   login       = one(azurerm_user_assigned_identity.db_admin[*].name)
   object_id   = one(azurerm_user_assigned_identity.db_admin[*].principal_id)

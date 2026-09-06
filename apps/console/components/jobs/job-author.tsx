@@ -37,7 +37,7 @@ function AuthorAvatar({
     >
       <AvatarImage src={image ?? undefined} alt="" />
       <AvatarFallback
-        className={`font-mono ${size === "sm" ? "text-[9px]" : "text-[11px]"} text-muted-foreground`}
+        className={`font-mono ${size === "sm" ? "text-ui-3xs" : "text-ui-xs"} text-muted-foreground`}
       >
         {initials}
       </AvatarFallback>

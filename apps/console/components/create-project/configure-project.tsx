@@ -22,9 +22,10 @@ import {
 } from "@/components/design-project/placement-selector";
 import { DEFAULT_REGION, type CloudProviderSlug } from "@/lib/cloud-providers";
 import type { EnvironmentSpec } from "@/lib/queries/projects";
-import { globalHref, projectHref, slugify } from "@/lib/routing";
+import { globalHref, projectHref } from "@/lib/routing";
+import { slugify } from "@/lib/utils/slugify";
 import type { ScanProposal } from "@/lib/scanner/schema";
-import { PageHeader } from "@repo/ui/page-header";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Button } from "@repo/ui/button";
 import { Input } from "@repo/ui/input";
 
@@ -161,7 +162,7 @@ export function ConfigureProject({
 		source.kind === "import" ||
 		(source.kind === "scratch" && source.scratch === "template");
 	const needsCloud = requiresCloud && !identityId;
-	const slug = slugify(name) || "project";
+	const slug = slugify(name, "project");
 
 	/** Create the project (DRAFT) from the chosen source + settings, then open its canvas. */
 	const onCreate = async () => {
@@ -247,12 +248,15 @@ export function ConfigureProject({
 				>
 					<ChevronLeft className="size-4" />
 				</button>
-				<PageHeader
+				{/* A section heading: this names the STEP, not the route. The breadcrumb says
+				    "New project" for all three steps, so nothing above the page says which one you
+				    are on except the stepper on the right. */}
+				<SectionHeading
 					className="flex-1"
 					title="Configure your project"
 					description="Set the essentials — you’ll review and deploy the full design on the canvas."
 				/>
-				<span className="hidden font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground sm:block">
+				<span className="hidden font-mono text-ui-2xs uppercase tracking-[0.14em] text-muted-foreground sm:block">
 					source · <span className="text-foreground">configure</span> · canvas
 				</span>
 			</div>
@@ -289,7 +293,7 @@ export function ConfigureProject({
 							placeholder="my-project"
 							onChange={(e) => setName(e.target.value)}
 						/>
-						<p className="mt-2 font-mono text-[11px] text-muted-foreground">
+						<p className="mt-2 font-mono text-ui-xs text-muted-foreground">
 							{orgSlug}/<span className="text-foreground">{slug}</span>
 						</p>
 					</Section>
@@ -311,7 +315,7 @@ export function ConfigureProject({
 							onSelect={onCloud}
 						/>
 						<div className="mt-3 flex items-center gap-3">
-							<span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+							<span className="font-mono text-ui-2xs uppercase tracking-[0.1em] text-muted-foreground">
 								Region
 							</span>
 							<RegionSelect
@@ -331,7 +335,7 @@ export function ConfigureProject({
 					</Section>
 
 					<div className="flex items-center justify-between gap-4 border-t border-border pt-5">
-						<span className="text-[11.5px] text-muted-foreground">
+						<span className="text-ui-xs text-muted-foreground">
 							Creates a draft — nothing provisioned yet.
 						</span>
 						<Button
@@ -421,12 +425,15 @@ function Section({
 }) {
 	return (
 		<section>
+			{/* The number, the rule and the right-hand hint are this wizard's own chrome and stay
+			    local; the HEADING is the shared one, so a configure step is typeset at the same
+			    rung as every other section heading in the console rather than at this file's. */}
 			<div className="mb-3 flex items-baseline gap-3">
-				<span className="font-mono text-[11px] text-muted-foreground">{n}</span>
-				<h2 className="text-[14px] font-semibold tracking-tight">{title}</h2>
+				<span className="font-mono text-ui-xs text-muted-foreground">{n}</span>
+				<SectionHeading title={title} />
 				<span className="h-px flex-1 self-center bg-border" />
 				{hint && (
-					<span className="text-[11px] text-muted-foreground">{hint}</span>
+					<span className="text-ui-xs text-muted-foreground">{hint}</span>
 				)}
 			</div>
 			{children}
@@ -444,7 +451,7 @@ function Notice({
 }) {
 	return (
 		<div
-			className={`flex items-start gap-2.5 border border-border border-l-2 border-l-muted-foreground bg-muted/40 px-3 py-2.5 text-[12.5px] text-muted-foreground ${className ?? ""}`}
+			className={`flex items-start gap-2.5 border border-border border-l-2 border-l-muted-foreground bg-muted/40 px-3 py-2.5 text-ui-sm text-muted-foreground ${className ?? ""}`}
 		>
 			<Info className="mt-0.5 size-4 shrink-0" />
 			<span>{children}</span>

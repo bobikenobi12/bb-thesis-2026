@@ -10,6 +10,7 @@ import {
 	SUPPORT_SEVERITY_LABELS,
 	type SubmitCaseInput,
 } from "@/lib/validations/support";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 /** Step 3 — pick severity, with per-option expected-response guidance. */
 export function StepSeverity() {
@@ -20,12 +21,11 @@ export function StepSeverity() {
 
 	return (
 		<div className="space-y-4">
-			<div className="space-y-1">
-				<h2 className="text-lg font-medium">How severe is this?</h2>
-				<p className="text-sm text-muted-foreground">
-					Set the urgency so we can prioritize your case.
-				</p>
-			</div>
+			<SectionHeading
+				level={2}
+				title="How severe is this?"
+				description="Set the urgency so we can prioritize your case."
+			/>
 			<Controller
 				control={control}
 				name="severity"

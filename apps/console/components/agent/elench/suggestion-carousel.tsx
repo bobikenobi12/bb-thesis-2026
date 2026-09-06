@@ -49,7 +49,7 @@ export function SuggestionCarousel({
 							<s.icon className="h-4 w-4" />
 						</span>
 						<span className="min-w-0">
-							<span className="block truncate text-[13px] font-medium text-foreground">
+							<span className="block truncate text-ui-md font-medium text-foreground">
 								{s.title}
 							</span>
 							<span className="block truncate text-xs text-muted-foreground">

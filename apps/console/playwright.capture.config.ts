@@ -3,7 +3,7 @@
 
 // Isolated Playwright config for MARKETING CAPTURE — crisp, high-DPI, dark-theme
 // stills of the REAL console driven against the seeded demo org (see
-// `pnpm -F console seed:demo`). Kept separate from `playwright.config.ts` so it
+// `pnpm -C apps/console run seed:demo`). Kept separate from `playwright.config.ts` so it
 // never touches the CI-gating projects. Run:
 //   pnpm -F console exec playwright test --config playwright.capture.config.ts
 // Requires a console running on :3000 with the demo org seeded and SES

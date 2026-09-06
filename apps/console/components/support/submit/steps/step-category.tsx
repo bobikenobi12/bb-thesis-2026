@@ -9,6 +9,7 @@ import {
 	type SubmitCaseInput,
 } from "@/lib/validations/support";
 import { Label } from "@repo/ui/label";
+import { SectionHeading } from "@repo/ui/section-heading";
 import {
 	Select,
 	SelectContent,
@@ -31,12 +32,11 @@ export function StepCategory() {
 	// and stamps `context.{clusterId,jobId,connectorId}` from the current console scope.
 	return (
 		<div className="space-y-4">
-			<div className="space-y-1">
-				<h2 className="text-lg font-medium">Which area is this about?</h2>
-				<p className="text-sm text-muted-foreground">
-					Pick the service or area closest to your issue.
-				</p>
-			</div>
+			<SectionHeading
+				level={2}
+				title="Which area is this about?"
+				description="Pick the service or area closest to your issue."
+			/>
 			<div className="space-y-2">
 				<Label htmlFor="support-category">Service / area</Label>
 				<Controller

@@ -69,7 +69,7 @@ export function DownloadCliButton() {
           <p className="text-sm font-semibold text-foreground">
             Download Alethia
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-xs text-muted-foreground">
             Install the <code className="font-mono">alethia</code> CLI
           </p>
         </div>

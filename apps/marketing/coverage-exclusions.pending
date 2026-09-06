@@ -1,0 +1,9 @@
+# A pending-enrolment record. See scripts/check-coverage-exclusions.mjs.
+#
+# Measured on 2026-09-03: three coverage `exclude:` entries — `**/*.d.ts`, `**/*.config.*`,
+# `tests/**` — and no coverage-exclusions.yaml, so none of them carries a class or any evidence.
+#
+# Deleting this file is part of the enrolment PR: the guard fails the moment
+# apps/marketing/coverage-exclusions.yaml exists while this record still stands.
+issue: #4105
+reason: the three exclusions need classifying into sections, which is a decision about this app's scope

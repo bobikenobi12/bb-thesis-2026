@@ -38,6 +38,12 @@ the X-Alethia-Org header on subsequent commands.`,
 // runOrgSwitch resolves target (id/slug/name, or an interactive pick when empty)
 // to one of the caller's orgs and persists it as the active context.
 func runOrgSwitch(c apiClient, out io.Writer, target string) error {
+	// Refused BEFORE the fetch: whether a scripted caller may be asked to pick does not depend on
+	// what the server holds, so asking it would only slow the refusal down — and "no organizations
+	// available" is a badly wrong thing to tell someone whose real problem is --no-input.
+	if target == "" && !canPromptForm() {
+		return refuseNoForm(mustOrgField("alethia org switch", orgFieldKeyOrg))
+	}
 	orgs, err := c.ListOrgs()
 	if err != nil {
 		return err
@@ -48,9 +54,10 @@ func runOrgSwitch(c apiClient, out io.Writer, target string) error {
 
 	var chosen *api.OrgSummary
 	if target == "" {
-		if err := requireInteractive(); err != nil {
-			return err
-		}
+		// The form gate and not requireInteractive: the picker needs somewhere to DRAW, which is
+		// stderr and not stdout (ui.InteractiveOutput records the measurement). Without it
+		// `alethia org switch 2> log` from an interactive shell sent the form's ANSI frames into
+		// the log and looked hung. Already answered above, before the fetch.
 		chosen, err = selectOrgInteractive(orgs)
 		if err != nil {
 			return err

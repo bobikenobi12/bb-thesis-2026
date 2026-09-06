@@ -9,6 +9,23 @@ on:
     paths:
       - 'infra/email-ses/**'
 
+# A superseded run is not evidence about the head of the branch, and while it keeps a runner it is
+# denying one to the run that is. `ci.yml`, `addon-render-determinism.yml` and the four workflows
+# fixed on 2026-09-02 carry this; these nine did not.
+#
+# MEASURED 2026-09-03 over 500 runs / 6h24m: jobs spend 5,376 minutes WAITING for a runner against
+# 1,802 executing, and 77 of 500 runs (15 percent) were cancelled — started, took a slot, thrown
+# away. The currency is slots REQUESTED, so a superseded run costs the same as a useful one until
+# it dies.
+#
+# `github.ref` and NOT `github.event.pull_request.number || github.ref`: this workflow also fires on
+# `push`, where the number renders EMPTY and every push to `main` would collapse into one group,
+# cancelling a real deploy-path run. `cla.yml` records that trap; it is PR-only, so it can use the
+# number. `github.ref` is distinct for both events here.
+concurrency:
+  group: infra-email-ses-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

@@ -11,8 +11,9 @@ The `probes` group (alias `probe`) lists the latest **cluster-alive probe** per 
 
 <Callout type="info">
 The CLI is a client of the same Console API. `probes list` calls `/cli/projects/<project>/probes`
-with your [CLI token](/cli/authentication) and operates on the **active organization**
-(`alethia org switch`, or `--org <id>` per invocation).
+with your [CLI token](/cli/authentication) and operates on the **active organization**, which you
+change with `alethia org switch`. Pass `--org <id>` to scope a single invocation to a different
+organization — it is refused with `403` if you are not a member of it.
 </Callout>
 
 ## `alethia probes list`
@@ -20,26 +21,34 @@ with your [CLI token](/cli/authentication) and operates on the **active organiza
 List a project's latest per-environment cluster probes.
 
 ```bash
+alethia probes list
 alethia probes list --project my-project
 alethia probes list -p my-project -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
+Name the project with `--project`; omit it at a terminal and you are asked which project to read,
+from the ones you have.
+
+{/* fieldspec: alethia probes list */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Project | Whose environments to report the latest cluster probe for | `--project` |
 
 Columns: **Environment**, **Reachable** (`● up`, `○ down`, or `— never probed`), **Message** (why
-unreachable, when down), **Probed** (when the last probe ran). Every environment is listed; one
-that has never been probed shows `never probed` rather than being hidden.
+unreachable, when down), **Probed** (when the last probe ran, to the minute in UTC). Every
+environment is listed; one that has never been probed shows `never probed` rather than being
+hidden.
 
 ```
 Environment  Reachable        Message             Probed
-production   ● up             —                   2026-01-01T00:00:00.000Z
-staging      ○ down           dial tcp: timeout   2026-01-01T00:00:00.000Z
+production   ● up             —                   2026-01-01 00:00
+staging      ○ down           dial tcp: timeout   2026-01-01 00:00
 dev          — never probed   —                   —
 ```
 
-Add `-o json` for the raw probe objects; `-o csv` for the rows. Backing call:
+Add `-o json` for the raw probe objects — the `probed_at` there is the wire's unrounded RFC 3339
+timestamp, not the table's rendering; `-o csv` for the rows. Backing call:
 `GET /cli/projects/<project>/probes`.
 
 ## See also

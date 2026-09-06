@@ -3,10 +3,17 @@
 
 import { describe, it, expect } from "vitest";
 import {
-	projectFormSchema,
+	PROJECT_NAME_MAX_LENGTH,
+	environmentMatrixSchema,
 	helmRegistryProviderConfigSchema,
+	pickFreeProjectName,
+	projectFormSchema,
 } from "@/lib/validations/project-form.schema";
 import { getProvidersForCategory } from "@/lib/connectors/registry.generated";
+import {
+	HETZNER_ADDON_ID_PREFIXES,
+	hetznerNodeNameProblem,
+} from "@/lib/cloud-providers/hetzner-services";
 
 const validProject = {
 	project: {
@@ -57,10 +64,23 @@ describe("projectFormSchema", () => {
 			expect(result.success).toBe(false);
 		});
 
-		it("rejects project_name > 50 chars", () => {
-			const data = { ...validProject, project: { ...validProject.project, project_name: "a".repeat(51) } };
-			const result = projectFormSchema.safeParse(data);
-			expect(result.success).toBe(false);
+		// The bound moved from 50 to PROJECT_NAME_MAX_LENGTH (100) in #3145. Create and rename
+		// disagreed — this schema refused anything over 50 while updateProjectName refused only
+		// over 100 — so a name between 51 and 100 characters was reachable by renaming and
+		// un-creatable by the form. Unified on the permissive bound, because narrowing would have
+		// refused existing names on their next edit.
+		//
+		// Asserted against the CONSTANT and at both sides of the boundary, not at a literal 101:
+		// a test written against a hard-coded number silently stops testing the rule the day the
+		// rule moves, which is exactly how these two drifted apart in the first place.
+		it(`accepts project_name of exactly ${PROJECT_NAME_MAX_LENGTH} chars`, () => {
+			const data = { ...validProject, project: { ...validProject.project, project_name: "a".repeat(PROJECT_NAME_MAX_LENGTH) } };
+			expect(projectFormSchema.safeParse(data).success).toBe(true);
+		});
+
+		it(`rejects project_name > ${PROJECT_NAME_MAX_LENGTH} chars`, () => {
+			const data = { ...validProject, project: { ...validProject.project, project_name: "a".repeat(PROJECT_NAME_MAX_LENGTH + 1) } };
+			expect(projectFormSchema.safeParse(data).success).toBe(false);
 		});
 	});
 
@@ -618,5 +638,175 @@ describe("dns connector selection", () => {
 				zone_id: "z",
 			}).success,
 		).toBe(false);
+	});
+});
+
+// #3588. A node name becomes Kubernetes object names — `queue-<name>` Applications, a
+// `registry-<name>` Service, the Secret the runner seeds a queue's credentials into — and the
+// runner validates every one of them against the DNS-1123 LABEL charset before it interpolates
+// them into a `kubectl` command.
+//
+// A name outside that charset used to be accepted here and then failed with nothing said: it
+// renders VALID Kubernetes objects, they apply cleanly, and the StatefulSet then sits at
+// CreateContainerConfigError forever because no credential was ever seeded. The person typing the
+// name is the only human in that sequence, and was the one person not told.
+describe("a node name is NOT constrained by the form schema (#3588)", () => {
+	// The regression this replaces: the DNS-1123 rule lived here, fired on every provider, and every
+	// write path re-parses the whole document — so an existing AWS project holding `Orders.v2`
+	// became unsavable. And the rename the message demanded re-keys the DynamoDB module's
+	// `for_each`, so following the advice REPLACED the table. The rule is Hetzner's; it now lives
+	// where the provider is known. These assertions pin the schema staying out of it.
+	const KINDS = ["databases", "caches", "queues", "topics", "nosql_tables", "container_registries"] as const;
+
+	const nameIssues = (kind: string, name: string) => {
+		const parsed = projectFormSchema.safeParse({ ...validProject, [kind]: [{ name }] });
+		return (parsed.error?.issues ?? []).filter(
+			(issue) => issue.path[0] === kind && issue.path[issue.path.length - 1] === "name",
+		);
+	};
+
+	for (const kind of KINDS) {
+		it(`accepts a name that is legal on AWS but not a DNS label — ${kind}`, () => {
+			expect(nameIssues(kind, "Orders.v2")).toHaveLength(0);
+		});
+	}
+
+	it("still requires a name", () => {
+		expect(nameIssues("queues", "")).not.toHaveLength(0);
+	});
+
+	it("does not impose a length bound of its own", () => {
+		// 45 characters: `db-` + this is 48, well under Kubernetes' 63, and it deploys today even on
+		// Hetzner. The rule that rejected it capped at 40, a number no emitter produces.
+		expect(nameIssues("databases", "d".repeat(45))).toHaveLength(0);
+	});
+});
+
+describe("the environment matrix uses the ONE env-name rule (#3665)", () => {
+	const env = (name: string) => [
+		{ name, stage: "development" as const, placement_mode: "namespace" as const },
+	];
+	/** The name the matrix would STORE for `name`, or null when it refuses it. */
+	const stored = (name: string): string | null => {
+		const parsed = environmentMatrixSchema.safeParse(env(name));
+		return parsed.success ? parsed.data[0].name : null;
+	};
+
+	it("normalizes rather than 400ing, so it agrees with `project env add`", () => {
+		// This path used to reject `Prod` against a regex on the raw name while `project env add
+		// Prod` accepted it and stored `prod` — one product answering the same question two ways.
+		expect(stored("Prod")).toBe("prod");
+		// Likewise a trailing hyphen: as a NAME it slugs cleanly, and the namespace field (which is
+		// a Kubernetes object name) is where `dev-` is genuinely refused.
+		expect(stored("prod-")).toBe("prod");
+	});
+
+	it("still accepts an ordinary environment name unchanged", () => {
+		// Asserted on the issues rather than on `success`, so a failure prints what was wrong.
+		const result = environmentMatrixSchema.safeParse(env("prod"));
+		expect(result.error?.issues ?? []).toEqual([]);
+		expect(stored("prod")).toBe("prod");
+	});
+
+	it("refuses a name that slugs to nothing, and one a console route shadows", () => {
+		expect(stored("!!!")).toBeNull();
+		expect(stored("settings")).toBeNull();
+	});
+
+	it("accepts a namespace Kubernetes accepts and refuses one it does not", () => {
+		const withNs = (namespace: string) => [
+			{
+				name: "dev",
+				stage: "development" as const,
+				placement_mode: "namespace" as const,
+				namespace,
+			},
+		];
+		// `1dev` is a legal Kubernetes namespace the old pattern refused.
+		expect(environmentMatrixSchema.safeParse(withNs("1dev")).success).toBe(true);
+		expect(environmentMatrixSchema.safeParse(withNs("dev-")).success).toBe(false);
+	});
+});
+
+describe("hetznerNodeNameProblem — the rule, where the provider is known (#3588)", () => {
+	it("rejects a dotted name, naming the object it would become", () => {
+		const problem = hetznerNodeNameProblem("queues", "orders.v2");
+		expect(problem).toContain("queue-orders.v2");
+		expect(problem).toContain("DNS-1123");
+	});
+
+	it("rejects an upper-case name", () => {
+		expect(hetznerNodeNameProblem("databases", "Orders")).not.toBeNull();
+	});
+
+	it("rejects a trailing hyphen, which is not a valid label", () => {
+		expect(hetznerNodeNameProblem("caches", "orders-")).not.toBeNull();
+	});
+
+	it("accepts an ordinary label", () => {
+		expect(hetznerNodeNameProblem("queues", "orders-v2")).toBeNull();
+	});
+
+	// The bound is DERIVED from the prefix, not a constant. `registry-` is 9 characters, `db-` is 3,
+	// so the two kinds must disagree about the longest legal name by exactly 6 — a single hard-coded
+	// cap (the 40 this replaces) cannot produce that, which is what makes this assertion load-bearing
+	// rather than decorative.
+	it("derives its length bound from the prefix the emitter actually uses", () => {
+		const dbMax = 63 - "db-".length;
+		const registryMax = 63 - "registry-".length;
+		expect(registryMax).toBe(dbMax - 6);
+
+		expect(hetznerNodeNameProblem("databases", "d".repeat(dbMax))).toBeNull();
+		expect(hetznerNodeNameProblem("databases", "d".repeat(dbMax + 1))).not.toBeNull();
+		expect(hetznerNodeNameProblem("registries", "r".repeat(registryMax))).toBeNull();
+		expect(hetznerNodeNameProblem("registries", "r".repeat(registryMax + 1))).not.toBeNull();
+	});
+
+	// A 45-character database name deploys today: `db-` + 45 = 48, under 63. The rule that shipped
+	// first refused it, which introduces a failure rather than surfacing one.
+	it("accepts the 45-character name the old hard-coded cap of 40 refused", () => {
+		expect(hetznerNodeNameProblem("databases", "d".repeat(45))).toBeNull();
+	});
+
+	// Mirrors the emitter: every kind hetznerDataServicesToAddOns gives an id to is covered, and
+	// nothing else is. A seventh charted kind is covered the day it is added to the map.
+	it("covers exactly the kinds the mapper charts", () => {
+		expect(Object.keys(HETZNER_ADDON_ID_PREFIXES).sort()).toEqual(
+			["caches", "databases", "queues", "registries", "tables", "topics"].sort(),
+		);
+	});
+});
+
+// `pickFreeProjectName` — the derived name a cross-cloud clone gets (#3145).
+//
+// It exists because `duplicateProjectForProvider` rebuilds a project through `createProject` and
+// `convertProjectConfig` never touches `project_name`, so without it the clone carries the SOURCE
+// project's name in the source project's own org — which the uniqueness check matches against the
+// source row itself. The dialog has no name field, so that failed 100% of the time.
+describe("pickFreeProjectName", () => {
+	it("leaves a free name alone", () => {
+		expect(pickFreeProjectName("My App (gcp)", ["My App"])).toBe("My App (gcp)");
+	});
+
+	it("suffixes when the name is taken", () => {
+		expect(pickFreeProjectName("My App (gcp)", ["My App", "My App (gcp)"])).toBe("My App (gcp) 2");
+	});
+
+	it("...and keeps counting past a taken suffix rather than colliding again", () => {
+		expect(
+			pickFreeProjectName("My App (gcp)", ["My App (gcp)", "My App (gcp) 2", "My App (gcp) 3"]),
+		).toBe("My App (gcp) 4");
+	});
+
+	// THE PREDICATE MUST MATCH THE INDEX. `projects_org_id_project_name_key` is UNIQUE on
+	// (org_id, lower(project_name)), so a case-sensitive check here would hand back a name the
+	// database then refuses — skipping the friendly error and surfacing a raw 23505.
+	it("compares case-insensitively, because that is what the index enforces", () => {
+		expect(pickFreeProjectName("My App (gcp)", ["MY APP (GCP)"])).toBe("My App (gcp) 2");
+		expect(pickFreeProjectName("api", ["API", "Api 2"])).toBe("api 3");
+	});
+
+	it("an empty org has nothing to avoid", () => {
+		expect(pickFreeProjectName("My App (aws)", [])).toBe("My App (aws)");
 	});
 });

@@ -6,6 +6,8 @@
 import { formatMonthlyRate } from "@repo/format";
 import { Button } from "@repo/ui/button";
 import { Alert, AlertDescription } from "@repo/ui/alert";
+import { EmptyState } from "@repo/ui/empty";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Separator } from "@repo/ui/separator";
 import {
 	Collapsible,
@@ -180,9 +182,7 @@ export function PlanTab({ plan, onApplied }: PlanTabProps) {
 									{/* `exact` in BOTH the lines and the Total below them: this is a
 									    column a reader adds up, and the headline register would print
 									    $60.25 + $45.10 under a Total of $105. */}
-									<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-										Cost Breakdown
-									</h4>
+									<SectionHeading level={4} title="Cost breakdown" />
 									<div className="rounded-md border">
 										<div className="divide-y">
 											{costResult.resources.map((cr) => (
@@ -235,11 +235,7 @@ export function PlanTab({ plan, onApplied }: PlanTabProps) {
 			<PlanSummaryBar plan={planResult} cost={costResult} />
 
 			{totalResources === 0 ? (
-				<div className="text-center py-8">
-					<p className="text-sm text-muted-foreground">
-						No infrastructure changes detected.
-					</p>
-				</div>
+				<EmptyState title="No infrastructure changes detected." />
 			) : (
 				<div className="space-y-3">
 					{Array.from(groups.entries()).map(
@@ -260,9 +256,7 @@ export function PlanTab({ plan, onApplied }: PlanTabProps) {
 					<Separator />
 					<div className="space-y-2">
 						{/* Same pair as the applied view above, and the same reason. */}
-						<h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-							Cost Breakdown
-						</h4>
+						<SectionHeading level={4} title="Cost breakdown" />
 						<div className="rounded-md border">
 							<div className="divide-y">
 								{costResult.resources.map((cr) => (

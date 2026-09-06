@@ -7,6 +7,7 @@ import { AttachmentPicker } from "@/components/support/attachment-picker";
 import type { SubmitCaseInput } from "@/lib/validations/support";
 import { Input } from "@repo/ui/input";
 import { Label } from "@repo/ui/label";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Textarea } from "@repo/ui/textarea";
 
 interface StepDetailsProps {
@@ -27,12 +28,11 @@ export function StepDetails({ files, onFilesChange, onFileReject }: StepDetailsP
 
 	return (
 		<div className="space-y-5">
-			<div className="space-y-1">
-				<h2 className="text-lg font-medium">Tell us what&apos;s happening</h2>
-				<p className="text-sm text-muted-foreground">
-					A clear subject and detailed description help us resolve this faster.
-				</p>
-			</div>
+			<SectionHeading
+				level={2}
+				title="Tell us what's happening"
+				description="A clear subject and detailed description help us resolve this faster."
+			/>
 
 			<div className="space-y-2">
 				<Label htmlFor="support-subject">Subject</Label>

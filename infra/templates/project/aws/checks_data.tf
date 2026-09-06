@@ -24,6 +24,10 @@ check "keyless_rds_iam_irsa_wired" {
     # THIS cluster's OIDC provider, so a cluster-less shape has no identity to mint tokens with and
     # the role is correctly absent. Naming it keeps the message actionable — without the term this
     # would tell an operator to "set rds_iam_irsa" on a shape where rds_iam_irsa changes nothing.
+    #
+    # `length()` and not the instance probe used for module OUTPUTS (#3509): this asserts the module's
+    # EXPANSION, reads nothing out of it, and a check block is a graph leaf — so the whole-module edge
+    # that rules `length()` out elsewhere costs nothing here, and no probe could ask this question.
     condition     = !var.rds_iam_auth_enabled || !var.provision_eks || length(module.rds_iam_auth) == 1
     error_message = "rds_iam_auth_enabled is on but the app RDS-IAM IRSA role is missing; set rds_iam_irsa (the iam_auth toggle should drive both)."
   }
@@ -82,10 +86,12 @@ check "rds_log_exports_match_engine" {
 # an empty resource id would silently widen the connect ARN to a wildcard.
 check "rds_cluster_resource_id_resolvable_when_iam_auth" {
   assert {
-    # try(): with create_rds off (or the module absent) one() yields null and trimspace would raise
-    # instead of failing the check — the whole point is a clean, actionable failure, so collapse any
-    # unresolvable id to false.
-    condition     = !var.rds_iam_auth_enabled || try(length(trimspace(one(module.rds_maindb[*].rds_cluster_resource_id))) > 0, false)
+    # try(): with create_rds off the module is an EMPTY TUPLE and the index raises instead of
+    # failing the check — the whole point is a clean, actionable failure, so collapse any
+    # unresolvable id to false. The index replaced `one(module.rds_maindb[*]…)` (#3509): the splat
+    # reads the module as a whole, and this file's other checks must not order behind it. A renamed
+    # output is still caught — it makes the condition FALSE, so the check reports rather than passes.
+    condition     = !var.rds_iam_auth_enabled || length(trimspace(try(module.rds_maindb[0].rds_cluster_resource_id, null) != null ? module.rds_maindb[0].rds_cluster_resource_id : "")) > 0
     error_message = "rds_iam_auth_enabled is on but rds_cluster_resource_id is empty; the rds-db:connect ARN cannot be scoped to this cluster."
   }
 }

@@ -7,6 +7,7 @@
 # product lives on the box (see .claude/skills/dev/SKILL.md and CLAUDE.md).
 #
 #   env:up      ensure this branch has an environment, and that it is running
+#               a NEW env comes up seeded with demo data   [--empty | --seed | --fresh]
 #   env:push    rsync the working tree (the fast inner loop)   [--watch]
 #   env:down    release this branch's environment
 #   env:status  the box, every environment, capacity, cost
@@ -16,7 +17,8 @@
 #   env:check   tsc + lint + vitest ON THE BOX (worktrees are de-hydrated)
 #   env:test    Playwright browser tests ON THE BOX; report + traces rsync'd back
 #   env:runner  a provisioning runner pointed at this env
-#   env:reap    snapshot + DELETE the box (stops the meter)   [--now]
+#   env:reap    snapshot + DELETE the box (stops the meter)
+#               [--now] [--include-mine] [--dry-run = decide and print, destroy nothing]
 #   env:timer   reap the box automatically once idle   [off|status]
 #   env:box     create or restore the box   [--fresh = ignore snapshots]
 set -euo pipefail
@@ -48,6 +50,11 @@ case "$_git_common" in
   MAIN_CHECKOUT="$(cd "$(dirname "$_git_common")" 2>/dev/null && pwd || echo "$ROOT")"
   ;;
 esac
+
+# The env registry's identity and the reap decision. Sourced from THIS tree (not the main
+# checkout): it is a tracked file that ships with the script that uses it.
+# shellcheck source=scripts/lib/env-owner.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/env-owner.sh"
 
 TF_DIR="$MAIN_CHECKOUT/infra/sandbox"
 SERVER_NAME="alethia-sandbox"
@@ -113,7 +120,14 @@ slug() {
   printf '%s' "${b:-dev}"
 }
 
-owner() { printf '%s@%s' "$(id -un)" "$(hostname -s)"; }
+# WHO holds an environment — `env_owner`, from scripts/lib/env-owner.sh, sourced above.
+#
+# It used to be `printf '%s@%s' "$(id -un)" "$(hostname -s)"` right here, and that string is
+# IDENTICAL for every agent, worktree and shell on one machine. The reap guard below tests
+# `.value.owner != $me`, so it could never fire between two local instances — which is how a
+# finished lane deleted the box out from under another lane's live environment (#3841). The
+# identity is now the worktree lease's, so the two isolation primitives on this box agree
+# about what "who" means.
 
 # The env's public hostname. ONE label deep, always.
 #
@@ -318,6 +332,21 @@ require_main_checkout() { # <command>
   fi
 }
 
+# An env touched inside this window counts as IN USE. It must stay BELOW REAP_AFTER_MIN or the
+# unattended timer could never reap anything — cmd_timer asserts that, rather than trusting it.
+REAP_LIVE_WINDOW_MIN=60
+
+reap_cutoff() {
+  date -u -v-${REAP_LIVE_WINDOW_MIN}M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null ||
+    date -u -d "$REAP_LIVE_WINDOW_MIN minutes ago" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# The registry, or nothing. Fails CLOSED at every call site: an empty answer means "assume
+# someone is there", never "nobody is here".
+read_registry() {
+  ssh_box "$REMOTE/bin/env-registry.sh list" 2>/dev/null || true
+}
+
 # THE COMPENSATING CONTROL for letting agents reap.
 #
 # A hook cannot judge this — it does not know who holds which environment. This does: the
@@ -325,31 +354,74 @@ require_main_checkout() { # <command>
 # an instance tidying up after itself must not end someone else's run, and `--now` must not
 # be a way around that.
 #
+# The DECISION lives in scripts/lib/env-owner.sh (`env_reap_verdict`) and is self-tested there
+# against fixture registries. This function is only the box round-trip and the message: the whole
+# reason the defect survived is that the deciding was welded to an ssh call and could not be run.
+#
 # Fails CLOSED: if the registry cannot be read, assume someone is there.
-refuse_if_others_are_working() { # <force-flag>
-  local reg others
-  reg="$(ssh_box "$REMOTE/bin/env-registry.sh list" 2>/dev/null || true)"
-  if [ -z "$reg" ]; then
-    die "cannot read the env registry — refusing to reap a box that might be in use."
+reap_guard() { # <registry-json> <include-mine 0|1>
+  local reg="$1" include_mine="${2:-0}" me cut rows verdict rc=0
+  [ -n "$reg" ] || die "cannot read the env registry — refusing to reap a box that might be in use."
+  me="$(env_owner)"
+  cut="$(reap_cutoff)"
+
+  # WHAT IS ABOUT TO BE DESTROYED, before it is destroyed. Every row, not just the blocking
+  # ones: reaping takes the box, so an idle env dies with it. The reaping lane in #3841 reported
+  # "confirmed box: down" and was, from its own point of view, entirely correct and careful.
+  rows="$(env_reap_rows "$reg" "$me" "$cut" 2>/dev/null || true)"
+  if [ -n "$rows" ]; then
+    echo "→ reaping deletes the box, and with it every environment on it:"
+    printf '%s\n' "$rows" | env_reap_render
+  else
+    echo "→ no environments are registered on the box."
   fi
 
-  # Anyone else's env touched in the last hour counts as in use.
-  others="$(printf '%s' "$reg" | jq -r --arg me "$(owner)" --arg cut "$(date -u -v-60M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null ||
-    date -u -d '60 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" '
-      to_entries[] | select(.value.owner != $me and .value.lastSeen > $cut)
-      | "  \(.key)\t\(.value.owner)\tlast seen \(.value.lastSeen)"' 2>/dev/null || true)"
-
-  if [ -n "$others" ]; then
+  verdict="$(env_reap_verdict "$reg" "$me" "$cut" "$include_mine")" || rc=$?
+  case "$verdict" in
+  allow) return 0 ;;
+  refuse-unreadable)
+    die "the env registry did not parse — refusing to reap a box that might be in use."
+    ;;
+  refuse-others)
     {
+      echo ""
       echo "✗ Not reaping — someone else is working on this box."
       echo ""
-      printf '%s\n' "$others"
+      printf '%s\n' "$rows" | awk -F'\t' '$5 == "live" && $1 != "mine"' | env_reap_render
       echo ""
       echo "  Reaping deletes the box for everyone, so this is refused even with --now."
       echo "  Ask them to run  pnpm env:down,  or wait for their env to go idle."
+      # `… && { … }` here would make the whole group's status non-zero when there is no legacy
+      # row, and `set -e` would kill the script BEFORE the `exit "$rc"` below — turning a
+      # refusal that means "someone else is live" (3) into a bare 1.
+      if printf '%s\n' "$rows" | grep -q '^legacy'; then
+        echo ""
+        echo "  A 'legacy user@host' owner predates #3841 and cannot be attributed to an"
+        echo "  instance. It is counted as someone else's on purpose — that is the safe"
+        echo "  reading. If it is yours, pnpm env:up rewrites it, or pnpm env:down releases it."
+      fi
     } >&2
-    exit 3
-  fi
+    exit "$rc"
+    ;;
+  refuse-mine)
+    {
+      echo ""
+      echo "✗ Not reaping — your own environment is still live."
+      echo ""
+      printf '%s\n' "$rows" | awk -F'\t' '$5 == "live" && $1 == "mine"' | env_reap_render
+      echo ""
+      echo "  Reaping deletes the box, so this env goes too: the slot, its database, its"
+      echo "  OpenFGA store and its tunnel. env:box restores the BOX, not the env."
+      echo ""
+      echo "  Finished with it?   pnpm env:down   (then reap)"
+      echo "  Meant both?         pnpm env:reap --now --include-mine"
+    } >&2
+    exit "$rc"
+    ;;
+  *)
+    die "unrecognised reap verdict '$verdict' — refusing to reap."
+    ;;
+  esac
 }
 
 # ── Commands ──────────────────────────────────────────────────────────────────────
@@ -418,7 +490,7 @@ MSG
 #   Enter a value: Error: error asking for approval: EOF
 # env:reap hit exactly that after taking its snapshot. The prompt is not what makes these
 # safe: guard-iac.sh (raw tofu still blocked), require_main_checkout and
-# refuse_if_others_are_working all run before here. A prompt that only fires for humans
+# reap_guard all run before here. A prompt that only fires for humans
 # adds nothing and breaks every other caller — including the nightly reap the cost model
 # depends on.
 cmd_box() {
@@ -501,8 +573,26 @@ restore_live_envs() {
     cport="$(printf '%s' "$row" | jq -r .consolePort)"
     sport="$(printf '%s' "$row" | jq -r .storagePort)"
     db="$(printf '%s' "$row" | jq -r .database)"
-    ssh_box "test -d $REMOTE/envs/$sl && $REMOTE/bin/env-mode.sh '$sl' '$cport' '$sport' '$db'" ||
-      echo "      ✗ $sl did not come back — pnpm env:up from its worktree"
+    # `keep` (the 6th argument), NOT the empty default. This loop restarts environments
+    # THIS SESSION DOES NOT OWN — the shared `dev` integration env and whatever branch env
+    # another instance holds — and env-mode.sh's empty default means "resolve against the
+    # recorded mode", which for any env predating the marker resolves to a full seed:demo.
+    # That would inject the demo org into other people's environments, and where their
+    # demo owner's org already holds non-demo projects the seeder throws by design, the
+    # boot exits 1, and the restore degrades into "✗ did not come back" for an env that
+    # was fine. A restore restarts; it never writes data.
+    # Exit 3 is env-mode.sh's "it is UP, and it is serving COMMUNITY entitlements" (boot_rc
+    # there). It is not a failure to come back, and calling it one would name the wrong fault
+    # on an env this restore does not own; it is also not a success, and folding it into the
+    # `||` success path would leave the diagnostic that just printed above with nothing
+    # saying it was a verdict.
+    local restore_rc=0
+    ssh_box "test -d $REMOTE/envs/$sl && $REMOTE/bin/env-mode.sh '$sl' '$cport' '$sport' '$db' '' 'keep'" || restore_rc=$?
+    case "$restore_rc" in
+    0) ;;
+    3) echo "      ⚠ $sl is back but serving COMMUNITY entitlements (see above) — its owner must pnpm env:up" ;;
+    *) echo "      ✗ $sl did not come back — pnpm env:up from its worktree" ;;
+    esac
   done
 }
 
@@ -529,8 +619,22 @@ provision_box() {
     sleep 5
   done
 
+  # …with ONE opt-in exception, for the branch that is CHANGING those files. Shipping the
+  # main checkout's copy on every env:up means a scripts/box/** edit is otherwise
+  # UNTESTABLE: env:up overwrites it with dev's copy before running it, so the change can
+  # only ever be reviewed by reading it — and this repo has repeatedly shipped shell
+  # changes that were green locally and inert in reality. Opt in explicitly and say so
+  # loudly; the reason for the default is real, and this is not it being relaxed.
+  local box_src="$MAIN_CHECKOUT"
+  if [ "${ALETHIA_BOX_SCRIPTS_FROM_TREE:-}" = "1" ]; then
+    box_src="$ROOT"
+    echo "⚠ ALETHIA_BOX_SCRIPTS_FROM_TREE=1 — shipping THIS tree's scripts/box/ to the box."
+    echo "  $box_src/scripts/box/"
+    echo "  EVERY env on the box runs them, not just yours, until the next env:up from a"
+    echo "  checkout without this set. Use it to test a scripts/box/** change, nothing else."
+  fi
   rsync -az -e "ssh -o StrictHostKeyChecking=accept-new" \
-    "$MAIN_CHECKOUT/scripts/box/" "root@$ip:$REMOTE/bin/"
+    "$box_src/scripts/box/" "root@$ip:$REMOTE/bin/"
 
   # /opt/alethia/box.env carries the env cap and the domain. cloud-init wrote it once at
   # creation, but user_data is now ignored on the server (changing it FORCES REPLACEMENT
@@ -569,14 +673,67 @@ push_tree() {
   #   apps/console/.env.local   holds the env's OpenFGA store id, likewise box-side.
   # Excluding .env also enforces the other half of the rule: even if a laptop worktree
   # does have one, its live keys can never be pushed to a snapshotted box.
+  #   ee/dist                   is BUILT ON THE BOX and gitignored, so it is never in the
+  #                             source tree and --delete removed it on every push (#3732).
+  #                             The console then resolved COMMUNITY entitlements: a
+  #                             team/active subscription row still got 403 upgrade_required,
+  #                             because the paid `organizations` entitlement was not there to
+  #                             grant. Nothing printed — a `next dev` server re-evaluates
+  #                             lib/enterprise.ts on its next recompile, so the flip happened
+  #                             with no restart and no message, and every enterprise-scoped
+  #                             check against that env was silently vacuous.
+  #                             Excluding it is not the whole fix and is not a licence for a
+  #                             stale dist: build_ee below REBUILDS it after every push, on
+  #                             the box, from the ee/src that was just pushed. The exclusion
+  #                             closes the window in between, during which a recompile would
+  #                             otherwise catch the console with no dist at all. It also means
+  #                             a laptop that happens to have built one can never SEND it.
   rsync -az --delete \
     --exclude=node_modules --exclude=.next --exclude=.git --exclude=.turbo \
     --exclude=test-results --exclude=playwright-report --exclude='*.tfstate*' \
-    --exclude=.terraform \
+    --exclude=.terraform --exclude=/ee/dist \
     --exclude=/.env --exclude='.env.local' --exclude='.env.*.local' \
     --exclude='apps/*/.env.local' \
     -e "ssh -o StrictHostKeyChecking=accept-new" \
     "$ROOT/" "root@$ip:$REMOTE/envs/$slug_/"
+}
+
+# Rebuild @alethia/ee ON THE BOX, from the ee/src that was just pushed (#3732).
+#
+# Why this exists at all: ee/dist is gitignored, so it is only ever a build artefact of the
+# machine the console runs on — and it is the difference between an env that resolves
+# ENTERPRISE entitlements and one that resolves community. Without it loadEnterprise()'s
+# require throws, getAuthPlugins() returns [], /api/auth/organization/* 404s, and
+# lib/auth/scope.ts falls back to `{ orgId: userId }` with COMMUNITY_ENTITLEMENTS.
+#
+# Why after every push and not once: ee/src changes like any other source, and a dist built
+# from an older one is the same silent lie in a different disguise. esbuild bundles a single
+# entry point in about a second.
+#
+# Why on the BOX rather than rsyncing a local build: every other build already happens there,
+# the box's own node_modules are what it links against, and a dist built on a laptop and
+# shipped is exactly the stale artefact this is meant to stop existing.
+#
+# NOT best-effort. A failure here leaves the env resolving community entitlements, which is
+# indistinguishable from a healthy env until something asks for a paid entitlement and reads
+# the refusal carefully — the whole reason #3732 survived as long as it did.
+build_ee() {
+  local slug_
+  slug_="$(slug)"
+  # The install guard is for the callers that push into a slot without bringing it up —
+  # env:check and env:test both push before they install, and `pnpm -F` needs the workspace
+  # linked and esbuild present before it can build anything. A warm env skips it.
+  ssh_box "set -e
+    cd $REMOTE/envs/$slug_
+    [ -f ee/package.json ] || exit 0
+    [ -d node_modules ] || pnpm install --frozen-lockfile >/dev/null
+    pnpm -F @alethia/ee build >/dev/null
+    test -f ee/dist/index.js" || die "could not build @alethia/ee on the box.
+  Until it exists, '$slug_' resolves COMMUNITY entitlements: a team/active subscription row
+  is read correctly and the API still refuses invite-member with 403, because the paid
+  'organizations' entitlement is not there to grant. Every enterprise-scoped check against
+  that env would be vacuous, so this is refused rather than warned about.
+  Look at:  pnpm env:ssh   then   cd $REMOTE/envs/$slug_ && pnpm -F @alethia/ee build"
 }
 
 cmd_push() {
@@ -586,23 +743,60 @@ cmd_push() {
     need fswatch
     echo "→ watching $ROOT — pushing to $slug_ on change (ctrl-c to stop)"
     push_tree
+    build_ee
     # Debounced: --latency batches a burst of saves into one rsync, so a formatter
     # rewriting twenty files does not trigger twenty pushes.
+    #
+    # build_ee runs on every iteration, not just the first: a --watch session is exactly
+    # where an ee/src edit is most likely, and a dist left behind by the first push would
+    # then be stale for the rest of the session.
     fswatch -o -l 1 -e '\.git' -e 'node_modules' -e '\.next' -e '\.turbo' "$ROOT" |
       while read -r _; do
-        push_tree && echo "  pushed $(date +%H:%M:%S)"
+        push_tree && build_ee && echo "  pushed $(date +%H:%M:%S)"
       done
   else
     push_tree
+    build_ee
     echo "✓ pushed to $slug_"
   fi
 }
 
+# A NEW env comes up SEEDED with demo data (apps/console/scripts/seed-demo.ts). It came
+# up empty until 2026-09-01, so every list page rendered its empty state — a UI audit
+# measured an empty product and nobody manually checking a branch env had ever seen a
+# populated page.
+#
+#   --empty   bring it up with NO demo data, and REMEMBER that. On an env this already
+#             seeded it TEARS THE DEMO ORG DOWN — skipping the seeder would leave every
+#             demo row in place while the boot banner announced an empty env.
+#   --seed    (re-)seed an env that is already up, refreshing the demo org
+#   --fresh   drop the database first — which implies a re-seed, unless --empty
+#
+# --empty is not optional polish: the empty state is itself something the console has to
+# render correctly, and it can only be checked against an org that has nothing in it. An
+# env that can only be seeded proves half the contract. scripts/box/env-mode.sh resolves
+# the flag against the mode it recorded last time; seed_decision() there is the matrix,
+# and `bash scripts/box/env-mode.sh --self-test` exercises it.
 cmd_up() {
   need jq
   need rsync
-  local slug_ row cport sport db fresh=""
-  [ "${1:-}" = "--fresh" ] && fresh="fresh"
+  local slug_ row cport sport db fresh="" seed="" a
+  for a in "$@"; do
+    case "$a" in
+    --fresh) fresh="fresh" ;;
+    # Refused rather than last-one-wins: "--empty --seed" has no defensible reading, and
+    # quietly picking one of them decides the audit's answer for it.
+    --empty | --seed)
+      [ -z "$seed" ] || [ "$seed" = "${a#--}" ] ||
+        die "--empty and --seed contradict each other."
+      seed="${a#--}"
+      ;;
+    # An unrecognised flag is REFUSED rather than ignored. A silently dropped --empty
+    # would hand back a seeded env that the caller believes is empty, and every
+    # conclusion drawn from it would be wrong in a way nothing prints.
+    *) die "unknown flag '$a' — env:up takes [--fresh] and one of [--empty|--seed]" ;;
+    esac
+  done
   slug_="$(slug)"
 
   provision_box
@@ -611,7 +805,7 @@ cmd_up() {
   ssh_box "$REMOTE/bin/env-shared.sh"
 
   echo "→ allocating environment '$slug_'"
-  row="$(ssh_box "$REMOTE/bin/env-registry.sh alloc '$slug_' '$(owner)'")" || exit $?
+  row="$(ssh_box "$REMOTE/bin/env-registry.sh alloc '$slug_' '$(env_owner)'")" || exit $?
   cport="$(printf '%s' "$row" | jq -r .consolePort)"
   sport="$(printf '%s' "$row" | jq -r .storagePort)"
   db="$(printf '%s' "$row" | jq -r .database)"
@@ -620,8 +814,39 @@ cmd_up() {
   push_tree
   mint_env "$slug_" "$cport" "$sport" "$db"
 
-  ssh_box "$REMOTE/bin/env-mode.sh '$slug_' '$cport' '$sport' '$db' '$fresh'"
+  # The flag refusal above stops at the LAPTOP, and a POSITIONAL argument has no handshake.
+  # scripts/box/ ships from $MAIN_CHECKOUT (see provision_box), which CLAUDE.md §7 pins to
+  # `dev` but does NOT auto-pull, so it drifts: an older env-mode.sh reads $1..$5, ignores
+  # the 6th, seeds nothing and prints no seed: line — `env:up --seed` then hands back an
+  # empty env with nothing anywhere saying the flag was dropped. Ask the SHIPPED script
+  # whether it understands the argument before promising it.
+  local mode_rc=0
+  ssh_box "grep -q SEED_REQUEST $REMOTE/bin/env-mode.sh" >/dev/null 2>&1 || mode_rc=$?
+  # ONLY rc 1 — grep's own "not found" — means the shipped script is stale. Anything else
+  # (2 = no such file, 255 = ssh transport) is a broken box, and reading a failure as an
+  # ABSENCE is how a guard names the wrong cause: it would send you to pull a checkout
+  # that is already current. Those cases fall through, and the env-mode.sh call below
+  # reports the real fault.
+  if [ "$mode_rc" = 1 ]; then
+    local stale="the box is running an env-mode.sh that predates demo seeding.
+  It ships from $MAIN_CHECKOUT/scripts/box/, which drifts — refresh it and re-run:
+      git -C $MAIN_CHECKOUT pull --ff-only"
+    # A mode you asked for explicitly and silently did not get is a WRONG answer, so
+    # refuse. With no flag the env still comes up, only unseeded: warn and continue.
+    [ -z "$seed" ] || die "--$seed cannot be honoured — $stale"
+    echo "⚠ this env will come up EMPTY — $stale" >&2
+  fi
+
+  # The touch happens WHATEVER the boot decided, and the boot's exit code is carried past it.
+  # env-mode.sh's scope refusal fires AFTER tmux, the tunnel and the registry allocation — the
+  # slot is claimed and a console is running by then — so letting `set -e` skip the touch would
+  # leave the env holding a slot with a stale lastSeen, i.e. first in line for `env:reap` while
+  # its owner is still working on it. lastSeen means "someone is using this", not "this is
+  # healthy".
+  local up_rc=0
+  ssh_box "$REMOTE/bin/env-mode.sh '$slug_' '$cport' '$sport' '$db' '$fresh' '$seed'" || up_rc=$?
   ssh_box "$REMOTE/bin/env-registry.sh touch '$slug_'"
+  [ "$up_rc" = 0 ] || exit "$up_rc"
 }
 
 # Write the env's .env — MINTED ON THE BOX, never copied from yours.
@@ -799,6 +1024,97 @@ cmd_verify() {
   exit 1
 }
 
+# ── WHICH EDITION IS EACH ENV SERVING? ───────────────────────────────────────────
+#
+# `env:status` printed a URL, ports, an owner and a timestamp — everything about whether the
+# process is up, and nothing about whether the product it is serving is the one you think.
+# An env resolving COMMUNITY entitlements boots, serves and looks identical to a good one:
+# a `team`/`active` subscription row is read correctly and the API still refuses
+# invite-member with 403, because the paid `organizations` entitlement is not there to
+# grant. That difference is invisible until something asks for a paid entitlement and reads
+# the refusal carefully, which is how it survived until a Playwright spec did (#3732).
+#
+# So it is printed, for every env, on the command people already run. Measured against the
+# RUNNING console on loopback — not inferred from ee/dist being on disk, because those two
+# came apart: dist was present and correct while the console served community anyway
+# (ALETHIA_EDITION had leaked in from another env through the tmux server's environment).
+#
+# THE SAME PROBE, not a second copy of it: `env-mode.sh --scope` is the one discriminator,
+# and it is the one env:up boots against and env:test gates on. A reimplementation here is
+# how a fix lands in one of three places — which is exactly what happened to the
+# `|| echo 000` capture bug this call site used to carry.
+#
+# WHAT IT COSTS, because this is the cheap "who holds what" command and it now POSTs into
+# every running console: the route writes nothing (better-auth refuses the empty body before
+# any row exists), and the only expensive part — `next dev` compiling /api/auth/* on its
+# first request — is paid ONCE PER CONSOLE, by the boot probe in env-mode.sh, before
+# env:status ever asks. So the budget here is deliberately smaller than the boot's: the route
+# is warm, and a console that is DOWN answers instantly with connection-refused rather than
+# spending the timeout. Two tries at 10s only ever elapse against a console that is alive
+# and busy.
+#
+# ONE ssh for all envs, and every branch prints something: a `?` from an env that did not
+# answer must not read the same as an env that answered "enterprise" — a probe whose failure
+# branch is indistinguishable from its success branch is not a check.
+env_scopes() { # → lines of "<slug> <verdict>"
+  local pairs script s p
+  pairs="$(ssh_box "$REMOTE/bin/env-registry.sh list" 2>/dev/null |
+    jq -r 'to_entries[] | "\(.key) \(.value.consolePort)"' 2>/dev/null)" || return 0
+  [ -n "$pairs" ] || return 0
+
+  # The probe body is built here and the slug/port pairs are appended as CALLS, rather than
+  # piped to it: `bash -s` already owns ssh's stdin, so a loop reading pairs from stdin on the
+  # far side would read the script itself.
+  #
+  # `?-stale-script` is its own answer and not folded into `?-no-answer`: scripts/box/ ships from
+  # the main checkout and drifts (see the SEED_REQUEST handshake in cmd_up), so a box running
+  # an env-mode.sh that predates --scope must say THAT rather than accuse a healthy console of
+  # not answering.
+  #
+  # It is ASKED, not inferred from the failure. A catch-all `*) ?-stale-script` labelled every
+  # unparsable answer a drifted checkout — an absent or non-executable bin/env-mode.sh, a
+  # permission error, a future bug in scope_probe itself — and sent the operator to
+  # `git pull --ff-only` on a checkout that is already current, which is the mistake cmd_up's
+  # own handshake is written against ("reading a failure as an ABSENCE is how a guard names the
+  # wrong cause"). So the shipped script is asked ONCE, in the same round trip, whether it
+  # carries the probe, and the three causes get three labels: `?-stale-script` only when the
+  # file was read and the probe is not in it, `?-no-probe` when it could not be read at all,
+  # and `?-probe-failed-rcN` when the probe IS there and still did not produce a verdict —
+  # the one case that is a defect in this code rather than in the box.
+  script='
+mode="'"$REMOTE"'/bin/env-mode.sh"
+sup=0
+grep -q scope_probe "$mode" >/dev/null 2>&1 || sup=$?
+probe() {
+  s="$1"; p="$2"
+  case "$sup" in
+    0) ;;
+    1) echo "$s ?-stale-script"; return ;;
+    *) echo "$s ?-no-probe"; return ;;
+  esac
+  rc=0
+  v=$("$mode" --scope "$p" "'"$REMOTE"'/envs/$s/.env" 2 10 2>/dev/null) || rc=$?
+  set -- $v
+  case "${1:-}" in
+    enterprise) echo "$s enterprise" ;;
+    community)  echo "$s community-pinned" ;;
+    DEFECT)     echo "$s COMMUNITY" ;;
+    unknown)
+      case "${2:-000}" in
+        000|"") echo "$s ?-no-answer" ;;
+        *)      echo "$s ?-http-${2}" ;;
+      esac ;;
+    *)          echo "$s ?-probe-failed-rc$rc" ;;
+  esac
+}'
+  while read -r s p; do
+    [ -n "$s" ] || continue
+    script="$script
+probe '$s' '$p'"
+  done <<<"$pairs"
+  ssh_box "$script" 2>/dev/null || true
+}
+
 cmd_status() {
   need jq
   local ip domain
@@ -814,10 +1130,36 @@ cmd_status() {
   created="$(hc server describe "$SERVER_NAME" -o json 2>/dev/null | jq -r '.created // empty')"
   echo "box:  up   $ip   $type   since ${created:-?}"
   echo "envs: (cap from infra/sandbox env_cap)"
+  # The scope is asked of every env in one round trip, before the listing renders, and joined
+  # in by slug. An env missing from `scopes` prints `?` rather than nothing: a blank line
+  # there would read as "fine", which is the exact failure this is here to stop.
+  local scopes
+  scopes="$(env_scopes)"
+  # `owner` is now an INSTANCE, not a machine — so this can finally say which one is you.
+  # It is the same string env:reap compares, printed verbatim: a status line that renders a
+  # prettier form of the value the guard tests is a second source of truth waiting to drift.
   ssh_box "$REMOTE/bin/env-registry.sh list" |
-    jq -r --arg d "$domain" 'to_entries[] |
-      "  \(.key)\n    url    https://\(if .key == "dev" then $d else "env" + (((.value.consolePort - 3000) / 100) | tostring) + "-" + $d end)\n    ports  console :\(.value.consolePort)  storage :\(.value.storagePort)\n    owner  \(.value.owner)   last seen \(.value.lastSeen)"'
+    jq -r --arg d "$domain" --arg scopes "$scopes" --arg me "$(env_owner)" '
+      ($scopes | split("\n") | map(select(length > 0) | split(" ") | {key: .[0], value: .[1]}) | from_entries) as $sc |
+      to_entries[] |
+      "  \(.key)\n    url    https://\(if .key == "dev" then $d else "env" + (((.value.consolePort - 3000) / 100) | tostring) + "-" + $d end)\n    ports  console :\(.value.consolePort)  storage :\(.value.storagePort)\n    scope  \($sc[.key] // "?-not-probed")\n    owner  \(.value.owner)\(if .value.owner == $me then "   ← you" else "" end)   last seen \(.value.lastSeen)"'
   cat <<'NOTE'
+
+  Scope: which EDITION that env's console is serving, measured against the running process
+  — not inferred from ee/dist being on disk, because those two have come apart. `enterprise`
+  is what production and CI run and what any org-scoped check must be read against.
+  `COMMUNITY` (capitalised because it is almost never what you wanted) means the console
+  resolved the community entitlement baseline: a team/active subscription row on that env is
+  still refused with 403 upgrade_required, so EVERY enterprise-scoped verification on it is
+  vacuous. Fix it with `pnpm env:up`; `community-pinned` means that env's .env asked for it.
+  A leading `?` is the absence of an answer, never a verdict, and each one names the cause it
+  actually measured: `?-no-answer` (the console did not respond), `?-http-NNN` (it answered,
+  but not usefully), `?-stale-script` (the box's env-mode.sh was read and predates the probe —
+  `git -C <main checkout> pull --ff-only`, then any `pnpm env:up` re-ships it), `?-no-probe`
+  (that script could not be read at all — the box is broken, not the checkout stale) and
+  `?-probe-failed-rcN` (the probe is on the box and exited N without producing a verdict; N is
+  the lead — 126/127 mean the file is not runnable and any `pnpm env:up` re-ships it, anything
+  else is a defect in the probe rather than in the box).
 
   Sign-in: OAuth redirect URIs cannot be wildcarded, so social sign-in and the Stripe
   test webhook only work on the PRIMARY env. Branch envs are email-OTP only — the code
@@ -880,6 +1222,18 @@ cmd_check() {
   local slug_ sizing workers
   slug_="$(slug)"
   push_tree
+  # push_tree's --delete does not remove ee/dist any more, but it is still only ever a build
+  # artefact of this box, and the console suite MEASURES the scope it resolves: without it
+  # lib/auth/scope.ts falls back to `{ orgId: userId }` and org-scoped assertions go vacuous
+  # rather than red. ci.yml builds it before its suites for exactly this reason (#3732).
+  #
+  # NO LIVE SCOPE PROBE HERE, unlike cmd_test, and the asymmetry is the point rather than an
+  # omission: this suite does not drive the running console. vitest resolves @alethia/ee in
+  # its own process, over ssh, out of the tree that was just pushed — so ee/dist on disk IS
+  # the question, and the running console's answer would be about a process no assertion in
+  # this run touches. The tmux server's environment cannot reach it either: ssh_box runs the
+  # suite directly, not through a tmux session.
+  build_ee
   # Measured on the box, not assumed here: another session's env may have landed since this one
   # started, and the right cap then is a different number.
   sizing="$(vitest_workers)"
@@ -892,8 +1246,8 @@ cmd_check() {
   # the flag, and a max below that minimum is rejected. Measured, not reasoned: `--maxWorkers=1`
   # alone fails on this repo's console config; with `--minWorkers=1` the same run passes.
   ssh_box "cd $REMOTE/envs/$slug_ && pnpm install --frozen-lockfile >/dev/null && \
-           pnpm -F console check-types && pnpm -F console lint && \
-           pnpm -F console test -- --maxWorkers=$workers --minWorkers=$workers"
+           pnpm -C apps/console run check-types && pnpm -C apps/console run lint && \
+           pnpm -C apps/console run test -- --maxWorkers=$workers --minWorkers=$workers"
 }
 
 # Browser tests, on the box. This is what the box is FOR — the Mac cannot run them.
@@ -920,6 +1274,47 @@ cmd_test() {
   proj="${1:---project=hero}"
 
   push_tree
+  # THE ONE THIS WAS FOUND ON (#3732). A browser suite is driven against the RUNNING console,
+  # and this push used to delete ee/dist out from under it moments before the run started —
+  # so the audit that asked for a paid entitlement got 403 upgrade_required from an env whose
+  # billing row was correct, and read as a product defect. Build it back before anything is
+  # driven, exactly as ci.yml's e2e jobs do.
+  build_ee
+
+  # …AND THEN ASK THE CONSOLE, because those are two different questions and this is the
+  # command #3632 hit the difference on. `build_ee` proves ee/dist/index.js is on the box;
+  # it does not prove the RUNNING console loaded it, and the whole finding behind this change
+  # is that dist was present and correct while the console served community anyway. env:up
+  # and env:status both measure the process; until now env:test still inferred from the file.
+  #
+  # AFTER build_ee, deliberately: push_tree runs before it and the push is what triggers the
+  # recompile, so the window in which a recompile can land before the new dist is written
+  # closes here — the probe is what observes which side of it this console ended up on.
+  #
+  # REFUSED, not warned. A browser suite against a community console does not fail, it goes
+  # VACUOUS: every paid-entitlement assertion gets a correct 403 upgrade_required and the
+  # report reads as a product defect. `unknown` stays a warning for the same reason the boot
+  # does not refuse on it — an unanswered probe is not a verdict either way.
+  local scope_ verdict_
+  scope_="$(ssh_box "$REMOTE/bin/env-mode.sh --scope '$cport' '$REMOTE/envs/$slug_/.env' 3 30" 2>/dev/null || true)"
+  verdict_="${scope_%% *}"
+  case "$verdict_" in
+  enterprise) ;;
+  community)
+    echo "⚠ '$slug_' is PINNED to the community build (ALETHIA_EDITION=community): every" >&2
+    echo "  enterprise-scoped spec in this run will be vacuous, not passing." >&2
+    ;;
+  DEFECT)
+    die "'$slug_' is serving COMMUNITY entitlements — ${scope_#* * }
+  A team/active subscription row on it is still refused with 403 upgrade_required, so every
+  enterprise-scoped spec would pass vacuously or fail for the wrong reason. Fix the env
+  first:  pnpm env:up"
+    ;;
+  *)
+    echo "⚠ could not measure which edition '$slug_' is serving: ${scope_:-no answer from the box}" >&2
+    echo "  The run continues — read an entitlement failure with that in mind." >&2
+    ;;
+  esac
 
   # `playwright install --with-deps` needs root apt for ~16 shared libs (libnss3, libgbm1,
   # libasound2t64 ...) that cloud-init does not carry. We ssh as root, so this just works;
@@ -989,11 +1384,44 @@ restart_env_console() { # <slug>
   sport="$(printf '%s' "$row" | jq -r .storagePort)"
   db="$(printf '%s' "$row" | jq -r .database)"
 
-  ssh_box "tmux kill-session -t 'alethia-$slug_' 2>/dev/null || true
-           $REMOTE/bin/env-mode.sh '$slug_' '$cport' '$sport' '$db'" >/dev/null 2>&1 || {
+  # `keep` (the 6th argument) for the same reason as restore_live_envs: this bounces a
+  # console, it does not bring an env up. The empty default would resolve to a full
+  # seed:demo on any env with no recorded mode — and here the boot's output is only surfaced
+  # when it fails, so the only visible symptom would be a long pause.
+  # CAPTURED, not discarded. The boot prints a diagnostic that names the fault — a missing
+  # ee/dist, an ALETHIA_EDITION leaked into the tmux server, a seeder that threw — and
+  # `>/dev/null 2>&1` threw all of it away and told the operator only that the console "did
+  # not come back". The bounce itself is still non-fatal (the run it follows has already
+  # happened), but the reason it failed has to survive.
+  #
+  # THE EXIT CODE IS READ, not just tested against 0. env-mode.sh exits 3 for "the console is
+  # up, and it is serving COMMUNITY entitlements" (boot_rc there); making that case non-fatal
+  # is what stops a restart from claiming a running console "did not come back", and reading
+  # the 3 here is what stops the same case from printing a clean `console restarted` line and
+  # discarding the diagnostic the boot just wrote. Those two halves were added together and
+  # cancelled each other out until this branch.
+  local out rc=0
+  out="$(ssh_box "tmux kill-session -t 'alethia-$slug_' 2>/dev/null || true
+           $REMOTE/bin/env-mode.sh '$slug_' '$cport' '$sport' '$db' '' 'keep'" 2>&1)" || rc=$?
+  # 20, and it must stay LARGER than the scope diagnostic env-mode.sh prints: that block is
+  # 16 lines and is followed by the `logs:` line, so a tail shorter than it decapitates the
+  # `✗ … came up in COMMUNITY scope` headline and leaves the operator the supporting detail
+  # with nothing saying what it supports.
+  if [ "$rc" != 0 ]; then
+    printf '%s\n' "$out" | tail -n 20 | sed 's/^/  │ /' >&2
+  fi
+  case "$rc" in
+  0) ;;
+  3)
+    echo "  ⚠ the console is back, but it came up serving COMMUNITY entitlements — every" >&2
+    echo "    enterprise-scoped check against '$slug_' is vacuous until its OWNER runs" >&2
+    echo "    pnpm env:up from that branch's worktree." >&2
+    ;;
+  *)
     echo "  ⚠ console did not come back — pnpm env:up to restore it" >&2
     return 0
-  }
+    ;;
+  esac
   after="$(env_rss_mb "$slug_")"
   if [ -n "$before" ] && [ -n "$after" ]; then
     echo "  console restarted — ${before}MB → ${after}MB"
@@ -1050,34 +1478,142 @@ cmd_runner() {
     ALETHIA_WEB_ORIGIN=http://localhost:$cport bash scripts/dev-runner.sh"
 }
 
+# `env:reap --dry-run` — the decision, and nothing else. Writes nothing, needs no state file, and
+# is the seam this guard was missing: before #3841 the only way to find out what the refusal would
+# do was to reap something. ALETHIA_ENV_REGISTRY_FILE substitutes a fixture registry for the box's,
+# and is honoured ONLY here — it can never influence a real reap (scripts/lib/env-reap-test.sh).
+cmd_reap_dry_run() { # <include-mine 0|1>
+  local reg rc=0
+  if [ -n "${ALETHIA_ENV_REGISTRY_FILE:-}" ]; then
+    echo "→ dry run against fixture registry ${ALETHIA_ENV_REGISTRY_FILE}"
+    reg="$(cat "$ALETHIA_ENV_REGISTRY_FILE")"
+  else
+    box_exists || {
+      echo "box already down — env:reap would do nothing."
+      return 0
+    }
+    reg="$(read_registry)"
+  fi
+  echo "→ I am $(env_owner)"
+  # reap_guard EXITS on a refusal, so the verdict reaches the caller as this script's exit
+  # code (3 = someone else, 4 = my own env, 1 = unreadable). The rc dance is kept anyway: if
+  # it is ever changed to return instead, the success line below must not print regardless.
+  reap_guard "$reg" "$1" || rc=$?
+  [ "$rc" = 0 ] || return "$rc"
+  echo ""
+  echo "✓ dry run: nobody is blocking. A real reap would snapshot and DELETE the box."
+  echo "  (This answers the OWNERSHIP gate only — without --now a real reap also waits for"
+  echo "   the box to be idle ${REAP_AFTER_MIN}m.)"
+}
+
+# Fold an idle report this tree can no longer produce into the one it can.
+#
+# #3922 fixed the PRODUCER: cmd_idle_minutes reports 0 for a registry with no rows instead of
+# 999999, so an empty box is no longer maximally idle by construction. But `scripts/box/` ships
+# to the box at PROVISION time, so a box created before that fix keeps running the old
+# env-registry.sh and keeps answering 999999 until something re-ships it. The boxes the fix
+# misses are therefore exactly the ones it was written for: a long-lived host nobody has run
+# `env:up` against — which is the same thing as "a box that looks idle" (#4009).
+#
+# Normalising on ARRIVAL is what makes it retroactive, because the caller is always current
+# even when the box is not.
+#
+# The answer stays a NUMBER, deliberately, and that is #3922's decision rather than a new one:
+# the comparison below is `-lt`, and a word where a number is expected does not fail the
+# comparison — it makes `[` exit 2, which reads as FALSE and falls through to the DESTROY path.
+# Which is also why the catch-all is here: an ssh that returned nothing, or a truncated answer,
+# used to reach `-lt` as a non-integer and reap the box. Absence is not idleness, so both fold
+# to 0 — the same fail-safe answer, for the same reason, as the two branches in cmd_idle_minutes.
+idle_normalise() { # <idle-report> → a non-negative integer; 0 means "cannot tell"
+  case "$1" in
+  999999) printf '0' ;;
+  '' | *[!0-9]*) printf '0' ;;
+  *) printf '%s' "$1" ;;
+  esac
+}
+
+# What the reaper actually measured, in words. "Idle" is derived SOLELY from env lastSeen
+# times, so on a box with no env rows there is nothing for it to have been idle FOR: the
+# registry reports 0 minutes (fail-safe, scripts/box/env-registry.sh) and printing "most
+# recent activity was 0m ago" about it is a claim nothing took a measurement for. That
+# ambiguity is what turned #3922 into a traceback instead of a glance.
+#
+# <env-count> is best-effort and may be empty; an empty count falls back to the plain
+# phrasing. Nothing may branch on it except a message.
+idle_phrase() { # <idle-minutes> <env-count-or-empty>
+  if [ "${2:-}" = "0" ]; then
+    echo "no env activity is recorded — the registry holds no environments at all"
+  else
+    echo "most recent env activity was ${1}m ago"
+  fi
+}
+
 cmd_reap() {
-  require_main_checkout "env:reap"
   need jq
-  local idle now=""
-  [ "${1:-}" = "--now" ] && now=1
+  local idle envs="" now="" include_mine=0 dry="" a
+  for a in "$@"; do
+    case "$a" in
+    --now) now=1 ;;
+    # "My own other env is running" is also a reason to stop and ask: reaping deletes the box
+    # for everyone, this lane included. A lane that legitimately owns both says so here.
+    --include-mine) include_mine=1 ;;
+    --dry-run) dry=1 ;;
+    # Refused, never ignored — an unrecognised flag that is silently dropped is how
+    # `--include-mine` would look exactly like a reap that was never gated.
+    *) die "unknown flag '$a' — env:reap takes [--now] [--include-mine] [--dry-run]" ;;
+    esac
+  done
+
+  # The dry run mutates nothing, so it does not need the state file and must work from a
+  # worktree — which is where an agent asking "would this be safe?" actually is.
+  if [ -n "$dry" ]; then
+    cmd_reap_dry_run "$include_mine"
+    return $?
+  fi
+
+  require_main_checkout "env:reap"
   box_exists || {
     echo "box already down — nothing billing but the IP (EUR 0.50/mo) and the snapshot."
     return 0
   }
-  refuse_if_others_are_working
-  idle="$(ssh_box "$REMOTE/bin/env-registry.sh idle-minutes")"
+  idle="$(idle_normalise "$(ssh_box "$REMOTE/bin/env-registry.sh idle-minutes")")"
+  # Row count, for the MESSAGES only — it is what lets them say "no activity recorded"
+  # rather than "activity was 0m ago". Deliberately fail-soft: a failure leaves it empty
+  # and the wording falls back. It must never reach a decision, only an echo.
+  envs="$(read_registry | jq -r 'length' 2>/dev/null || true)"
 
   # --now is "I am finished for the day". The idle threshold assumes several people whose
   # runs must not be reaped out from under them; with one user it mostly means the box is
   # NEVER reaped — and an unreaped box is the entire cost problem, because Hetzner bills a
   # server for as long as it EXISTS, running or not.
+  #
+  # This runs BEFORE the ownership guard on purpose. The unattended timer calls reap without
+  # --now every 30 minutes, and its common case is "too early": that has to stay a cheap
+  # message and exit 0, not a refusal. Nothing is destroyed either way — the guard still runs
+  # before any snapshot or destroy below.
   if [ -z "$now" ] && [ "$idle" -lt "$REAP_AFTER_MIN" ]; then
-    echo "not reaping: most recent activity was ${idle}m ago (threshold ${REAP_AFTER_MIN}m)."
+    echo "not reaping: $(idle_phrase "$idle" "$envs") (threshold ${REAP_AFTER_MIN}m)."
     echo "  Finished for the day?  pnpm env:reap --now"
     return 0
   fi
+
+  reap_guard "$(read_registry)" "$include_mine"
+
   if [ -n "$now" ] && [ "$idle" -lt 30 ]; then
-    echo "⚠ --now, but something was active ${idle}m ago. Reaping anyway; a run in flight will die."
+    if [ "$envs" = "0" ]; then
+      # NOT "something was active 0m ago" — nothing was, because nothing was registered.
+      # The warning still fires: an empty registry is exactly the case where whatever is
+      # using the box is invisible to this command (#3922).
+      echo "⚠ --now on a box with no registered environments. The registry cannot see what else"
+      echo "  may be using it — reaping anyway; anything in flight dies with the box."
+    else
+      echo "⚠ --now, but something was active ${idle}m ago. Reaping anyway; a run in flight will die."
+    fi
   fi
 
   # Snapshot storage is billed per GB, so what is on disk when you reap is what you pay
   # to keep. env:test prunes old traces for this reason.
-  echo "→ snapshotting before delete (last activity ${idle}m ago)"
+  echo "→ snapshotting before delete ($(idle_phrase "$idle" "$envs"))"
   hc server create-image --type snapshot \
     --description "alethia-sandbox $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --label "$SNAPSHOT_LABEL" "$SERVER_NAME" ||
@@ -1111,10 +1647,11 @@ cmd_reap() {
 # `pnpm env:timer` — run env:reap on a schedule, so an idle box cannot survive the night.
 #
 # Deliberately runs reap WITHOUT --now: the script already does all the deciding, and it
-# is safe unattended for a reason worth stating. refuse_if_others_are_working only counts
-# envs touched in the last 60 minutes, and REAP_AFTER_MIN is 90 — so by the time a box is
-# reapable, nothing can still be blocking it. The two thresholds cannot deadlock as long
-# as REAP_AFTER_MIN stays above 60, which cmd_timer asserts below rather than trusting.
+# is safe unattended for a reason worth stating. reap_guard only counts envs touched in the
+# last REAP_LIVE_WINDOW_MIN (60) minutes, and REAP_AFTER_MIN is 90 — so by the time a box is
+# reapable, nothing can still be blocking it, MINE INCLUDED: the timer never passes
+# --include-mine and never needs to. The two thresholds cannot deadlock as long as
+# REAP_AFTER_MIN stays above the window, which cmd_timer asserts below rather than trusting.
 #
 # A run that fires too early prints "not reaping" and exits 0. That is the common case and
 # it must stay cheap and silent.
@@ -1156,9 +1693,9 @@ cmd_timer() {
   esac
 
   # A deadlock here is silent and expensive: the box would simply never be reaped.
-  [ "$REAP_AFTER_MIN" -gt 60 ] ||
-    die "REAP_AFTER_MIN is ${REAP_AFTER_MIN}m but refuse_if_others_are_working blocks on
-  activity in the last 60m — the timer could never reap. Raise it above 60."
+  [ "$REAP_AFTER_MIN" -gt "$REAP_LIVE_WINDOW_MIN" ] ||
+    die "REAP_AFTER_MIN is ${REAP_AFTER_MIN}m but reap_guard blocks on activity in the last
+  ${REAP_LIVE_WINDOW_MIN}m — the timer could never reap. Raise it above ${REAP_LIVE_WINDOW_MIN}."
 
   # launchd does NOT give a job your shell's PATH; it gets /usr/bin:/bin:/usr/sbin:/sbin,
   # where none of these live. Resolve them now and embed the real directories, so the
@@ -1247,7 +1784,10 @@ timer)
   cmd_timer "$@"
   ;;
 *)
-  sed -n '5,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # 5,23 is exactly the header block above (it grew a line when env:reap gained its
+  # flags). It read 5,25 once and so printed `set -euo pipefail` and the first line of
+  # the next comment section as if they were usage.
+  sed -n '5,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 1
   ;;
 esac

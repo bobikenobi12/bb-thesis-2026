@@ -135,7 +135,7 @@ export function HetznerConnection({ onSave }: HetznerConnectionProps) {
 						Alethia verifies it immediately against the Hetzner Cloud API and stores it
 						encrypted — it is only ever decrypted on the runner at provision time.
 					</p>
-					<div className="flex items-start gap-2.5 rounded-md border border-border/40 bg-muted/20 p-3 text-[11px] text-muted-foreground">
+					<div className="flex items-start gap-2.5 rounded-md border border-border/40 bg-muted/20 p-3 text-ui-xs text-muted-foreground">
 						<ServerCog className="mt-0.5 size-3.5 shrink-0" />
 						<p className="leading-relaxed">
 							<b className="font-medium text-foreground">Running a self-hosted runner?</b> Set{" "}
@@ -201,7 +201,7 @@ export function HetznerConnection({ onSave }: HetznerConnectionProps) {
 										Object Storage keys{" "}
 										<span className="font-normal text-muted-foreground">(optional)</span>
 									</p>
-									<p className="text-[11px] text-muted-foreground leading-relaxed">
+									<p className="text-ui-xs text-muted-foreground leading-relaxed">
 										To provision Hetzner Object Storage buckets, paste an S3 key pair. Hetzner
 										has no API to mint these — generate them in the Hetzner Console (Object
 										Storage → your bucket location → S3 credentials). Leave blank if you

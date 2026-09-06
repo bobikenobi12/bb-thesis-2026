@@ -700,6 +700,19 @@ if [ "$PREFLIGHT" = "1" ]; then
 	[ "$DRY_RUN" = "1" ] && echo "  (DRY_RUN=1 — listing only, deleting nothing)"
 	orphans="$(list_orphan_envs || true)"
 	if [ -z "$orphans" ]; then
+		# ── REPORT BEFORE THE EARLY RETURN. ────────────────────────────────────────────────────
+		#
+		# This branch is reached BOTH when discovery answered "nothing" and when discovery never
+		# answered at all — an expired session or a throttled API yields an empty orphan list, and
+		# the ✓ line below then prints over an account nobody looked at, exit 0, with the
+		# `probe_warn_unverifiable` call at the bottom of this block never reached. That log is
+		# byte-identical to a genuinely empty account, and scripts/e2e/reaper-result.mjs recorded it
+		# as `clean` — evidence about resources that BILL.
+		#
+		# hcloud-cleanup.sh has always reported here; the other four did not. See
+		# scripts/e2e/lib/sweep-probe.sh's probe_report_discovery header for why the marker is
+		# positive rather than another warning.
+		probe_report_discovery alibaba "the preflight orphan scan in ${REGION}"
 		echo "✓ preflight: no prior-run e2e orphans in ${REGION} — nothing to sweep"
 		exit 0
 	fi
@@ -744,7 +757,7 @@ if [ "$PREFLIGHT" = "1" ]; then
 		# ⚠️ Not "the account is clean" — "every orphan this preflight could SEE is swept". The
 		# cluster inventory can fail too, and preflight is explicitly non-blocking, so the honest
 		# report here is a warning; the always() teardown is what gates.
-		probe_warn_unverifiable alibaba "the preflight orphan scan in ${REGION}"
+		probe_report_discovery alibaba "the preflight orphan scan in ${REGION}"
 		echo "✓ preflight complete — all prior-run e2e orphans in ${REGION} swept"
 	fi
 	exit 0 # preflight never blocks the provisioning run

@@ -60,7 +60,7 @@ import { FilterBar, FilterBarReset } from "@repo/ui/filter-bar";
 import { FilterSearch } from "@repo/ui/filter-search";
 import { formatRelative } from "@repo/format";
 import { MultiCombobox } from "@repo/ui/multi-combobox";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { Skeleton } from "@repo/ui/skeleton";
 import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
@@ -182,14 +182,14 @@ export function AccessManager({ projectId }: { projectId?: string } = {}) {
           const g = row.original;
           return (
             <div className="flex items-center gap-2.5">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-[11px] text-muted-foreground">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-ui-xs text-muted-foreground">
                 {userInitials({ name: g.principalLabel })}
               </span>
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-foreground">
                   {g.principalLabel}
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
                   {g.principalType === "team" ? "Team" : "Member"}
                 </span>
               </div>
@@ -237,7 +237,7 @@ export function AccessManager({ projectId }: { projectId?: string } = {}) {
                   ? "Organization"
                   : resourceLabel(g.resourceType, g.resourceId)}
               </span>
-              <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
                 {SCOPE_LEVEL[g.resourceType] ?? g.resourceType}
               </span>
             </div>
@@ -303,7 +303,7 @@ export function AccessManager({ projectId }: { projectId?: string } = {}) {
       {/* inheritance note */}
       <div className="mb-[18px] flex gap-3 rounded-lg border border-border bg-surface-sunken p-4">
         <Info size={16} className="mt-0.5 shrink-0 text-text-tertiary" />
-        <p className="text-[12.5px] leading-relaxed text-text-secondary">
+        <p className="text-ui-sm leading-relaxed text-text-secondary">
           {projectId ? (
             <>
               <b className="font-medium text-text-primary">
@@ -334,9 +334,8 @@ export function AccessManager({ projectId }: { projectId?: string } = {}) {
         </div>
       ) : (
         <>
-          <PageHeader
+          <PageToolbar
             className="mb-4"
-            title="Access"
             description="Who is granted what, and where it applies."
             count={filtered.length}
             actions={
@@ -561,15 +560,15 @@ function GrantBuilder({
 
   return (
     <div className="mb-4 rounded-lg border border-border bg-surface p-4 shadow-sm">
-      <p className="text-[13px] font-medium text-text-primary">New grant</p>
-      <p className="mb-3 text-[11.5px] text-text-tertiary">
+      <p className="text-ui-md font-medium text-text-primary">New grant</p>
+      <p className="mb-3 text-ui-xs text-text-tertiary">
         Bind a principal to a role or permission on a scope. Inheritance is
         computed from the scope you pick.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <div className="mb-1.5 text-[11.5px] text-text-tertiary">
+          <div className="mb-1.5 text-ui-xs text-text-tertiary">
             Principal
           </div>
           <Combobox
@@ -581,7 +580,7 @@ function GrantBuilder({
         </div>
         <div>
           <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[11.5px] text-text-tertiary">Grant</span>
+            <span className="text-ui-xs text-text-tertiary">Grant</span>
             <Toggle
               value={mode}
               onChange={setMode}
@@ -614,10 +613,10 @@ function GrantBuilder({
           )}
         </div>
         <div>
-          <div className="mb-1.5 text-[11.5px] text-text-tertiary">Scope</div>
+          <div className="mb-1.5 text-ui-xs text-text-tertiary">Scope</div>
           {projectId ? (
             // Fixed to this project — the list is already project-scoped.
-            <div className="flex h-9 items-center rounded-md border border-border bg-surface-sunken px-3 text-[12.5px] text-text-secondary">
+            <div className="flex h-9 items-center rounded-md border border-border bg-surface-sunken px-3 text-ui-sm text-text-secondary">
               {resourceLabel("project", projectId)}
             </div>
           ) : (
@@ -647,7 +646,7 @@ function GrantBuilder({
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="text-[11.5px] text-text-tertiary">Effect</span>
+        <span className="text-ui-xs text-text-tertiary">Effect</span>
         <Toggle
           value={effect}
           onChange={setEffect}
@@ -661,7 +660,7 @@ function GrantBuilder({
       {preview && (
         <div className="mt-3 flex items-start gap-2 rounded-md border border-border bg-surface-sunken px-3 py-2.5">
           <Info size={13} className="mt-0.5 shrink-0 text-text-tertiary" />
-          <span className="text-[12px] text-text-secondary">
+          <span className="text-ui-sm text-text-secondary">
             <b className="font-medium text-text-primary">{preview.pName}</b>{" "}
             will {effect}{" "}
             <b className="font-medium text-text-primary">{preview.wName}</b> on{" "}
@@ -705,7 +704,7 @@ function Toggle<T extends string>({
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "rounded-[3px] px-2 py-0.5 text-[11px] font-medium transition-colors",
+            "rounded-[3px] px-2 py-0.5 text-ui-xs font-medium transition-colors",
             o.value === value
               ? "bg-surface text-text-primary shadow-sm"
               : "text-text-tertiary hover:text-text-secondary",

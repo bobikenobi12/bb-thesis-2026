@@ -445,17 +445,17 @@ func TestFetchAndPutFabricTalosconfig(t *testing.T) {
 // gate: no waiver / no controls ⇒ nil (the gate stays fail-closed), otherwise the recorded
 // controls, reason, author and RFC3339 expiry.
 func TestBuildCompatOverride(t *testing.T) {
-	if buildCompatOverride(nil) != nil {
+	if got, _ := buildCompatOverride(nil); got != nil {
 		t.Error("a nil payload must yield no override")
 	}
-	if buildCompatOverride(map[string]any{"reason": "x"}) != nil {
+	if got, _ := buildCompatOverride(map[string]any{"reason": "x"}); got != nil {
 		t.Error("a payload with no controls must yield no override")
 	}
-	if buildCompatOverride(map[string]any{"controls": []any{"", 7}}) != nil {
+	if got, _ := buildCompatOverride(map[string]any{"controls": []any{"", 7}}); got != nil {
 		t.Error("a payload whose controls coerce to nothing must yield no override")
 	}
 
-	ov := buildCompatOverride(map[string]any{
+	ov, _ := buildCompatOverride(map[string]any{
 		"controls": []any{"COMPAT-COMPONENT-ARGOCD", "COMPAT-K8S"},
 		"reason":   "vendor lag",
 		"by":       "secops@acme",
@@ -475,7 +475,7 @@ func TestBuildCompatOverride(t *testing.T) {
 		t.Errorf("expiry = %v, want %v", ov.Expiry, want)
 	}
 
-	single := buildCompatOverride(map[string]any{"controls": "COMPAT-K8S"})
+	single, _ := buildCompatOverride(map[string]any{"controls": "COMPAT-K8S"})
 	if single == nil || len(single.Controls) != 1 {
 		t.Errorf("a single control string must coerce to one control, got %+v", single)
 	}

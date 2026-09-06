@@ -11,14 +11,46 @@ on:
   pull_request:
   push:
     branches: [main]
-  # Merge queue: the heavy real-runner provisioning keystone (job `provision-e2e`)
-  # runs ONLY on merge_group events (see its `if:`), so a kind boot + provider/image
-  # pulls don't tax every PR. Adding this trigger also lets the required per-PR checks
-  # re-validate the queued merge result — standard merge-queue behavior.
+  # Historical native-queue trigger. `provision-e2e` still selects it, but Mergify does not emit
+  # `merge_group`, so the T1 job currently has no live trigger (#4173). Keep the dead source visible
+  # until T1's replacement home is decided; the weekly health report now fails loudly on its age.
   merge_group:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC — mutation testing (slow, non-blocking)
+    # Nightly 03:00 UTC — the console UI conformance audit over EVERY route, so a route no PR
+    # happened to touch is still measured.
+    #
+    # ADDING A CRON SIGNS UP MORE THAN THE JOB YOU ADDED IT FOR, in two different ways, and both
+    # are handled here rather than discovered later:
+    #
+    #   · a job that gates on `github.event_name == 'schedule'` now also fires nightly — that is
+    #     `mutation`, which is pinned to its own cron expression below;
+    #   · a job with NO `if:` AT ALL fires on every trigger, so six jobs that ran weekly on the
+    #     Monday cron would have started running nightly against `main` (schedule only fires on the
+    #     default branch): `typescript`, `integration`, `guards`, `go`, `secrets` and
+    #     `addon-charts-render`. Each now carries `if: github.event.schedule != '0 3 * * *'`.
+    #
+    # Two are deliberately NOT excluded, and the reason is not "it was missed":
+    #   · `detect-changes` — `ui-audit` declares `needs: [detect-changes]`, and a job whose `needs`
+    #     skipped is itself skipped, so excluding it would silently cancel the nightly audit;
+    #   · `docs-prose` — it exists to ALWAYS report its status check (see its own comment), and on
+    #     a schedule event every one of its steps is gated off by the `docs` filter, so it costs one
+    #     idle runner rather than a Vale run.
+    - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      # ONLY the ts-coverage determinism probe reads this; every other job ignores it. It is here
+      # because a run-count is the one knob a flap hunt actually needs, and today changing it means
+      # editing a script and opening a PR — which is a poor way to ask "does it show up in 20?".
+      #
+      # MEASURED NEED (#3342): `apps/console/lib/billing` measures 957 or 958 of 1753 on the same
+      # tree, and a 5-run dispatch on 2026-09-01 (run 33497231141) reported it DETERMINISTIC. That
+      # is not evidence the flap is gone — it is evidence it is rarer than 1 in 5, and the only way
+      # to say more is more runs.
+      ts_probe_runs:
+        description: "TS coverage determinism probe: how many runs to compare (default 5)"
+        required: false
+        default: "5"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -107,6 +139,11 @@ jobs:
   typescript:
     name: TypeScript (lint · types · test · docs)
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -252,6 +289,11 @@ jobs:
   integration:
     name: Integration (real Postgres + RLS)
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
     # A throwaway Postgres mirroring the dev stack (compose uses postgres:17-alpine with the
     # same superuser/db). db:migrate then creates the least-priv `alethia_app` role + RLS, so
     # the suite exercises the real SQL query builders and the multi-tenant isolation boundary.
@@ -311,9 +353,9 @@ jobs:
             sleep 1
           done
       - name: Migrate the test database (schema + programmables/RLS + app role)
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
       - name: Integration tests (real SQL query builders + RLS isolation + PDP parity)
-        run: pnpm -F console test:integration
+        run: pnpm -C apps/console run test:integration
 
   e2e-browser:
     name: E2E (browser · Playwright hero path)
@@ -360,6 +402,8 @@ jobs:
       BETTER_AUTH_SECRET: e2e-browser-placeholder-secret
       BETTER_AUTH_URL: http://localhost:3000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # `next start` is production mode, but this hermetic job has no trusted ingress proxy.
+      ALETHIA_AUTH_RATE_LIMIT: "0"
       # Storage placeholders (the S3 client connects lazily; the hero path uploads nothing).
       ALETHIA_STORAGE_ENDPOINT: http://localhost:8333
       ALETHIA_STORAGE_ACCESS_KEY_ID: e2e
@@ -367,7 +411,10 @@ jobs:
       # The Playwright webServer boots `next start` and tees stdout here; the OTP helper reads it.
       DEV_CONSOLE_LOG: /tmp/alethia-e2e-console.log
     steps:
-      - uses: actions/checkout@v7
+      # `id:` so the upload at the bottom can ask whether there is a workspace — the `services:`
+      # block above starts before this step, and its failure skips this one, not that one (#4084).
+      - id: checkout
+        uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
@@ -384,9 +431,9 @@ jobs:
             turbo-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Migrate the test database (schema + programmables/RLS + app role)
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
       # Build @alethia/ee FIRST. Its dist is gitignored and it has no prepare/postinstall
-      # hook, and `pnpm -F console build` calls the console's own script — bypassing turbo,
+      # hook, and `pnpm -C apps/console run build` calls the console's own script — bypassing turbo,
       # so `build.dependsOn: ["^build"]` never fires. Without this, ee/dist/index.js does
       # not exist, getEnterprise()'s tolerant require throws, and lib/auth/scope.ts falls
       # back to `{ userId, orgId: userId }`.
@@ -405,7 +452,7 @@ jobs:
             exit 1
           }
       - name: Build the console (production image the browser drives)
-        run: pnpm -F console build
+        run: pnpm -C apps/console run build
       - name: Install Playwright (Chromium + OS deps)
         run: pnpm -F console exec playwright install --with-deps chromium
       # Guard against a vacuous green: if the hero spec is ever renamed without updating the
@@ -418,13 +465,192 @@ jobs:
           echo "$list" | grep -qE "Total: [1-9][0-9]* test" || { echo "::error::--project=hero matched 0 tests (testMatch drift?)"; exit 1; }
       - name: Run the hero happy-path (Playwright boots `next start` via webServer)
         run: pnpm -F console exec playwright test --project=hero
+      # Gated on the checkout, not on `!cancelled()` alone: a service container that fails to pull
+      # skips every step here, and this one would then report SUCCESS having uploaded nothing (#4084).
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: apps/console/playwright-report/
           retention-days: 7
+
+  ui-audit:
+    name: UI conformance audit (console · non-required)
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    # NON-REQUIRED, DELIBERATELY, and the reason is on the record. This drives every private console
+    # route through the live half of apps/console/docs/ui-conformance/RUBRIC.md (R1-R7, T5-T7) and
+    # it WILL be red until the conformance lanes land — the baseline is captured separately (#3634),
+    # and a suite that becomes a merge gate before anyone has read its findings is how #2417's
+    # 320-test suite nearly went in. It is not in .mergify.yml's merge_conditions and not in the
+    # protect-dev ruleset; scripts/ci/check-required-checks.mjs compares those two, so this job
+    # joining a required check can only ever be a deliberate edit to both.
+    #
+    # WHEN: nightly at 03:00 UTC, and on demand. NOT on every console PR any more (#4173).
+    #
+    # It used to add `needs.detect-changes.outputs.console == 'true'`, so every console PR paid for
+    # a console build, a Chromium install and a Postgres service — 11 minutes median — to produce a
+    # result the job's own comment above promises WILL BE RED until the conformance lanes land. A
+    # non-required check that is expected to fail teaches a reader to skim past it, and it was doing
+    # that at the cost of a runner slot per console PR.
+    #
+    # That cost is not measured in minutes. Measured 2026-09-03 across 500 runs: jobs spend 5,376
+    # minutes WAITING for a runner against 1,802 executing, with a zero-dependency job waiting a
+    # median of 15 minutes. The currency is slots REQUESTED, so removing a job from the per-PR path
+    # gives back more than its own runtime.
+    #
+    # ⚠️ WHAT THIS GIVES UP, stated so it can be reversed knowingly: a console PR no longer gets
+    # per-PR conformance feedback. The nightly still drives every private route and still produces
+    # the `ui-audit` artifact — that artifact is what R5's colour-contrast diagnosis is read from
+    # (#4099). If a conformance lane starts needing per-PR feedback, put it back behind a LABEL
+    # rather than the broad `console` filter, so the routes that want it pay and the rest do not.
+    #
+    # `github.event.schedule` is matched EXACTLY rather than `event_name == 'schedule'`, because
+    # ci.yml also carries a Monday cron for the mutation job and a bare event_name test would
+    # silently sign that job up for a nightly run too.
+    if: >-
+      github.event.schedule == '0 3 * * *'
+      || github.event_name == 'workflow_dispatch'
+    # Same hermetic recipe as the hero job: real Postgres, a production console booted by the
+    # Playwright `webServer`, email-OTP with the code scraped from the teed log. No sandbox box, no
+    # cloud credentials — this costs CI minutes, not an environment slot.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: alethia
+          POSTGRES_PASSWORD: alethia-dev-secret
+          POSTGRES_DB: alethia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alethia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALETHIA_DATABASE_URL: postgres://alethia:alethia-dev-secret@localhost:5432/alethia
+      ALETHIA_APP_DATABASE_URL: postgres://alethia_app:alethia-app-dev-secret@localhost:5432/alethia
+      ALETHIA_APP_DB_PASSWORD: alethia-app-dev-secret
+      BETTER_AUTH_SECRET: e2e-browser-placeholder-secret
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      ALETHIA_STORAGE_ENDPOINT: http://localhost:8333
+      ALETHIA_STORAGE_ACCESS_KEY_ID: e2e
+      ALETHIA_STORAGE_SECRET_ACCESS_KEY: e2e
+      DEV_CONSOLE_LOG: /tmp/alethia-ui-audit-console.log
+      # The audit is a LOAD TEST against its own server, and the limiter it trips is protecting
+      # nothing here — this is a throwaway `next start` on localhost with a throwaway database.
+      # apps/console/lib/config/auth.ts documents ALETHIA_AUTH_RATE_LIMIT=0 as exactly that escape
+      # hatch. Why it is needed: lib/auth/index.ts trusts ONLY `cf-connecting-ip` for the bucket
+      # key (prod is Cloudflare → Caddy → console), that header never arrives on a bare localhost
+      # `next start`, and Better Auth's getIP returns null under NODE_ENV=production — so every
+      # request in the run lands in ONE shared `no-trusted-ip|/get-session` bucket. The global rule
+      # is 60s/100 and an ALLOWED request rewrites `lastRequest`, so the window only resets after
+      # 60s of SILENCE on the key: it is 100 requests for the whole run, not 100 per minute. The
+      # audit does ~270 page loads and every private page mounts `useSession`, so it rate-limits
+      # itself and then reports its own 429s as R6 "failed request" defects on the pages under
+      # test. Scoped to this job's env only — production policy is untouched.
+      ALETHIA_AUTH_RATE_LIMIT: "0"
+    steps:
+      # `id:` so the two `!cancelled()` steps at the bottom of this job can ask whether there is a
+      # WORKSPACE before they run. The `services:` block above starts in `Initialize containers`,
+      # which is step ZERO — it runs BEFORE this checkout — so a failed image pull skips everything
+      # here and leaves the tree empty, while `cancelled()` stays false. See #4084.
+      - id: checkout
+        uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Cache Turbo
+        uses: actions/cache@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - name: Migrate the test database (schema + programmables/RLS + app role)
+        run: pnpm -C apps/console run db:migrate
+      # See the hero job: without ee/dist the console falls back to community scope
+      # (actor.orgId === actor.userId) and every org-scoped surface renders empty — which would
+      # make the whole audit a measurement of the wrong application.
+      - name: Build @alethia/ee (the console resolves EE scope only when its dist exists)
+        run: pnpm -F @alethia/ee build
+      - name: Guard — ee/dist must exist, or the audit measures community scope
+        run: |
+          test -f ee/dist/index.js || {
+            echo "::error::ee/dist/index.js missing — the console would fall back to community scope."
+            exit 1
+          }
+      - name: Build the console (production image the browser drives)
+        run: pnpm -C apps/console run build
+      - name: Install Playwright (Chromium + OS deps)
+        run: pnpm -F console exec playwright install --with-deps chromium
+      # The route manifest IS the audit's denominator. If the seam raises — a moved route group, a
+      # zero-route scan — every route below would be "audited" over nothing, so it is run here on
+      # its own where the failure names itself. NOT piped: a pipe would report the pipe's exit code.
+      - name: Guard — the route manifest resolves
+        run: node scripts/lib/console-routes.mjs --summary
+      - name: Guard — the audit project must match at least one test
+        run: |
+          list=$(pnpm -F console exec playwright test --project=audit --list 2>&1) || { echo "$list"; exit 1; }
+          echo "$list"
+          echo "$list" | grep -qE "Total: [1-9][0-9]* test" || { echo "::error::--project=audit matched 0 tests (testMatch drift?)"; exit 1; }
+      - name: Run the UI conformance audit (Playwright boots `next start` via webServer)
+        run: pnpm -F console exec playwright test --project=audit
+      # THE JOB IS LEGITIMATELY, PERMANENTLY RED — R3, R5 and R6 carry real debt `LIVE_DEBT` owns —
+      # so "did the check go green" answers nothing about any single lane. #3893 is the case that
+      # made it concrete: it removed the topbar overlap, its check was red before and red after, and
+      # the only way to see that it had worked was to break the run down by predicate BY HAND
+      # (`R4 7 → 0, nothing else moved`). Nobody does that per lane, so an unreadable check gets
+      # ignored — and an ignored check is one nobody notices going MORE red.
+      #
+      # This prints the per-predicate table to the run summary. It is a rendering of numbers that
+      # already exist, not a new measurement, and it is NOT a step toward making the job required:
+      # it cannot be while it is honestly red, and forcing it green by suppressing the debt is the
+      # failure this wave exists to prevent.
+      #
+      # `!cancelled()` and NOT `success()`: the summary is worth most when the audit FAILED, which
+      # is nearly always. It cannot turn a broken run into good news, and there are TWO ways a run
+      # can be broken, which is worth stating separately because the first version of this comment
+      # claimed only the first and read as though it covered both:
+      #
+      #   - a truncated ARTIFACT — a missing or empty `records` array, or no sections. It raises.
+      #   - a withheld MEASUREMENT — `record()` rewrites every verdict for a withheld predicate to
+      #     `NOT MEASURED`, so the array is FULL and only the verdicts changed. That is the shape
+      #     this audit actually produces when a positive control breaks, and counting only FAIL
+      #     scored it as zero: `R4 7 → 0`, a broken run wearing the exact shape of a fixed lane.
+      #     A withheld predicate now carries a floor and no delta, and a section that is withheld
+      #     end to end raises like the empty one it is.
+      #
+      # …and NOT `!cancelled()` alone (#4084). On run 33710964528 the postgres service failed to
+      # pull, `Initialize containers` went red, all thirteen real steps were SKIPPED — and this one
+      # ran anyway, against an empty workspace, so the last line of the job read
+      # `Cannot find module … apps/console/scripts/audit-report.mjs` for a file that is present on
+      # dev at 173450 bytes. The job's own log accused the console of a missing script. Conjoining
+      # the checkout's outcome puts `Initialize containers` back as the last thing that failed.
+      - name: Per-predicate summary of the audit, against the recorded baseline
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: |
+          node apps/console/scripts/audit-report.mjs \
+            --step-summary=apps/console >> "$GITHUB_STEP_SUMMARY"
+      # Same conjunct, milder symptom: on that run this step reported SUCCESS having uploaded
+      # nothing, which is the harder half to notice.
+      - name: Upload the audit report
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-audit
+          path: |
+            apps/console/playwright-report/
+            apps/console/test-results/ui-audit*.json
+          retention-days: 14
 
   e2e-elench-ai:
     name: E2E (browser · Elench AI journeys · scripted model)
@@ -465,6 +691,8 @@ jobs:
       BETTER_AUTH_SECRET: not-a-secret-e2e-placeholder
       BETTER_AUTH_URL: http://localhost:3000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # `next start` is production mode, but this hermetic job has no trusted ingress proxy.
+      ALETHIA_AUTH_RATE_LIMIT: "0"
       ALETHIA_STORAGE_ENDPOINT: http://localhost:8333
       ALETHIA_STORAGE_ACCESS_KEY_ID: e2e
       ALETHIA_STORAGE_SECRET_ACCESS_KEY: e2e
@@ -473,7 +701,10 @@ jobs:
       # off by default and only the literal "1" engages it).
       ALETHIA_AI_MOCK: "1"
     steps:
-      - uses: actions/checkout@v7
+      # `id:` so the upload at the bottom can ask whether there is a workspace — the `services:`
+      # block above starts before this step, and its failure skips this one, not that one (#4084).
+      - id: checkout
+        uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
@@ -490,9 +721,9 @@ jobs:
             turbo-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Migrate the test database (schema + programmables/RLS + app role)
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
       # Build @alethia/ee FIRST. Its dist is gitignored and it has no prepare/postinstall
-      # hook, and `pnpm -F console build` calls the console's own script — bypassing turbo,
+      # hook, and `pnpm -C apps/console run build` calls the console's own script — bypassing turbo,
       # so `build.dependsOn: ["^build"]` never fires. Without this, ee/dist/index.js does
       # not exist, getEnterprise()'s tolerant require throws, and lib/auth/scope.ts falls
       # back to `{ userId, orgId: userId }`.
@@ -511,7 +742,7 @@ jobs:
             exit 1
           }
       - name: Build the console (production image the browser drives)
-        run: pnpm -F console build
+        run: pnpm -C apps/console run build
       - name: Install Playwright (Chromium + OS deps)
         run: pnpm -F console exec playwright install --with-deps chromium
       # Guard against a vacuous green (renamed spec → testMatch drift → 0 tests → exit 0).
@@ -522,8 +753,10 @@ jobs:
           echo "$list" | grep -qE "Total: [1-9][0-9]* test" || { echo "::error::--project=elench-ai matched 0 tests (testMatch drift?)"; exit 1; }
       - name: Run the Elench AI journeys (scripted model, real pipeline)
         run: pnpm -F console exec playwright test --project=elench-ai
+      # Gated on the checkout, not on `!cancelled()` alone: a service container that fails to pull
+      # skips every step here, and this one would then report SUCCESS having uploaded nothing (#4084).
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-elench-ai
@@ -626,6 +859,20 @@ jobs:
   guards:
     name: Authz / open-core guards
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
+    # `issues: read` for check-exclusion-issues.mjs, the one network step in an otherwise hermetic
+    # job. The workflow-level `permissions: contents: read` makes every unlisted scope NONE, so
+    # without this `gh issue view` fails, the check reports "could not read the state" and — being
+    # continue-on-error — becomes permanent background noise in which a genuinely CLOSED tracker
+    # renders identically to the guard being broken. Every other workflow here that touches the
+    # issues API declares it explicitly (programme.yml, workflow-health.yml, catalog-drift.yml, …).
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -639,7 +886,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Open-core boundary (core must not import ee/)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:ee-boundary
+        run: pnpm -C apps/console run check:ee-boundary
       - name: Repository-wide open-core boundary and community image contract
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm check:open-core
@@ -669,6 +916,151 @@ jobs:
       - name: ...and that check is not silently blind
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/check-shared-surface.mjs --self-test
+      # The allowlist's `baseline:` and `debt:` are entry counts over its own rows, and the file is
+      # shared by every conformance lane of #3613. Typed by hand they had two failure shapes: two
+      # lanes writing DIFFERENT values conflict and the resolution is arithmetic (recount, then
+      # probe N±1 to prove the number is unique), and two lanes writing the SAME value — ten rows
+      # removed here, ten different rows removed there — merge cleanly and wrongly, failing on `dev`
+      # and blaming whichever PR landed second. Derived, that second shape cannot happen. This runs
+      # the generator and diffs, the same shape as the offer-parity / config-carriage gates below:
+      # the comparison is against the committed FILE, not against a number the script recomputed.
+      - name: Shared-surface ledger counters are derived from the rows, not typed
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm gen:shared-surface
+          git diff --exit-code -- apps/console/shared-surface-allowlist.yaml \
+            || { echo "::error::apps/console/shared-surface-allowlist.yaml's ledger counters are stale — run 'pnpm gen:shared-surface' and commit."; exit 1; }
+      # The connector catalog's `icon_url`s. Eleven of the eighteen icon slugs it named had no file
+      # behind them (#3802): the generator emitted every one verbatim into the TS registry AND
+      # persisted it into `connectors.icon_url`, so the console asked for an asset that 404s on
+      # every render of every connector surface and recovered into the monogram fallback — silently,
+      # which is why it survived. Nothing ran this generator in CI either, so a stale
+      # registry.generated.ts was equally invisible. Both halves are closed here: the run REFUSES a
+      # dangling path, and the diff proves the committed output is what the manifest produces.
+      - name: Every connector icon resolves, and the generated registry + seed are current
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        # `node …` and not `pnpm -C apps/console run gen:connectors`, deliberately: the generator resolves
+        # every path from its own module URL, so the direct call is identical, and it cannot inherit
+        # whatever a package-manager wrapper decides to do with a non-zero exit code.
+        run: |
+          node apps/console/scripts/gen-connectors.mjs
+          git diff --exit-code -- apps/console/lib/connectors/registry.generated.ts apps/console/lib/db/seed/connectors.generated.sql \
+            || { echo "::error::apps/console/lib/connectors/registry.generated.ts or lib/db/seed/connectors.generated.sql is stale — run 'pnpm -C apps/console run gen:connectors' and commit."; exit 1; }
+      - name: ...and that gate is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node apps/console/scripts/gen-connectors.mjs --self-test
+      # scripts/lib/console-routes.mjs is the ONE definition of "the console's private route set" —
+      # the denominator of every score the console-UI conformance wave reports. It raises rather
+      # than returning [] on a renamed route group, an unreadable directory, two pages on one URL
+      # and two spellings of one boundary, so running it over the real tree IS the check: a route
+      # list nothing resolves is a clean bill of health over zero files.
+      - name: The console's private route manifest still resolves
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:console-routes
+      - name: ...and that manifest is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/lib/console-routes.mjs --self-test
+      # RUBRIC.md's S1–S4 and T1–T4 scored over that same manifest, against the shrink-only
+      # baseline in apps/console/route-states-baseline.yaml. It lands red-by-record rather than
+      # red: today's tree HAS 45 failing route-predicate pairs, every one of them written into the
+      # baseline, so the step is green until a route regresses or a recorded failure is fixed
+      # without deleting its line. Nothing invoked this file between #3690 and here, which is the
+      # failure mode it exists to catch — a baseline nothing re-runs goes stale on `dev` where the
+      # regression cannot be attributed to the PR that caused it. Do NOT pipe this into
+      # `tail`/`head`: the script's own header says so, because a pipe reports the exit code of
+      # the LAST command in it.
+      #
+      # IT IS REQUIRED FROM THE MOMENT IT LANDED, AND THERE IS NO SOAK. #3781's body proposed
+      # promoting it "once it has ridden a few PRs", but this job is `Authz / open-core guards`,
+      # which `infra/github/variables.tf` lists as a required status check on `protect-dev` and
+      # `.mergify.yml` requires by name — and the step carries no `continue-on-error`, so it has
+      # blocked merges since it merged. The soak was never a state this step could be in.
+      #
+      # Left required deliberately rather than made real with `continue-on-error: true`: a gate
+      # that reports green while finding something is the defect class this repo has shipped most
+      # often, and this one is deterministic, sub-second, and green on `dev`. So the churn the
+      # #3781 body identified is a CONTRACT, not a risk to measure: a PR that adds or renames a
+      # private console route updates apps/console/route-states-baseline.yaml in the same commit.
+      - name: Route states (RUBRIC.md S1-S4, T1-T4) have not regressed against the baseline
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:route-states
+      - name: ...and that check is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-route-states.mjs --self-test
+      # RUBRIC.md's family F — the console filter standard — scored over the console's fifteen
+      # filter SURFACES (a `createFilterStore` call site, not a store module: one file holds
+      # seven). Before #3796 nothing in the tree measured any of F1-F7 and the scoreboard rendered
+      # the whole column `—`, which is the failure this wave exists to close: a report whose
+      # "nothing found" branch is indistinguishable from "nothing measured".
+      #
+      # WHAT THIS STEP FAILS ON is narrower than it looks, deliberately. The per-surface F1-F6
+      # verdicts are SCORED, not gated, here — they reach `apps/console/ui-conformance-baseline.json`
+      # through the audit-report step below, which CI diffs against the tree, so a conformance
+      # regression reds there naming the route that moved. What this one fails on is a BROKEN
+      # SUBJECT SET: no surfaces, a store nobody reads, an unreadable console root, or a
+      # facet-bearing server builder that `apps/console/tests/lib/queries/filter-standard-facets.test.ts`
+      # neither drives nor declares. F7 is a behaviour (RUBRIC.md's "Family F" says so, with the reason),
+      # so the only thing a static file can honestly say about it is whether the instrument still
+      # covers its subject — and that is checked in BOTH directions, here and from the test.
+      #
+      # Do NOT pipe it into `tail`/`head`: a pipe reports the exit code of the LAST command in it.
+      - name: The console filter standard (RUBRIC.md F1-F7) still has an instrument over its whole subject
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:filter-standard
+      - name: ...and that check is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-filter-standard.mjs --self-test
+      # The console's published conformance score. #3618 landed apps/console/scripts/audit-report.mjs
+      # and the two artifacts it owns — apps/console/docs/ui-conformance/scoreboard.md and
+      # apps/console/ui-conformance-baseline.json — with the two-mode contract PROGRAMME.md uses:
+      # `--write` regenerates, a bare invocation checks them against the tree and exits 2 naming the
+      # command that fixes it. Nothing invoked either mode, so the numbers could go stale on `dev`
+      # the moment any conformance lane of #3613 landed — and a scoreboard nobody re-runs is exactly
+      # the defect this wave exists to kill: a guard that reports green by never running. Measured
+      # rather than predicted: this generator, run against #3809's type-scale tree, reds with both
+      # artifacts STALE. It shells out to scripts/check-shared-surface.mjs in a child process and
+      # reads only committed files, so it needs the checkout and `node` and nothing else — no build,
+      # no database, no sandbox env — and takes about two seconds. Do NOT pipe either invocation
+      # into `tail`/`head`: a pipe reports the exit code of the LAST command in it.
+      #
+      # `-C apps/console run`, NOT `-F console`, and that is the whole point of this step. MEASURED
+      # on this branch's first CI run, before #3618's generator existed on `dev`: `pnpm -F console
+      # audit:report` printed `None of the selected packages has a "audit:report" script` and EXITED
+      # 0. Both steps concluded `success` having run nothing — a wiring step whose own failure mode
+      # is the defect it was added to prevent. `pnpm -C apps/console run` fails that case loudly
+      # (`ERR_PNPM_NO_SCRIPT`, exit 1) while still going through the package.json alias the error
+      # message tells you to run, so a renamed or deleted script reds here instead of going quiet.
+      - name: The console UI conformance scoreboard is in sync with the tree
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm -C apps/console run audit:report
+      - name: ...and that generator is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm -C apps/console run audit:report --self-test
+      # packages/brand/src/ramp-srgb.ts is a hand-maintained sRGB copy of the OKLCH ramp in
+      # tokens.css, for the three surfaces that cannot read a custom property (email, Stripe
+      # Elements across an iframe, next/og). It fixed three disagreeing transcriptions by
+      # becoming a fourth, and nothing checked it. The CLI's lipgloss ink ramp is generated
+      # FROM that file, so a drift here reaches the terminal and makes the CLI a mirror of a
+      # copy. The check is arithmetic — every hex is recomputed from the `// oklch(...)`
+      # comment each line carries — so it needs no fifth table to compare against.
+      - name: Brand sRGB ramp is still a transcription of tokens.css
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:ramp-transcription
+      - name: ...and that check is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-ramp-transcription.mjs --self-test
+      # PROGRAMME.md replaced fifteen hand-maintained boards that had begun contradicting each
+      # other in the tree while passing CI, and its §3 says the intent-half grep is "the only
+      # structural reason a 16th hand-maintained board cannot re-emerge inside this very file" —
+      # inside THAT file. Nothing stopped a new one appearing beside it, and nothing in CI read any
+      # of the twelve. A status claim under docs/testing now either derives from the ledger with a
+      # diff gate, or is declared with the reason it is still written by hand.
+      - name: Every status claim under docs/testing is generated or declared
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:one-board
+      - name: ...and that check is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-one-board.mjs --self-test
       - name: Runner self-image is baked, matches its job, and is multi-arch
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm check:runner-self-image
@@ -676,7 +1068,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         env:
           ALETHIA_EDITION: community
-        run: pnpm -F console check-types
+        run: pnpm -C apps/console run check-types
       - name: Installed dependency licence inventory has no unknown metadata
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm compliance:licenses
@@ -697,25 +1089,25 @@ jobs:
           retention-days: 30
       - name: No Supabase
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:no-supabase
+        run: pnpm -C apps/console run check:no-supabase
       - name: No arbitrary var utility shadowed by an unlayered brand device
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm check:var-utility-shadowing
       - name: Authz scope (PDP, not ad-hoc user_id)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:authz-scope
+        run: pnpm -C apps/console run check:authz-scope
       - name: Guard — revalidatePath targets resolve to real routes
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:revalidate-paths
+        run: pnpm -C apps/console run check:revalidate-paths
       - name: Guard — no unauthorized "use server" action files
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:action-boundary
+        run: pnpm -C apps/console run check:action-boundary
       - name: Marketing routes ⇄ reservation ⇄ Caddy in sync
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:marketing-routes
+        run: pnpm -C apps/console run check:marketing-routes
       - name: tsconfig.build.json excludes every un-shipped file (pruned-image type-check)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:tsconfig-build
+        run: pnpm -C apps/console run check:tsconfig-build
       # Dead code in the console (knip). The script first asserts that every `entry` glob in
       # apps/console/knip.json still matches at least one file on disk, and FAILS if one does
       # not: a knip run that resolves no entry points treats nothing as reachable, so it can
@@ -729,32 +1121,32 @@ jobs:
       # delete. Ratchet those two rules to "error" once that backlog is cleared.
       - name: Dead code — unused files, deps and binaries in the console (knip)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:dead-code
+        run: pnpm -C apps/console run check:dead-code
       - name: Drizzle migration history is unforked (linear snapshot chain)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:migrations
+        run: pnpm -C apps/console run check:migrations
       - name: Every canvas offer is buildable on every cloud, or documented (offer parity)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:offer-parity
+        run: pnpm -C apps/console run check:offer-parity
       - name: Offer-parity matrix is in sync with the code
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:offer-parity
+          pnpm -C apps/console run gen:offer-parity
           git diff --exit-code -- docs/testing/offer-parity.md \
-            || { echo "::error::docs/testing/offer-parity.md is stale — run 'pnpm -F console gen:offer-parity' and commit."; exit 1; }
+            || { echo "::error::docs/testing/offer-parity.md is stale — run 'pnpm -C apps/console run gen:offer-parity' and commit."; exit 1; }
       # The sibling of offer parity, on a different unit: offer parity asks whether a CHOICE the
       # canvas presents is buildable, this asks whether the VALUE a user typed reaches the plan. A
       # choice can be perfectly buildable while the number beside it is discarded — #1981 shipped a
       # cache allow-list that saved cleanly, provisioned nothing, and left the cache open.
       - name: Every value the product collects reaches the plan, or is documented (config carriage)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:config-carriage
+        run: pnpm -C apps/console run check:config-carriage
       - name: Config-carriage board is in sync with the code
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:config-carriage
+          pnpm -C apps/console run gen:config-carriage
           git diff --exit-code -- docs/testing/config-carriage.md \
-            || { echo "::error::docs/testing/config-carriage.md is stale — run 'pnpm -F console gen:config-carriage' and commit."; exit 1; }
+            || { echo "::error::docs/testing/config-carriage.md is stale — run 'pnpm -C apps/console run gen:config-carriage' and commit."; exit 1; }
       # The third parity unit, and the one that closes a hole the first two structurally could not
       # see: BOTH of the guards above derive their surface from the canvas — offer parity from the
       # offer list, config carriage from user-settable columns. A capability that exists only as a
@@ -763,25 +1155,25 @@ jobs:
       # templates while three clouds did not, unboarded and unexcluded (#2004).
       - name: Every asymmetric template variable is recorded (template parity)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:template-parity
+        run: pnpm -C apps/console run check:template-parity
       - name: Template-parity board is in sync with the templates
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:template-parity
+          pnpm -C apps/console run gen:template-parity
           git diff --exit-code -- docs/testing/template-parity.md \
-            || { echo "::error::docs/testing/template-parity.md is stale — run 'pnpm -F console gen:template-parity' and commit."; exit 1; }
+            || { echo "::error::docs/testing/template-parity.md is stale — run 'pnpm -C apps/console run gen:template-parity' and commit."; exit 1; }
       - name: Keyless cells agree with the code that implements them
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:keyless-cells
+        run: pnpm -C apps/console run check:keyless-cells
       # The canvas gates the IAM-auth toggle on this table (#1510). Hand-mirroring it would only
       # DETECT drift; generating it makes drift impossible — and the table churns (aws/gcp MySQL
       # opened four lanes after it was first written).
       - name: Keyless cell mirror is in sync with the renderer (keyless.go → keyless-cells.ts)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:keyless-cells
+          pnpm -C apps/console run gen:keyless-cells
           git diff --exit-code -- apps/console/lib/cloud-providers/generated/keyless-cells.ts \
-            || { echo "::error::Generated keyless-cells.ts is stale — run 'pnpm -F console gen:keyless-cells' and commit (source of truth: packages/core/manifests/keyless.go)."; exit 1; }
+            || { echo "::error::Generated keyless-cells.ts is stale — run 'pnpm -C apps/console run gen:keyless-cells' and commit (source of truth: packages/core/manifests/keyless.go)."; exit 1; }
       # The inspector's per-cloud node-disk floors (#1972). Same shape: the floors live in the
       # templates' own `>= N` validations (the literals the Go constants are pinned to by
       # TestNodeDiskFloorsMatchTemplates); the canvas reads a generated mirror of them, so a floor
@@ -789,9 +1181,9 @@ jobs:
       - name: Node-disk floors are in sync with the templates (variables.tf → node-disk.ts)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:node-disk
+          pnpm -C apps/console run gen:node-disk
           git diff --exit-code -- apps/console/lib/cloud-providers/generated/node-disk.ts \
-            || { echo "::error::Generated node-disk.ts is stale — run 'pnpm -F console gen:node-disk' and commit (source of truth: each template's disk-size variable)."; exit 1; }
+            || { echo "::error::Generated node-disk.ts is stale — run 'pnpm -C apps/console run gen:node-disk' and commit (source of truth: each template's disk-size variable)."; exit 1; }
       # The offer surface — which canvas switches a user can actually see, per cloud. Derived by
       # EVALUATING the inspector schema's visibleWhen predicates, because they are closures over
       # (config, provider, capabilities) that no pattern-match can read. Checked in so the answer is
@@ -800,9 +1192,9 @@ jobs:
       - name: Offer surface is in sync with the inspector schema (config-schema.ts → offer-surface.json)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:offer-surface
+          pnpm -C apps/console run gen:offer-surface
           git diff --exit-code -- apps/console/lib/cloud-providers/generated/offer-surface.json \
-            || { echo "::error::Generated offer-surface.json is stale — run 'pnpm -F console gen:offer-surface' and commit (source of truth: apps/console/components/design-project/canvas/inspector/config-schema.ts)."; exit 1; }
+            || { echo "::error::Generated offer-surface.json is stale — run 'pnpm -C apps/console run gen:offer-surface' and commit (source of truth: apps/console/components/design-project/canvas/inspector/config-schema.ts)."; exit 1; }
       # Same shape, same reason (#1621). Which secret stores a cluster can actually read is decided by
       # which store hook each provider registers in Go; the canvas greys out the rest. That answer was
       # a hand-written TS list of two slugs, free to drift from the hooks — and in the direction that
@@ -812,33 +1204,102 @@ jobs:
       - name: Secrets runtime-read mirror is in sync with the hooks (secrets_*.go → secrets-runtime-read.ts)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:secrets-runtime-read
+          pnpm -C apps/console run gen:secrets-runtime-read
           git diff --exit-code -- apps/console/lib/connectors/generated/secrets-runtime-read.ts \
-            || { echo "::error::Generated secrets-runtime-read.ts is stale — run 'pnpm -F console gen:secrets-runtime-read' and commit (source of truth: the saasSecretStore / keylessSecretStore hooks in packages/core/categories/secrets_*.go)."; exit 1; }
+            || { echo "::error::Generated secrets-runtime-read.ts is stale — run 'pnpm -C apps/console run gen:secrets-runtime-read' and commit (source of truth: the saasSecretStore / keylessSecretStore hooks in packages/core/categories/secrets_*.go)."; exit 1; }
       - name: Project templates pin their providers (tofu lock files, no -upgrade)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:tofu-lockfiles
+        run: pnpm -C apps/console run check:tofu-lockfiles
       - name: Shipped version defaults are mutually compatible (compat matrix)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console check:compat
+        run: pnpm -C apps/console run check:compat
       - name: CLI contract fixtures are in sync with the Zod contract
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:cli-fixtures
+          pnpm -C apps/console run gen:cli-fixtures
           git diff --exit-code -- packages/core/api/testdata \
-            || { echo "::error::CLI fixtures are stale — run 'pnpm -F console gen:cli-fixtures' and commit (the Go contract test will then name any struct field to update)."; exit 1; }
+            || { echo "::error::CLI fixtures are stale — run 'pnpm -C apps/console run gen:cli-fixtures' and commit (the Go contract test will then name any struct field to update)."; exit 1; }
       - name: Go enum constants are in sync with the drizzle enums
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:go-enums
+          pnpm -C apps/console run gen:go-enums
           git diff --exit-code -- packages/core/types/enums_gen.go \
-            || { echo "::error::Go enum constants are stale — run 'pnpm -F console gen:go-enums' and commit. The Go build + exhaustive lint then flag any switch/map to update."; exit 1; }
+            || { echo "::error::Go enum constants are stale — run 'pnpm -C apps/console run gen:go-enums' and commit. The Go build + exhaustive lint then flag any switch/map to update."; exit 1; }
+      # The brand's terminal projection. Two failures ride on one command, and they are
+      # different problems with different fixes, so the generator distinguishes them itself:
+      # a NEW TOKEN WITH NO PROJECTION makes it exit 1 without writing anything (its own
+      # ::error:: names the token), and a stale committed file makes the diff below fire. The
+      # first is the one this step exists for — a token added to the console that nobody
+      # decided the CLI's answer for is invisible in every other check, and the two surfaces
+      # drift by omission rather than by disagreement.
+      - name: Every brand token is projected, lossy or refused (tokens.css → brand_gen.go)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm -C apps/console run gen:go-brand
+          git diff --exit-code -- packages/core/types/brand_gen.go \
+            || { echo "::error::The Go brand projection is stale — run 'pnpm -C apps/console run gen:go-brand' and commit (source of truth: packages/brand/src/tokens.css for the values, apps/console/scripts/lib/brand-projection.ts for the exact/lossy/none decisions)."; exit 1; }
+      # The status vocabulary, on the same shape and for the same reason. The CLI decided a status
+      # glyph from nine uppercase words with no case folding while the console decided it from 28
+      # lower-cased keys; they disagreed on seven measured cases, and six pgEnums that shout on the
+      # wire missed every arm of the Go switch. There is one table now and TypeScript owns it.
+      #
+      # As with the brand, TWO failures ride on one command and the generator distinguishes them
+      # itself: a status word that NO pgEnum spells and that apps/console/scripts/lib/status-vocab.ts
+      # does not account for makes it exit 1 without writing (its own ::error:: names the word),
+      # and a stale committed file makes the diff below fire. The first is the one this step is for
+      # — STATUS_TIER has no single owner, so a word added to it is a word the CLI renders with no
+      # idea where it came from, and the two surfaces drift by OMISSION rather than by disagreement.
+      - name: Every status word has a provenance (status-badge.tsx → vocab_gen.go)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm -C apps/console run gen:go-vocab
+          git diff --exit-code -- packages/core/types/vocab_gen.go \
+            || { echo "::error::The Go status vocabulary is stale — run 'pnpm -C apps/console run gen:go-vocab' and commit (source of truth: packages/ui/src/status-badge.tsx for the words and tiers, apps/console/lib/db/schema for their provenance, apps/console/scripts/lib/status-vocab.ts for the terminal projection)."; exit 1; }
+      # The formatter contract both surfaces are held to. @repo/format decides what `47 min`,
+      # `2h 15m` and `$12.50/mo` look like for the console; packages/core/format will be held to
+      # the same table for the CLI, which today renders $12.50 as `$12/mo` (Go's %.0f rounds half
+      # to EVEN) and runner minutes as `0`. The table is GENERATED from the TS implementation, so
+      # it is a mirror of TS rather than a third opinion — and Go cannot write it, so a Go-only
+      # change has no way to make itself right.
+      - name: Formatter conformance table is in sync with @repo/format
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm -C apps/console run gen:format-conformance
+          git diff --exit-code -- packages/format/conformance/format-cases.json \
+            || { echo "::error::The formatter conformance table is stale — run 'pnpm -C apps/console run gen:format-conformance' and commit. NOTE this rewrites an EXPECTATION, not a formatting detail: read BOTH lists the generator prints — the changed CASES (~ = an expectation moved, i = only the inputs did) and the changed ARTIFACT KEYS outside \`cases\`, which is where a change to the whole zeroDecimalCharge SET shows up (#4174; before that it printed nothing at all). packages/core/format is held to all of it."; exit 1; }
+      # zod -> JSON Schema -> Go (#3670). The generator REFUSES to emit when a registered schema
+      # grows a `.refine()` / `.transform()` nobody disposed of, because z.toJSONSchema drops those
+      # silently — so a CLI built on its output would enforce a fraction of the console's rules
+      # while looking like it enforced all of them. The self-test runs FIRST and on its own: it
+      # drives every refusal over a synthetic schema, so a generator that had stopped refusing
+      # anything would still regenerate a byte-identical artifact and pass the diff-gate below.
+      - name: The validation generator still refuses what it is supposed to refuse
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm -C apps/console run gen:go-validation:self-test
+      - name: Shared validation specs are in sync with the console's zod schemas
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm -C apps/console run gen:go-validation
+          git diff --exit-code -- packages/core/validate/spec_gen.go packages/core/validate/testdata \
+            || { echo "::error::The shared validation artifacts are stale — run 'pnpm -C apps/console run gen:go-validation' and commit. NOTE the case table is an EXPECTATION packages/core/validate is held to, not a formatting detail: read the changed-case list the generator prints."; exit 1; }
+      # The name grammar and the slug algorithm, on both surfaces. Two artifacts, one generator:
+      # names_gen.go carries the DATA (the DNS-1123 pattern, the limits, the reserved environment
+      # names) and name-cases.json carries the ALGORITHM contract, produced by running the real
+      # lib/utils/slugify.ts. Go can write neither, so a Go-only change cannot make itself right.
+      # The same run also refuses a SIXTH slugifier: the generator censuses every tracked source
+      # file for slug-shaped expressions and fails on one that is not declared with a reason.
+      - name: Name grammar + slug conformance are in sync (and no second slugifier)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          pnpm -C apps/console run gen:go-names
+          git diff --exit-code -- packages/core/names/names_gen.go packages/core/names/testdata/name-cases.json \
+            || { echo "::error::The generated name grammar or the slug conformance table is stale — run 'pnpm -C apps/console run gen:go-names' and commit. NOTE name-cases.json is an EXPECTATION packages/core/names is held to, not a snapshot: read the changed-case list the generator prints."; exit 1; }
       - name: Compat matrix mirror is in sync with the SSOT (matrix.json → matrix.ts)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:matrix
+          pnpm -C apps/console run gen:matrix
           git diff --exit-code -- apps/console/lib/compat/generated/matrix.ts \
-            || { echo "::error::Compat matrix.ts is stale — run 'pnpm -F console gen:matrix' and commit (source of truth: packages/core/compat/matrix.json)."; exit 1; }
+            || { echo "::error::Compat matrix.ts is stale — run 'pnpm -C apps/console run gen:matrix' and commit (source of truth: packages/core/compat/matrix.json)."; exit 1; }
       # gen-catalog.mjs has claimed "CI re-runs it and fails on drift" since it was written; until
       # #1373 nothing did. It also re-runs the generator's fail-fast shape guards (every engine has a
       # non-empty versions[] containing its default, and the snake + camel surfaces agree), so a
@@ -846,12 +1307,12 @@ jobs:
       - name: Cloud catalog mirror is in sync with the SSOT (catalog.json → catalog.ts)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
-          pnpm -F console gen:catalog
+          pnpm -C apps/console run gen:catalog
           git diff --exit-code -- apps/console/lib/cloud-providers/generated/catalog.ts \
-            || { echo "::error::Generated catalog.ts is stale — run 'pnpm -F console gen:catalog' and commit (source of truth: packages/core/catalog/catalog.json)."; exit 1; }
+            || { echo "::error::Generated catalog.ts is stale — run 'pnpm -C apps/console run gen:catalog' and commit (source of truth: packages/core/catalog/catalog.json)."; exit 1; }
       - name: Catalog drift scout's pure parsers/differ hold (derive:catalog --self-test)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm -F console derive:catalog -- --self-test
+        run: pnpm -C apps/console run derive:catalog -- --self-test
       - name: Tests exercise real source (anti-vacuous-test tripwire)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/check-test-imports.mjs
@@ -895,9 +1356,23 @@ jobs:
       - name: Worktree lease protocol (13 properties, incl. pid-reuse + nested worktrees)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/lib/wt-lease.sh --self-test
-      - name: Worktree lease guard — replays incident #1247
+      - name: 'Worktree lease guard — replays incident #1247'
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/lib/wt-lease-hook-test.sh
+      # The env registry used to key ownership on `user@host`, which every agent, worktree and shell
+      # on one machine shares — so env:reap's "someone else is working on this box" could not fire
+      # locally, and a finished lane deleted the box out from under a live one (#3841). The identity
+      # is now the worktree lease's. The first step pins the identity and the decision; the second
+      # drives `env:reap --dry-run` itself against fixture registries, because the defect was never
+      # in the decision's logic — it was that nothing could reach it.
+      - name: Env ownership identity + reap decision (#3841)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash scripts/lib/env-owner.sh --self-test
+      # Quoted: an unquoted " #3841" is a YAML COMMENT, and the step name would lose the issue
+      # number it exists to carry (the #1247 step above has that bug).
+      - name: "env:reap refusal — replays incident #3841 against env.sh"
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash scripts/lib/env-reap-test.sh
       - name: Worktree landed-detection (squash merges; merged-PR-plus-new-commit is NOT landed)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/lib/wt-landed-test.sh
@@ -911,6 +1386,20 @@ jobs:
       - name: Board claim arbitration (earliest-lease-wins) + PR predicates
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/claim-work.sh --self-test
+      # `blocked-by:` is parsed TWICE — by the coordinator that maintains the `blocked` label and by
+      # the dashboard that renders the reason — and the two are a contract, not two implementations.
+      # They have already drifted once: the dashboard took only the FIRST declaration line while the
+      # coordinator unioned every one, so a lane blocked on two issues rendered `◂ #10` and the
+      # maintainer closing #10 saw it stay blocked with nothing explaining why. Both self-tests run
+      # the SAME fixture file (scripts/lib/board-body-fixtures.json), so a change that moves one
+      # parser off the contract reds here instead of waiting for someone to run them by hand.
+      # Hermetic, like the steps above: no gh, no network, no board state.
+      - name: Board dependency-line parser contract (coordinator half)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash scripts/coordinate.sh --self-test
+      - name: Board dependency-line parser contract (dashboard half)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/board-dashboard.mjs --self-test
       # The Go coverage ratchet becomes a step inside `Go (build · vet · test · lint)`, a REQUIRED
       # check with no path filter — so it gates every PR in the repository and a false failure
       # stops the merge queue for everyone, not just its author. Three properties are pinned here
@@ -983,6 +1472,21 @@ jobs:
       - name: Board decomposition validator (disjoint scopes, acyclic DAG)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/decompose-validate.mjs --self-test
+      # The scope-glob matcher those three surfaces now SHARE (scripts/lib/scope-overlap.mjs): the
+      # step above validates a proposal at seed time, coordinate.sh's report asks the same question
+      # continuously, and board-dashboard.mjs renders it. Until #4115 they were three answers — a
+      # real matcher, a separator-less `startsWith` copy, and, in the report, nothing at all while
+      # COORDINATION.md said otherwise. Two properties are pinned, because each is a way the check
+      # could go quietly wrong:
+      #   · the predicate. Expected values are hand-authored data in board-body-fixtures.json, and
+      #     the suite additionally runs them against two DELIBERATELY BROKEN matchers and fails if
+      #     either passes — a fixture set a broken matcher satisfies discriminates nothing.
+      #   · the three outcomes. A board whose scopes could not be READ must never render as a clean
+      #     one; the suite asserts the ✓ marker appears only for a verdict that earned it.
+      # Hermetic, like the steps above: no gh, no network, no board state.
+      - name: Board scope-overlap matcher (one predicate · three outcomes · mutation controls)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/lib/scope-overlap.mjs --self-test
       # The CLA gate runs from `pull_request_target` — a privileged token, and comment text written
       # by whoever opened the pull request. It is also DORMANT until `pnpm legal:activate-ip` writes
       # cla/ACTIVE, so nothing exercises it until the day it starts gating every external
@@ -1010,6 +1514,44 @@ jobs:
       - name: Nightly rollup derivation (a red leg is never "not enabled")
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/e2e/nightly-rollup.sh --self-test
+      # An e2e exclusion's tracking issue must still be OPEN — the `Issue` field's own docstring in
+      # test/e2e/addon_exclusions.go says a closed one "defeats the whole point of the field". Only
+      # its SHAPE (`^#\d+$`) was enforced, by a pure test that cannot ask GitHub, and the contract
+      # was already broken on dev: the sole entry cited #2717, closed 2026-08-29 (#3524).
+      #
+      # The guard now has THREE modes, not two, after the maintainer's ruling on #3591:
+      # test/e2e/addon_exclusions.go must be OPEN; a CLIGap row in test/e2e/t2_cli_demo.go must be
+      # OPEN too (our own debt has to be able to close); a CloudManual row there need only be FILED
+      # (a cloud ceiling does not lift because its issue did — all four are legitimately closed).
+      #
+      # THREE steps, because they answer different questions and only one needs the network. The
+      # self-test pins the scan and the verdict — including that an UNREADABLE state is an error and
+      # never "assume open" — and runs even where the live check cannot. It also carries the ONLY
+      # proof that the CLIGap arm discriminates: the live table has zero CLIGap rows, so it mutates
+      # the shipped source into one citing a closed issue and asserts the arm reds.
+      - name: Exclusion tracking-issue guard self-test (scan + verdict + the CLIGap arm, no network)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-exclusion-issues.mjs --self-test
+      # …and the same scans against the REAL files, which are also pure. It BLOCKS, because the
+      # tripwires it carries — "found NO Issue fields", a field in a shape the scan cannot read, a
+      # row whose Issue cannot be attributed to a verdict, and a verdict name this guard holds a
+      # contract over that the file no longer declares — are the ones whose own message says "a
+      # guard that silently checks nothing is worse than no guard". Reachable only from the network
+      # step below, they could never red the build: a regex that stopped matching produced an
+      # annotation on a green job and nothing else.
+      - name: Every exclusion and demo-table tracking issue is READABLE (no network)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/check-exclusion-issues.mjs --scan-only
+      # …and the live question. `continue-on-error` DELIBERATELY: an issue closing is a state change
+      # in GitHub, not in the diff, so this can go red on a PR that touched nothing — and a guard
+      # that blocks unrelated work is a guard people route around. It annotates; the self-test above
+      # is the blocking half. Revisit if it turns out to be ignored rather than acted on.
+      - name: Every exclusion, and every CLIGap, still names an OPEN issue
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-exclusion-issues.mjs
       # The row the rollup appends must name the commit the RUN executed, not the commit the rollup
       # job happens to be sitting on. Those are different jobs, so any merge between them separates
       # the two — and seven ledger rows already disagree with their own bundle, in BOTH directions,
@@ -1078,6 +1620,9 @@ jobs:
       - name: Sweeper probe contract (an API that did not answer is not an empty account)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/e2e/lib/sweep-probe.sh --self-test
+      - name: Orphan reaper result contract is secret-free and fail-closed (#2465)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/e2e/reaper-result.mjs --self-test
       - name: GCP sweeper four-state verification
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: bash scripts/e2e/gcp-cleanup.sh --self-test
@@ -1094,6 +1639,15 @@ jobs:
       - name: Workflow health classifier (skipped is not a failure)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/ci/workflow-health.mjs --self-test
+      # How much CI this repo ASKS FOR, and how long it waits to get it (#4173). The load-bearing
+      # part is which jobs count as "waiting": a job with `needs:` is created when its DEPENDENCY
+      # finishes, so it starts at once and its ~0 wait is not evidence about runner availability.
+      # Two earlier definitions of the metric were dominated by exactly that and reported a healthy
+      # 0.0 min against a measured 15-minute median — both are pinned here as fixtures, along with
+      # the refusals for an empty or untimed sample.
+      - name: CI demand classifier (a dependent job's instant start is not spare capacity)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/ci/ci-demand.mjs --self-test
       # A TIMER must never start an unpriced real apply. The weekly `17 5 * * 0` full-bar cron fanned
       # the 11-kind surface across all five clouds while ALETHIA_COST_CEILING_MONTHLY_USD was wired
       # for aws alone, and bought a standing monthly alibaba CR EE subscription each week (#2340
@@ -1127,6 +1681,26 @@ jobs:
         run: |
           node scripts/check-hetzner-lb-location.mjs --self-test
           node scripts/check-hetzner-lb-location.mjs
+      # The Talos snapshot cache (#3027) is a coupling across four files in three languages, in an
+      # hcloud account SHARED WITH PROD, and every way it can come apart is silent: the label stops
+      # being stamped (every run rebuilds, 5-15m each, greenly); the `cluster` label comes back (the
+      # sweeper deletes the cache at the end of the run that built it); `count` stops consulting the
+      # lookup (the lookup becomes dead code); or a NEW key dimension reaches the template but not
+      # the pruner, whose --prune-superseded then groups on a key that is no longer the key and
+      # DELETES an image that is not superseded. `tofu validate` evaluates neither `count` nor
+      # `check`, so none of those is visible to anything else in CI. Hermetic - parses one .tf and
+      # two .sh, no cloud.
+      - name: The Talos image cache's label, gate and sweeper skip-list cannot drift apart
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          node scripts/check-hetzner-image-cache.mjs --self-test
+          node scripts/check-hetzner-image-cache.mjs
+      # And the tool that is the ONLY thing allowed to delete a cache entry. Its dangerous modes sit
+      # behind --yes-delete, and the self-test asserts on DELETE-CALL COUNTS rather than exit codes:
+      # a prune that deleted everything unasked exits 0 exactly like one that deleted nothing.
+      - name: hcloud image-cache tool (--yes-delete is what deletes; a failed listing is not "empty")
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash scripts/e2e/hcloud-image-cache.sh --self-test
       # A variable's DEFAULT is a decision, and `infra/.gitignore` used to hide every stack's real
       # inputs — so on any fresh checkout a bare `tofu apply` ran entirely on defaults, with nothing
       # saying so. That is not untidy, it is dangerous in two directions: a `count` gated on an
@@ -1245,6 +1819,20 @@ jobs:
       - name: ...and that check's own parser is not silently blind
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/ci/check-guards-independent.mjs --self-test
+      # The level ABOVE the two checks either side of this one. They ask whether a step is shaped
+      # so Actions will run it, and whether one failure can skip the rest. This asks whether the
+      # command a step names does anything at all: `pnpm -F <pkg> <script>` exits 0 when no
+      # selected package has that script — an EMPTY SELECTION, not an error (#3853). 32 of the
+      # steps in this very job were written that way, `check:ee-boundary`, `check:authz-scope` and
+      # `check:migrations` among them, so renaming any one of those scripts would have left its
+      # gate green having executed nothing, with the PR that did it looking clean. Measured, not
+      # theorised: #3827's two new steps reported `success` having run nothing.
+      - name: Every pnpm script a workflow names exists, and none uses the exit-0 filter form
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm check:pnpm-script-refs
+      - name: ...and that check's own parser is not silently blind
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node scripts/ci/check-pnpm-script-refs.mjs --self-test
       # The classifier both chart-render jobs share, and the retry built on it. It runs the script
       # under `bash -e` — GitHub's default shell — because an earlier version of that retry was 100%
       # INERT in CI for exactly that reason while passing a harness that used plain `bash`.
@@ -1270,6 +1858,17 @@ jobs:
           for f in .claude/hooks/*.sh scripts/env.sh scripts/dev-doctor.sh scripts/box/*.sh; do
             bash -n "$f"
           done
+      # The box scripts' own decision matrices — the seed/empty/restart table and the edition
+      # verdict in env-mode.sh, the port arithmetic in env-registry.sh. They HAD a CI home, in
+      # infra-sandbox.yml, and it is gated on `infra/sandbox/**`: a change to scripts/box/ ran
+      # the parse above and nothing else, so every cell in those matrices was advisory on the
+      # only PRs that could break them. The step above proves the file parses; this one proves
+      # the decisions still hold.
+      - name: Box script self-tests (edition verdict · seed matrix · port allocation)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          bash scripts/box/env-mode.sh --self-test
+          bash scripts/box/env-registry.sh --self-test
       - name: Cloud privilege (OIDC / creds) never reachable from a PR (BYOC invariant 1)
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: node scripts/check-workflow-oidc-isolation.mjs
@@ -1277,6 +1876,11 @@ jobs:
   go:
     name: Go (build · vet · test · lint)
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
     strategy:
       fail-fast: false
       matrix:
@@ -1540,7 +2144,18 @@ jobs:
           printf '%-22s %s\n' ee/dist "$(test -f ee/dist/index.js && echo present || echo ABSENT)"
           node -p "require('./node_modules/@vitest/coverage-v8/package.json').version" 2>/dev/null \
             || echo "coverage-v8 version: resolved per-project"
-      - name: Five runs, compared — then the floors those numbers produce
+      # The count comes from the dispatch input, defaulted in BOTH places: the `||` here covers an
+      # event where `inputs` does not exist at all, and the script's own `${ALETHIA_TS_PROBE_RUNS:-5}`
+      # covers being run by hand.
+      #
+      # An EMPTY value is safe — `${VAR:-5}` substitutes for empty as well as unset, checked rather
+      # than assumed. What is NOT safe is `0`, which survives that default and (on GNU seq) runs the
+      # loop zero times, so the probe would report success having compared nothing. The script now
+      # rejects anything below 2; this comment records why the rejection is there rather than
+      # leaving it to look like fussiness.
+      - name: N runs, compared — then the floors those numbers produce
+        env:
+          ALETHIA_TS_PROBE_RUNS: ${{ inputs.ts_probe_runs || '5' }}
         run: scripts/ci/ts-coverage-probe.sh
       - uses: actions/upload-artifact@v7
         with:
@@ -1596,14 +2211,24 @@ jobs:
 
   provision-e2e:
     name: Provisioning E2E (T1 · real runner → kind)
-    # MERGE-QUEUE ONLY. A real runner PROCESS claims a QUEUED job from a real
-    # Postgres-backed control plane and drives the full RunDeployV2 spine against a
-    # genuine `kind` cluster — kind boot + provider/image pulls are heavy, so this
-    # keystone runs when a PR enters the merge queue, not on every push. The `e2e_t1`
-    # build tag keeps it out of the fast per-PR Go suite; ALETHIA_E2E_T1_REQUIRE=1
-    # turns a missing prerequisite (docker/kind/tofu) into a HARD FAIL, never a green
-    # skip, so the signal can't hollow out. Extends the in-process T0 (which stays in
-    # the `go` job as a compile check).
+    # ⚠️ THIS JOB HAS NOT RUN SINCE 2026-07-21, AND THE COMMENT HERE SAID OTHERWISE FOR SIX WEEKS.
+    #
+    # It used to read "runs when a PR enters the merge queue". `merge_group` fires only under
+    # GitHub's NATIVE merge queue, and `.mergify.yml` replaced that queue on 2026-07-21 — precisely
+    # because this job, being merge_group-only, failed on missing auth env and wedged every queued
+    # PR. Measured 2026-09-03: all 107 merge_group CI runs in the repo are dated 2026-07-18..21,
+    # and the last twelve all FAILED. So the T1 provisioning keystone has had no live trigger at
+    # all, while its own comment asserted a schedule it no longer had.
+    #
+    # It is deliberately merge-queue-only: manual dispatch lacks the real runner/control-plane
+    # prerequisites and would produce a predictable red rather than a useful signal.
+    #
+    # What it does, when it runs: a real runner PROCESS claims a QUEUED job from a real
+    # Postgres-backed control plane and drives the full RunDeployV2 spine against a genuine `kind`
+    # cluster. kind boot + provider/image pulls are heavy, which is why it was never per-push. The
+    # `e2e_t1` build tag keeps it out of the fast per-PR Go suite; ALETHIA_E2E_T1_REQUIRE=1 turns a
+    # missing prerequisite (docker/kind/tofu) into a HARD FAIL, never a green skip, so the signal
+    # cannot hollow out. Extends the in-process T0 (which stays in the `go` job as a compile check).
     if: github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     services:
@@ -1651,12 +2276,13 @@ jobs:
           version: v3.16.4
       - uses: azure/setup-kubectl@v5
       - name: Install kind CLI (independent kubeconfig + cluster-leak cleanup)
+        id: kind
         run: |
           go install sigs.k8s.io/kind@v0.30.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
       - name: Migrate the control-plane database (schema + programmables/RLS + app role)
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
       # B6.1 — the gated-promotion chain is console + DB logic (no cloud, no kind), so it runs here
       # first (fast feedback) against the SAME migrated Postgres: it drives the REAL exported console
       # actions (advancePromotionOnPlan → applyPromotionApproval → finalizeDeployment +
@@ -1672,9 +2298,14 @@ jobs:
       # convergence assertion 8m + build/boot headroom) plus teardown margin.
       - name: T1 — real runner claims from the control plane and provisions kind
         working-directory: test/e2e
-        run: GOWORK=off go test -tags=e2e_t1 ./... -run TestT1RealRunnerKindProvisioning -count=1 -timeout 25m -v
+        run: GOWORK=off go test -tags=e2e_t1 ./... -run TestT1RealRunnerKindProvisioning -count=1 -timeout 30m -v
+      # `always()` is deliberate — a leaked cluster must be swept on a CANCEL too, which is the one
+      # thing `!cancelled()` would not do. What it must not do is run when `kind` was never
+      # installed: this job has `services:`, so a failed image pull reds `Initialize containers`
+      # before checkout and skips every step here, and `kind delete` would then be a
+      # command-not-found swallowed by `|| true` — a green step that swept nothing (#4084).
       - name: Teardown any leaked kind clusters (safety net)
-        if: always()
+        if: always() && steps.kind.outcome == 'success'
         run: kind delete clusters --all || true
 
   go-coverage-badge:
@@ -1790,7 +2421,10 @@ jobs:
     name: Mutation testing (Stryker + Gremlins)
     # The objective "are the tests real" check. Slow — runs WEEKLY + on manual dispatch only,
     # never on PRs. Report-only for now (|| true); ratchet to a hard threshold as scores climb.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Pinned to the MONDAY cron by its expression, not to `event_name == 'schedule'`: ci.yml now
+    # also carries a nightly cron for the UI audit, and the looser test would have quietly turned
+    # this weekly job into a nightly one.
+    if: github.event.schedule == '0 6 * * 1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1806,7 +2440,7 @@ jobs:
           go-version-file: go.work
       - run: pnpm install --frozen-lockfile
       - name: TS mutation (Stryker — lib + actions)
-        run: pnpm -F console mutate || true
+        run: pnpm -C apps/console run mutate || true
       - name: Go mutation (Gremlins — all modules)
         run: |
           go install github.com/go-gremlins/gremlins/cmd/gremlins@latest
@@ -1815,6 +2449,11 @@ jobs:
   secrets:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1844,6 +2483,11 @@ jobs:
   addon-charts-render:
     name: Add-on charts render (helm template · pinned charts)
     runs-on: ubuntu-latest
+    # NOT ON THE UI-AUDIT NIGHTLY. `schedule` fires every job with no `if:` at all, so the
+    # 03:00 cron added for the console UI audit would have signed this one up for a nightly
+    # run it never asked for — the same trap the cron block records for `mutation`, which
+    # only covers jobs that gate on `schedule` in the first place. See ci.yml's `on.schedule`.
+    if: github.event.schedule != '0 3 * * *'
     # Its own job because it needs helm on PATH and fetches real charts — neither belongs in the
     # console's vitest run. It renders the DEFAULT values of every marketplace add-on against its
     # pinned chart and requires exit 0.
@@ -1868,6 +2512,19 @@ jobs:
       # returns the same shape as one that tried three times.
       - name: ...and the fetch-vs-render classifier is not too eager
         run: node apps/console/scripts/check-addon-charts-render.mjs --self-test
+      # ITS OWN STEP, AND THAT IS THE FIX (#3961). "we could not reach the repository" and "the chart
+      # does not render with our values" are different diagnoses with different owners, and until
+      # this they shared one exit code under one name — so a reader could not tell a third party's
+      # downtime from our defect without opening the log, which is how a gate becomes one people
+      # re-run without reading. Split, the checks list answers it: red HERE is somebody else's
+      # uptime, red BELOW is this repo's values.
+      #
+      # It probes every distinct chart repo the generated fixtures name — derived from them, never
+      # a typed list — and scores each against scripts/ci/chart-repo-outages.txt. An outage a human
+      # has recorded there does not red it; a NEW one does, and so does a recorded one that has
+      # RECOVERED, which is what stops the ledger outliving the outage it excuses.
+      - name: Chart repositories are reachable (third-party uptime, not this repo's code)
+        run: node apps/console/scripts/check-addon-charts-render.mjs --reachability
       - name: Every add-on renders with its pinned chart and its own defaults
         run: node apps/console/scripts/check-addon-charts-render.mjs
 

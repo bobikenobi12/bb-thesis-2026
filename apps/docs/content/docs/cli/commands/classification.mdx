@@ -14,7 +14,8 @@ labels, and set or clear them.
 <Callout type="info">
 The CLI is a client of the same Console API — it authors nothing locally. Every subcommand calls
 `/cli/classification/*` with your [CLI token](/cli/authentication) and operates on the **active
-organization** (`alethia org switch`, or `--org <id>` per invocation).
+organization**, which you change with `alethia org switch`. Pass `--org <id>` to scope a single invocation to a different
+organization — it is refused with `403` if you are not a member of it.
 </Callout>
 
 ## The model
@@ -39,7 +40,8 @@ allow, deny, or route. See [Classification](/console/classification#what-it-is-n
 ## Addressing a resource: `<kind> <id>`
 
 `show`, `assign`, and `unassign` all target a resource by its **kind** (a snake-case record type) and
-its **id** (a UUID). For example a project's default environment is `project_environment <uuid>`.
+its **id** (a UUID). Those two are always yours to supply; the **dimension key** and the **value
+slug** are not — omit them at a terminal and you are asked, from the org's own taxonomy. For example a project's default environment is `project_environment <uuid>`.
 The classifiable kinds mirror the console — projects, environments, clusters, cloud identities
 (connectors), runners, members, roles, alert policies, alert channels, support cases. Audit-trail
 records (alert *deliveries*, runner *usage sessions*) are intentionally not classifiable.
@@ -73,20 +75,22 @@ Backing call: `GET /cli/classification/dimensions`.
 Show the values currently assigned to one resource.
 
 ```bash
-alethia classification show <kind> <id>
+alethia classification show project_environment 8f3c1a2b-0000-4000-8000-000000000000
 ```
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<kind>` | Yes | Resource kind, e.g. `project_environment`, `cluster`, `cloud_identity`. |
-| `<id>` | Yes | The resource UUID. |
+{/* fieldspec: alethia classification show */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Resource kind | The record type being labelled, e.g. project_environment | `<kind>` |
+| Resource id | The UUID of the resource whose labels to read | `<id>` |
 
 Columns: **Dimension**, **Value** (both rendered as their human labels). Prints `Not classified.`
 when the resource carries no values. Backing call:
 `GET /cli/classification/assignments?kind=<kind>&id=<id>`.
 
 ```bash
-alethia classification show project_environment 8f3c... -o json
+alethia classification show project_environment 8f3c1a2b-0000-4000-8000-000000000000 -o json
 ```
 
 ## `alethia classification assign`
@@ -94,21 +98,31 @@ alethia classification show project_environment 8f3c... -o json
 Pin a value to a resource.
 
 ```bash
-alethia classification assign <kind> <id> <dimension-key> <value-slug>
+alethia classification assign project_environment 8f3c1a2b-0000-4000-8000-000000000000
+alethia classification assign project_environment 8f3c1a2b-0000-4000-8000-000000000000 environment prod
 ```
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<kind>` | Yes | Resource kind. |
-| `<id>` | Yes | Resource UUID. |
-| `<dimension-key>` | Yes | The dimension's `key` (from `dimensions`). |
-| `<value-slug>` | Yes | The value's slug on that dimension (from `dimensions`). |
+Given only the kind and the id at a terminal, you are asked which dimension — from the ones that
+target that kind — and then which of **that dimension's** allowed values. Neither is a slug you
+have to have read out of `dimensions` first.
+
+Given all four, both slugs are checked against the org's taxonomy before anything is sent, and a
+miss names the real keys or the real values rather than surfacing a 4xx.
+
+{/* fieldspec: alethia classification assign */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Resource kind | The record type being labelled, e.g. project_environment | `<kind>` |
+| Resource id | The UUID of the resource to label | `<id>` |
+| Dimension | Which axis to set, by its key; omit it to choose from the org's taxonomy | `[dimension-key]` |
+| Value | The value slug to pin, from that dimension's allowed values | `[value-slug]` |
 
 For a **single**-valued dimension, assigning a new value **replaces** the current one; for a
 **multi**-valued dimension, values accumulate. On success:
 
 ```
-✓ Assigned environment=prod to project_environment 8f3c...
+✓ Assigned environment=prod to project_environment 8f3c1a2b-0000-4000-8000-000000000000
 ```
 
 Backing call: `POST /cli/classification/assignments` with
@@ -116,9 +130,9 @@ Backing call: `POST /cli/classification/assignments` with
 
 ```bash
 # Label a project's default environment as prod, and tag two owning teams (multi dimension)
-alethia classification assign project_environment 8f3c... environment prod
-alethia classification assign project_environment 8f3c... team platform
-alethia classification assign project_environment 8f3c... team payments
+alethia classification assign project_environment 8f3c1a2b-0000-4000-8000-000000000000 environment prod
+alethia classification assign project_environment 8f3c1a2b-0000-4000-8000-000000000000 team platform
+alethia classification assign project_environment 8f3c1a2b-0000-4000-8000-000000000000 team payments
 ```
 
 ## `alethia classification unassign`
@@ -126,17 +140,27 @@ alethia classification assign project_environment 8f3c... team payments
 Clear a value from a resource (addressed by its **slug**, not the dimension key).
 
 ```bash
-alethia classification unassign <kind> <id> <value-slug>
+alethia classification unassign project_environment 8f3c1a2b-0000-4000-8000-000000000000
+alethia classification unassign project_environment 8f3c1a2b-0000-4000-8000-000000000000 payments --yes
 ```
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<kind>` | Yes | Resource kind. |
-| `<id>` | Yes | Resource UUID. |
-| `<value-slug>` | Yes | The value slug to remove. |
+Clearing a value is destructive — policy that selects on it stops matching the resource — so it
+asks before acting. In a pipeline `--yes` is **required**.
+
+Omit the slug at a terminal and you choose from the values **the resource actually carries** — a
+different source from `assign`'s, deliberately. `assign` chooses from everything that could be true
+of the resource; `unassign` from what currently is, so you cannot clear a value it never had.
+
+{/* fieldspec: alethia classification unassign */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Resource kind | The record type being labelled, e.g. project_environment | `<kind>` |
+| Resource id | The UUID of the resource to clear a value from | `<id>` |
+| Value | The value slug to clear; omit it to choose from what the resource actually carries | `[value-slug]` |
 
 ```
-✓ Cleared payments from project_environment 8f3c...
+✓ Cleared payments from project_environment 8f3c1a2b-0000-4000-8000-000000000000
 ```
 
 Backing call:

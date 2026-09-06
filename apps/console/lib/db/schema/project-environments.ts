@@ -8,6 +8,13 @@
 // `status` carries the per-environment provisioning lifecycle (moved off projects.status).
 // Exactly one row per project is the `is_default` representative used by single-value
 // surfaces (the CLI wire, the project "Env"/status columns, the project-detail header).
+// That is ENFORCED, not merely intended (#4127), and it takes two halves: the partial unique
+// index below gives at-most-one, and `project_environments_one_default_check` in
+// programmables.sql — a DEFERRABLE INITIALLY DEFERRED constraint trigger, because the create
+// and cascade-delete paths are only consistent at COMMIT — gives at-least-one. So a project
+// that HAS environments always has a default, and `find(is_default)` needs no fallback.
+// A project with NO environments is a separate question this pair deliberately leaves open;
+// the readers treat it as its own reported outcome, never as a guess.
 
 import { sql } from "drizzle-orm";
 import {

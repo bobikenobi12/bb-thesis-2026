@@ -114,7 +114,7 @@ export function projectRenderToolPart({
 								<Button
 									type="button"
 									size="sm"
-									className="h-6 px-2 text-[11px]"
+									className="h-6 px-2 text-ui-xs"
 									onClick={() => {
 										applyProposal(proposal);
 										setAccepted((a) => ({ ...a, [proposal.id]: true }));
@@ -193,7 +193,7 @@ export function projectRenderToolPart({
 							<Button
 								variant="outline"
 								size="sm"
-								className="h-6 gap-1.5 rounded-none px-2 text-[11px]"
+								className="h-6 gap-1.5 rounded-none px-2 text-ui-xs"
 								nativeButton={false}
 								render={<Link href={parsed.data.openInCanvasUrl} />}
 							>

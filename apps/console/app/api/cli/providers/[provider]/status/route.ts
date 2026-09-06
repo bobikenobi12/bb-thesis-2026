@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { authorizeUserId } from "@/lib/authz/guard";
 import * as conn from "@/lib/cloud-providers/connections";
-import { errorResponse, resolveCliProvider } from "@/lib/cli/providers";
+import {
+	enforceProviderPermission,
+	errorResponse,
+	resolveCliProvider,
+} from "@/lib/cli/providers";
 import { NextResponse } from "next/server";
 import { cliJson } from "@/lib/cli/respond";
 import { providerStatusWire } from "@/lib/validations/cli-contract";
@@ -13,11 +16,11 @@ export async function GET(
 	req: Request,
 	{ params }: { params: Promise<{ provider: string }> },
 ) {
-	const { userId, scope, provider, errorResponse: authError } =
+	const { scope, provider, errorResponse: authError } =
 		await resolveCliProvider(req, params);
 	if (authError) return authError;
 
-	const forbid = await authorizeUserId(userId, "view", {
+	const forbid = await enforceProviderPermission(scope, "view", {
 		type: "cloud_identity",
 	});
 	if (forbid) return forbid;

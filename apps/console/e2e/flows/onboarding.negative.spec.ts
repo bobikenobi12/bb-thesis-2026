@@ -124,7 +124,7 @@ test.describe("Onboarding negatives — wizard validation", () => {
 test.describe("Onboarding negatives — create-org sheet", () => {
 	test("continuing with a blank team name surfaces a validation error", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
-		await owner.page.getByRole("combobox", { name: /switch organization/i }).click();
+		await owner.page.getByRole("button", { name: /switch organization/i }).click();
 		await owner.page.getByRole("button", { name: /create organization/i }).click();
 		await expect(
 			owner.page.getByRole("heading", { level: 1, name: /create a team/i }),

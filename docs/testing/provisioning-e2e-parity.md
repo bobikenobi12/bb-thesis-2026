@@ -13,129 +13,25 @@ Harness: `.github/workflows/e2e-nightly.yml` (T2 tier) → `test/e2e` (`-tags=e2
 `TestT2RealCloudProvisioning`). Run history: [`demos/proofs/provisioning-e2e-log.md`](../../demos/proofs/provisioning-e2e-log.md).
 Tracking epic: **#1058**.
 
-**How to update:** every run is recorded by `scripts/e2e/provisioning-e2e.sh` (appends the ledger + writes a
-scrubbed proof bundle + files a deduped GitHub issue on failure); the nightly `rollup` job also appends the
-ledger. Flip a matrix cell here when a dimension's verdict changes, and link the run/issue. A cell goes ✅
-**only with a real-apply proof artifact** in the ledger — never on `tofu validate` alone. **Failures are
-recorded, never hidden.**
+**How runs are recorded:** every run goes through `scripts/e2e/provisioning-e2e.sh` (appends the ledger +
+writes a scrubbed proof bundle + files a deduped GitHub issue on failure); the nightly `rollup` job also
+appends the ledger. **Failures are recorded, never hidden.**
 
-Legend: ✅ green (real-apply proof) · 🟡 floor-only (provisions + converges, full-bar dimension not yet run) ·
-⏳ pending · 🚫 blocked (open issue) · — n/a / out of scope. A green-skipped nightly is neither a
-proof nor a ledger row; a later `RETRACTED` ledger row corrects any historical claim without rewriting it.
+There is no matrix here to flip, and the legend that named its glyphs went with it — both are derived in
+`PROGRAMME.md` now. Two rules the ledger enforces are worth keeping in prose, because they are the reason
+the derivation can be trusted: a dimension counts as proven **only with a real-apply proof artifact**, never
+on `tofu validate` alone; and a green-SKIPPED nightly is neither a proof nor a ledger row. A later
+`RETRACTED` ledger row corrects a historical claim without rewriting it.
 
-## Parity matrix (cloud × capability)
+## Parity matrix
 
-| Cloud | Provision + cluster_ready | All kinds (11) | 18 add-ons Healthy+Synced | BYO-IaC | BYO-IaC + services | Day-2 access | Teardown clean | Security-reviewed |
-|-------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **AWS — EKS** | 🚫 [#1714] | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ✅ | ⏳ |
-| **GCP — GKE** | 🚫 [#1716] [#1714] [#1722] | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ✅ | ⏳ |
-| **Azure — AKS** | 🚫 [#1722] | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ✅ | ⏳ |
-| **Hetzner — Talos** | 🚫 [#2058] | ⏳ (7 of 11 — see below) | — | — | — | — | ✅ | — | <!-- floor tracked by the nightly; the KINDS column is fully described in maxconfig.go: 4 tofu + 3 in-cluster (now actually seeded) + 2 ceilings + 2 deferred-debt; teardown ✅ re-verified by hand on the 20260805T064043Z run — account swept to zero -->
-| **Alibaba — ACK** | ⏳ | ⏳ ⚠️ | — | — | — | — | ⏳ | — | <!-- floor tracked by the nightly; 10 of 11 kinds are CarriedByTofu in maxconfig.go and registry is ExcludedByCost (150 USD/month, no pay-as-you-go). ⚠️ = the bar proves 10 of 11 kinds; see the All-kinds column notes -->
-
-Column vehicles (all on the same `TestT2RealCloudProvisioning`, gated by env):
-
-- **Provision + cluster_ready** — base T2: real apply → `cluster_ready` → ArgoCD Healthy+Synced over the
-  *derived* (non-empty) app set. 🟡 = the nightly's cheapest-shape floor is green, but the full-bar
-  dimensions below have not been driven on that cloud.
-
-  **This is the whole of the `floor` dimension, and it is now the whole of what a floor run asserts**
-  (#2356). It used to also run the A0.3 day-2 soak, whose drift check is fatal — so azure run
-  [31486339552](https://github.com/alethialabs-io/alethialabs/actions/runs/31486339552) applied
-  cleanly, reached Ready nodes, verified a receipt sealed to the plan hash, converged every expected
-  Application and tore down, and was recorded a floor **FAIL** on `in_sync=false drifted=9` alone.
-  A 🚫 in this column therefore used to mean either "the provisioning spine is broken" or "the spine
-  is fine and a day-2 assertion above it is not", which call for completely different next actions.
-  The soak now belongs to the `day2` / `full` dimensions, where the ladder already carries it.
-- **All kinds (11)** — `ALETHIA_E2E_MAX_CONFIG=1` → `AssertMaxConfigKindsInState`. Heavy fixture
-  `test/e2e/fixtures/cluster_json.heavy.<cloud>.json`, which now exists for **all five** clouds.
-  Every (kind × cloud) cell in `test/e2e/maxconfig.go` carries one of three explicit verdicts
-  (`MaxConfigCarriage`) — there is no "unmapped" state any more:
-  - **`CarriedByTofu`** — the cloud's IaC creates a resource; a real apply must leave it in the
-    deploy's tofu state.
-  - **`CarriedInCluster`** — genuinely delivered, but not by cloud IaC. Hetzner's database, cache and
-    queue are in-cluster charts (CloudNativePG / Valkey / RabbitMQ, `hetzner-services.ts`), so the
-    proof is the named ArgoCD Application reaching Healthy+Synced, not a state count.
-  - **`CloudCeiling`** — the cloud genuinely does not offer the kind: no cloud service, and no chart
-    in this repo backs it either. **No cell holds this verdict.** Hetzner held the last ones and they
-    closed in order: `registry` (#2431, Harbor), `secret` (#2432, Vault), `topic` (NATS) and `nosql`
-    (#3228, ScyllaDB). Alibaba has none either: all 11 of its kinds are `CarriedByTofu`.
-  - **`DeferredInProduct`** — hidden and rejected today exactly like a ceiling, but for a different
-    reason: a chart this repo already ships backs the kind and only the mapping is missing. That is
-    **debt**, and the cell must name the chart (`MaxConfigCell.Chart`, checked against the generated
-    add-on catalog on every PR). **No cell holds this verdict either** — the `deferred_in_product`
-    ratchet is 0 and must stay there.
-
-  A cloud with no column, a cell with no verdict, or a cloud with no offered kind at all is an
-  **error**, not a skip. Read back on every PR by `maxconfig_verdicts_pure_test.go`.
-
-  The two exclusions are reported in **separate** lists (`MaxConfigStateProof.Excluded` /
-  `.Deferred`), so a run says "2 kinds this cloud cannot do, 2 kinds we have not wired" rather than
-  "4 excluded". They were one shared reason string that read "no chart or cloud service backs it" and
-  then appended "(Vault is a marketplace add-on…)" — a sentence contradicting its own parenthesis,
-  and the mechanism by which two backlog items stopped being counted.
-
-  ✅ **An Alibaba full bar no longer buys a standing monthly subscription.** It used to, and this
-  paragraph used to be a warning nobody could enforce: the `registry` cell was `CarriedByTofu` on
-  `alicloud_cr_ee_repo`, and reaching it forced its parent `alicloud_cr_ee_instance` —
-  `payment_type = "Subscription"`, `period = 1`, the **only** subscription resource in the whole
-  Alibaba module tree, and named per-environment so every run bought its own.
-
-  The price is why this stopped being a warning and became a verdict: **150 USD/month** (Basic,
-  eu-central-1; 1800/year with no term discount; Advanced 617; no tier below Basic), against about a
-  dollar for everything else in the bar. Enterprise Edition has **no pay-as-you-go model at all** —
-  `DescribePricingModule` for `ProductCode=acr` returns five pricing modules under `Subscription` and
-  **zero** under `PayAsYouGo` — so there is no cheaper way to rent it, and the free Personal Edition
-  is not a substitute (one instance per *account*, public preview, no SLA, no immutable tags, and
-  both its provider resources deprecated since v1.276.0 and slated for removal).
-
-  So `alibaba/registry` is now **`ExcludedByCost`** in `test/e2e/maxconfig.go` — a fifth carriage
-  verdict added for exactly this, because all three clauses of `CloudCeiling` ("the cloud genuinely
-  cannot … the canvas hides it … the deploy action rejects it") are false here. Alibaba offers a
-  registry, the canvas shows it, and a paying customer gets one. **The template is unchanged.** What
-  changed is that the max-config fixture no longer asks for a registry on Alibaba, so the harness
-  stops buying one. The grid prints the price beside the exclusion, so the decision can be re-taken
-  rather than inherited.
-
-  Whether teardown releases such an instance is still **unsettled, and deliberately stated as
-  unsettled** — it now affects only the CUSTOMER path and any instance a hand-driven run already
-  left standing, never a nightly
-  (#2333, full reconciliation in
-  [`docs/research/alibaba-cr-ee-subscription-release.md`](../research/alibaba-cr-ee-subscription-release.md)):
-  the pinned provider (1.286.0) *does* call `RefundInstance` with `ImmediatelyRelease = "1"` on
-  delete, while Alibaba's own ACR documentation states Terraform **cannot** release
-  subscription-based Container Registry instances and you must unsubscribe in the console.
-  Documentation cannot close that; a real teardown can. This entry previously asserted the
-  pessimistic reading as fact.
-
-  `verify_swept` in `scripts/e2e/alibaba-cleanup.sh` still discovers CR EE instances scoped to the
-  run's ENV and **fails the sweep** when one survives. It is KEPT, and it is worth more now rather
-  than less: the nightly no longer creates one, so anything it finds came from an older run, a
-  hand-driven bar, or a template change that reintroduced the purchase — all three of which are
-  exactly what you want a sweep to shout about.
-
-  ⚠️ **A Hetzner full bar needs a second credential pair.** `bucket` on Hetzner is real Object
-  Storage behind the `aminueza/minio` provider, which authenticates from `HETZNER_S3_ACCESS_KEY` /
-  `HETZNER_S3_SECRET_KEY` — not `HCLOUD_TOKEN`, and Hetzner has no API to mint them (a human creates
-  them in the console). The hetzner row's credential gate now requires them whenever
-  `ALETHIA_E2E_MAX_CONFIG=1`, so a full-bar run without them fails **before any spend** instead of
-  provisioning a whole cluster and dying at the bucket. Deliberately a hard prerequisite rather than
-  an "unproven bucket" escape: `CarriedByTofu` means a real apply must leave the resource in state,
-  so there is no honest verdict under which the run could report success with `bucket` unproven.
-- **18 add-ons Healthy+Synced** — `ALETHIA_E2E_ALL_ADDONS=1` → `AssertArgoAppsHealthy` over all 18.
-  18, not 19: the count is the catalog SSOT's (`expectedCatalogSize`, `test/e2e/addon_surface.go`,
-  mirroring `ADDON_CATALOG.length`), and cert-manager left the marketplace for the platform rail.
-  On Hetzner a full bar converges four MORE Applications than that — the synthesized in-cluster data
-  services — which is why the number is read from the fixture and never restated as a threshold.
-- **BYO-IaC / BYO-IaC + services** — the A0.6 `ALETHIA_E2E_ARGO_*` + `ALETHIA_E2E_GIT_TOKEN` inputs →
-  `t2_argo_repos.go` (ArgoCD-with-repos + BYO-Helm + service-binding-against-BYO-outputs; pod-pull +
-  managed-resources asserts).
-- **Day-2 access** — a real access path (kubeconfig surface / `PROBE_CLUSTER`) beyond the A0.3 soak (soak
-  = liveness + drift + PVC; runs today, but the surfaced access path is the FULLY-TESTED gap).
-- **Teardown clean** — `provisioner.RunDestroy` + the scope-locked `scripts/e2e/<cloud>-cleanup.sh`
-  `verify_swept` to zero. A leak (`destroyed=false` / orphan) is 🚫, never hidden.
-- **Security-reviewed** — `alethia-security-review` run over the harness/template changes for that cloud
-  (keyless, RLS, sandbox, secret handling).
+> **Status is not here.** It rots, and this table proved it: every blocker it cited had been
+> closed, and it contradicted `runner-xcloud-parity.md` in the same directory while both passed CI.
+> `scripts/programme-rollup.mjs` names that pair as the reason it exists.
+>
+> The proof grid, the per-cell evidence and the open blockers are derived in **`PROGRAMME.md`**,
+> below its generated marker. Read it there. What stays below is the reasoning the ledger cannot
+> hold — decisions, post-mortems and measurements.
 
 ## What's left
 

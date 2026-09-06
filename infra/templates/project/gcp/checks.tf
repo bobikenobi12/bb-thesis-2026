@@ -44,9 +44,11 @@ check "gke_cluster_version_present" {
 # They didn't: the module's count required `registry_provider == "native"` while the output only
 # checked `provision_artifact_registry`, and the console derives that flag from the PRESENCE of a
 # registry row, not its provider. Selecting any registry connector therefore indexed [0] of an empty
-# module and failed the whole apply with "Invalid index". The output now guards on
-# `length(module.artifact_registry)`; this asserts the pairing so a future edit can't reintroduce the
-# skew silently.
+# module and failed the whole apply with "Invalid index". The output now guards on the module
+# INSTANCE (`try(module.artifact_registry[0].<out>, null) != null ? …`, #3509); this check keeps
+# reading `length()`, which is right HERE — it is asserting the module's EXPANSION against the
+# predicate, not reading an output, and a check block is a graph leaf that cannot cycle. It asserts
+# the pairing so a future edit can't reintroduce the skew silently.
 check "artifact_registry_output_matches_module" {
   assert {
     condition     = (length(module.artifact_registry) > 0) == (var.provision_artifact_registry && var.registry_provider == "native")

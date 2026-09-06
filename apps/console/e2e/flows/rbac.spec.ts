@@ -10,8 +10,9 @@
 //   • team   — Pro (card-less trial): organizations=true, canInvite=true (trialing) → real invite +
 //              manage controls; teams/roles/access/sso are Enterprise so still show the upsell.
 //
-// Negative *permission* paths (a reduced-perm member being denied) live in rbac.negative.spec.ts
-// and are skipped until the member persona exists (HAVE_MEMBER).
+// Negative *permission* paths (a reduced-perm member being denied) live in rbac.negative.spec.ts.
+// They run unconditionally as of #3633 — the `member` persona is built by e2e/global-setup.ts
+// through the real invite → accept flow, so a missing one is a failure, not a skip.
 
 import { test, expect } from "../fixtures/qa";
 import { scanA11y } from "../helpers/a11y";

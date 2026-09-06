@@ -56,8 +56,8 @@ locals {
 
   # compact function will remove null elements from list to not interfere with jsonencode afterwards
   secrets_kms_key_arns = compact([
-    length(module.rds_maindb) > 0 ? module.rds_maindb[0].rds_credentials_kms_key_arn : null,
-    length(module.elasticache) > 0 ? module.elasticache[0].redis_secret_kms_key_arn : null
+    try(module.rds_maindb[0].rds_credentials_kms_key_arn, null) != null ? module.rds_maindb[0].rds_credentials_kms_key_arn : null,
+    try(module.elasticache[0].redis_secret_kms_key_arn, null) != null ? module.elasticache[0].redis_secret_kms_key_arn : null
   ])
 
   # Secrets the external-secrets operator may read: the project's custom secrets (their names all
@@ -67,8 +67,8 @@ locals {
   eso_secret_arns = concat(
     ["arn:aws:secretsmanager:${var.region}:${var.aws_account_id}:secret:${local.aws_regions_short[var.region]}-${var.environment}-${var.project_name}-*"],
     compact([
-      length(module.rds_maindb) > 0 ? module.rds_maindb[0].rds_master_credentials_secret_arn : null,
-      length(module.rds_maindb) > 0 ? module.rds_maindb[0].rds_extra_credentials_secret_arn : null,
+      try(module.rds_maindb[0].rds_master_credentials_secret_arn, null) != null ? module.rds_maindb[0].rds_master_credentials_secret_arn : null,
+      try(module.rds_maindb[0].rds_extra_credentials_secret_arn, null) != null ? module.rds_maindb[0].rds_extra_credentials_secret_arn : null,
     ])
   )
 

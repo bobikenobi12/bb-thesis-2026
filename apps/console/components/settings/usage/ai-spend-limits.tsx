@@ -60,10 +60,10 @@ export function AiSpendLimits({
 	return (
 		<div className="border-t border-border px-6 py-4">
 			<div className="mb-2.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-				<span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+				<span className="font-mono text-ui-2xs uppercase tracking-[0.1em] text-text-tertiary">
 					Spend limits
 				</span>
-				<span className="text-[11.5px] text-text-tertiary">
+				<span className="text-ui-xs text-text-tertiary">
 					Weekly ceilings on top of your plan — AI pauses here. Leave blank for none.
 				</span>
 			</div>
@@ -96,11 +96,11 @@ function CapField({
 }) {
 	return (
 		<label className="flex flex-col gap-1">
-			<span className="font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+			<span className="font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 				{label}
 			</span>
 			<span className="flex items-center gap-1 border border-border bg-background px-2">
-				<span className="text-[12px] text-text-tertiary">$</span>
+				<span className="text-ui-sm text-text-tertiary">$</span>
 				<Input
 					type="number"
 					min={0}
@@ -108,7 +108,7 @@ function CapField({
 					placeholder="No limit"
 					value={value}
 					onChange={(e) => onChange(e.target.value)}
-					className="h-8 w-28 rounded-none border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0"
+					className="h-8 w-28 rounded-none border-0 bg-transparent px-0 text-ui-md shadow-none focus-visible:ring-0"
 				/>
 			</span>
 		</label>

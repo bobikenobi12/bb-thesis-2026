@@ -207,11 +207,14 @@ var CLIDemoBeats = []CLIDemoBeat{
 	{
 		StepID:   "connector",
 		Phase:    CLIDemoAuthoring,
-		Args:     func(r *CLIDemoRun) []string { return []string{"connector", r.Provider, "--token-stdin", "--no-input"} },
-		Stdin:    func(r *CLIDemoRun) string { return cliDemoConnectorStdin(r) },
+		Args:     cliDemoConnectorArgs,
+		Stdin:    cliDemoConnectorStdin,
 		ReadBack: func(_ *CLIDemoRun) []string { return []string{"connector", "list", "--output", "json", "--no-input"} },
 		After:    captureIdentityID,
-		Why:      "credentials over STDIN, never argv — argv reaches /proc and the process list.",
+		Why: "PER CLOUD, because `connector <cloud>` is five different commands wearing one noun — see " +
+			"cliDemoConnectorFlags. A SECRET still travels over stdin and never argv (hetzner's token); " +
+			"an ARN, a project id or a GUID is an identifier rather than a credential, so those go in " +
+			"flags, which is the form the CLI itself documents for --no-input.",
 	},
 	{
 		StepID: "project-create",
@@ -345,17 +348,185 @@ var CLIDemoBeats = []CLIDemoBeat{
 	},
 }
 
+// cliDemoConnectorFlags is the NON-INTERACTIVE invocation of `connector <cloud>`, per cloud.
+//
+// ── WHY THIS TABLE EXISTS (#4083) ──
+//
+// `connector` is one noun wearing five commands, and they share almost no flags. The beat used to
+// build ONE argv for every cloud — `connector <provider> --token-stdin --no-input` — and
+// `--token-stdin` is registered on exactly one command, apps/cli/cmd/connector_hetzner.go's. On
+// aws, gcp and azure cobra rejected the unknown flag and the run died at the beat, so three of the
+// dimension's five cells could not be driven at all. A comment right here asserted the other clouds
+// were "skipped with a recorded reason at run time"; DriveCLIDemoPhase has no skip path. That
+// sentence is why nobody looked, and it is deleted rather than corrected.
+//
+// ── NOTHING HERE IS INVENTED VOCABULARY ──
+//
+// The CLI programme already ratified what a non-interactive connector creation IS for each cloud,
+// and asserts it behaviourally: apps/cli/cmd/cov_connectors_test.go's connCompleteCases drives
+// exactly these flag sets with prompting ENABLED and requires that no form opens and the command
+// reaches the control plane. Each command's own Long text calls its flag "the flag form of that
+// same paste, so the command works under --no-input". So this table adopts a surface that exists;
+// it does not ask for a new one.
+//
+// ── WHERE THE VALUES COME FROM ──
+//
+// The ambient credential handles the workflow already exports for the leg (see the job-level env in
+// .github/workflows/e2e-nightly.yml and t2_providers.go's credsPresent rows), so the identity the
+// CLI creates names the SAME account the runner provisions into. gcp's project and azure's
+// subscription go through t2AmbientAccountID, which is the harness's existing mirror of the
+// runner's resolveAmbientAccountID — one resolution order, not two.
+//
+// A MISSING ENTRY IS NOT AN EMPTY ONE. ValidateCLIDemoBeats requires a row for every provider in
+// t2ProviderTable, so a sixth cloud joining the harness reds here instead of quietly rebuilding the
+// hetzner argv under a different name.
+var cliDemoConnectorFlags = map[string]func() []string{
+	// The only cloud whose connector takes a plain SECRET, which is why it is the only one whose
+	// credential goes over stdin — argv reaches /proc and the process list.
+	"hetzner": func() []string { return []string{"--token-stdin"} },
+
+	// The e2e nightly role itself. It is a repo VARIABLE, not a secret, precisely because a role
+	// ARN is an identifier — the same reason it is safe in argv here.
+	"aws": func() []string { return []string{"--role-arn", t2Env("E2E_AWS_ROLE_ARN", "")} },
+
+	// --wif-config takes a PATH (or "-" for stdin), and google-github-actions/auth has already
+	// written exactly that file and exported its path. Handing over the path rather than the bytes
+	// keeps the harness out of the business of parsing a credential config it does not own.
+	//
+	// --project is required by the command under --no-input even though /connect derives the
+	// project from the WIF config: without it `connector gcp` refuses with "no project given".
+	"gcp": func() []string {
+		return []string{
+			"--project", t2AmbientAccountID("gcp"),
+			"--wif-config", t2Env("GOOGLE_APPLICATION_CREDENTIALS", ""),
+		}
+	},
+
+	// All three are required TOGETHER (apps/cli/cmd/connector_azure.go's azureFlagIDs), and all
+	// three are GUIDs the workflow writes into the job env itself — azure/login exports none of
+	// them.
+	"azure": func() []string {
+		return []string{
+			"--subscription", t2Env("ARM_SUBSCRIPTION_ID", ""),
+			"--tenant-id", t2Env("ARM_TENANT_ID", ""),
+			"--client-id", t2Env("ARM_CLIENT_ID", ""),
+		}
+	},
+
+	// The RAM role, shaped like aws's. Present so the table covers the provider list; the
+	// dimension is not being driven on alibaba.
+	"alibaba": func() []string { return []string{"--role-arn", t2Env("E2E_ALIBABA_ROLE_ARN", "")} },
+}
+
+// cliDemoConnectorArgs builds `connector <cloud>` for the run's provider.
+//
+// The command PATH varies with the cloud and so do the flags — this is the one beat where that is
+// true, and it is true because the product models each cloud's connection as its own command.
+func cliDemoConnectorArgs(r *CLIDemoRun) []string {
+	argv := []string{"connector", r.Provider}
+	if flags, ok := cliDemoConnectorFlags[r.Provider]; ok {
+		argv = append(argv, flags()...)
+	}
+	return append(argv, "--no-input")
+}
+
+// cliDemoConnectorEmptyFlags names the flags whose VALUE came out empty in the argv this run would
+// submit, or nil when every one is populated.
+//
+// WHY THIS EXISTS, AND WHY IT IS NOT A LIST OF VARIABLES. Every builder above reaches for
+// `t2Env(NAME, "")`, whose default is the empty string — so an unset repo variable does not fail,
+// it produces `connector aws --role-arn ""`. That is not a parse error: `connector aws` branches on
+// `TrimSpace(roleARN) != ""` and an empty value falls THROUGH to awsLocalFlow, which finds the
+// runner's preinstalled `aws` CLI and deploys a real CloudFormation stack — an IAM OIDC provider
+// and AlethiaProvisionerRole that aws-cleanup.sh does not sweep. gcp and azure have the same shape
+// (an empty --wif-config reaches gcpCloudShellFlow; empty ids reach the local `az` setup). A run
+// that meant to do nothing creates cloud identity, and every guard upstream reads green because the
+// flags ARE registered and the invocation DOES parse.
+//
+// It reads the built argv instead of a per-cloud list of variable names on purpose: such a list is
+// a second source of truth for the builders above and stops covering the first time one of them
+// gains a flag. The argv is what the process would actually receive, so it cannot drift from it.
+func cliDemoConnectorEmptyFlags(r *CLIDemoRun) []string {
+	argv := cliDemoConnectorArgs(r)
+	var empty []string
+	for i, a := range argv {
+		if a != "" || i == 0 {
+			continue
+		}
+		flag := argv[i-1]
+		if !strings.HasPrefix(flag, "--") {
+			flag = fmt.Sprintf("argv[%d]", i)
+		}
+		empty = append(empty, flag)
+	}
+	return empty
+}
+
 // cliDemoConnectorStdin returns the credential material `connector <cloud>` reads from stdin.
 //
-// Only hetzner is wired today, and deliberately: it is the one cloud whose connector takes a plain
-// token, so it is the one that can be driven non-interactively without a keyless federation dance
-// this harness would have to fake. The other clouds return "" and the beat is skipped with a
-// recorded reason at run time rather than passing a credential the connector will reject.
+// Hetzner only, and that is now a statement about the PRODUCT rather than about this harness: it is
+// the one cloud whose connector takes a plain API token. Every other cloud's connector takes
+// identifiers in flags and mints its own assertion server-side — see cliDemoConnectorIssuerTrust.
 func cliDemoConnectorStdin(r *CLIDemoRun) string {
 	if r.Provider == "hetzner" {
 		return strings.TrimSpace(t2Env("HCLOUD_TOKEN", ""))
 	}
 	return ""
+}
+
+// cliDemoConnectorIssuerTrustEnv is the maintainer's opt-in: set it once the console this dimension
+// boots has an OIDC issuer the clouds below actually trust, and the refusal lifts with no code
+// change.
+const cliDemoConnectorIssuerTrustEnv = "ALETHIA_E2E_CLI_DEMO_ISSUER_TRUSTED"
+
+// cliDemoConnectorIssuerTrust records, per cloud, why `connector <cloud>` cannot COMPLETE against
+// the console this dimension boots — or "" when it can.
+//
+// AN EMPTY STRING MEANS "ANSWERED: DRIVABLE". A MISSING KEY MEANS NOBODY ANSWERED, and
+// ValidateCLIDemoBeats fails on that, because the two are otherwise the same map lookup.
+//
+// ── THIS IS THE PART THE FLAG FIX DOES NOT REACH ──
+//
+// Fixing the argv makes the invocation PARSE. It does not make it SUCCEED, and the reason is not in
+// the CLI at all. `POST /api/cli/providers/{p}/connect` runs a live probe inline before it marks the
+// identity verified (apps/console/lib/cloud-providers/connections.ts verifyConnectionInline →
+// lib/cloud-providers/health/index.ts probeHealth), and for aws, gcp, azure and alibaba that probe
+// authenticates with an assertion THE CONSOLE SIGNS ITSELF: mintWorkloadToken, issuer
+// NEXT_PUBLIC_APP_URL + "/api/oidc" (apps/console/lib/oidc/issuer.ts). A failed probe is
+// disconnected, /connect returns verified:false, and every connector calls fail() — exit 1.
+//
+// The workflow starts this console with NEXT_PUBLIC_APP_URL=http://localhost:3000 and no
+// ALETHIA_OIDC_SIGNING_KEY at all, so the mint refuses before a packet leaves the box; and were the
+// key set, `http://localhost:3000/api/oidc` is neither reachable nor trusted by AWS STS, Google STS
+// or Entra. Nor could it be trusted by accident: infra/aws-oidc/e2e-nightly.tf trusts
+// token.actions.githubusercontent.com and nothing else, and its permissions boundary carries an
+// explicit DenyRoleHop.
+//
+// Hetzner is unaffected because its connector has no issuer in the path — the token is encrypted
+// and the probe is a bearer GET against api.hetzner.cloud.
+//
+// So these three cells are blocked on a MAINTAINER decision about the e2e console's identity, not
+// on this harness. Recorded here, refused loudly before spend (AssertCLIDemoConnectorIsDrivable),
+// and liftable in one repo variable — never silently skipped, which would report a cell the run
+// never drove.
+var cliDemoConnectorIssuerTrust = map[string]string{
+	"hetzner": "",
+	"aws": "`connector aws` submits a role ARN and the console then runs AssumeRoleWithWebIdentity " +
+		"with a token it signed itself. The e2e role trusts token.actions.githubusercontent.com only " +
+		"(infra/aws-oidc/e2e-nightly.tf), so the console's assertion is refused and the beat exits 1.",
+	"gcp": "`connector gcp` submits a WIF credential config and the console then exchanges its own " +
+		"minted subject token at Google STS. The e2e pool's provider trusts GitHub's issuer, not this " +
+		"console's, so the exchange is refused and the beat exits 1. SECOND, INDEPENDENT BLOCKER: the " +
+		"config this beat uploads is the one google-github-actions/auth wrote, and with no token_format " +
+		"that is an external_account whose credential_source.file is a RUNNER-LOCAL path holding a " +
+		"short-lived GitHub OIDC token. The console stores it verbatim and can never resolve that path, " +
+		"so lifting the issuer decision alone does not make this cell drivable — it needs a credential " +
+		"whose source the console can read.",
+	"azure": "`connector azure` submits tenant/client/subscription and the console then presents a " +
+		"client assertion it signed itself. The managed identity's federated credential names GitHub's " +
+		"issuer, so Entra answers AADSTS70021 and the beat exits 1.",
+	"alibaba": "same keyless shape as aws, and the dimension is not being driven on alibaba — the " +
+		"maintainer's cli-demo scope is hetzner, aws, gcp and azure.",
 }
 
 // ValidateCLIDemoBeats holds the two tables to each other. Returns every problem at once, because
@@ -419,9 +590,75 @@ func ValidateCLIDemoBeats() error {
 		}
 	}
 
+	problems = append(problems, cliDemoProviderAxisProblems()...)
+
 	if len(problems) == 0 {
 		return nil
 	}
 	sort.Strings(problems)
 	return fmt.Errorf("CLI demo beats do not account for the step table:\n  - %s", strings.Join(problems, "\n  - "))
+}
+
+// cliDemoProviderAxisProblems varies the one axis every other check holds fixed: the CLOUD.
+//
+// WHY IT IS A SEPARATE PASS. Everything above builds each beat's argv exactly once, against a zero
+// run — and a zero run has no provider. So a beat whose Args switches on the cloud was validated
+// for none of them. That is precisely how #4083 shipped: a `connector` beat hardcoding hetzner's
+// `--token-stdin` for all five clouds passed every check in this file, because the flag it emitted
+// was never a thing this file looked at. A table pins only what it contains, so the fix is to make
+// it contain the axis the implementations differ on.
+//
+// The provider list is DERIVED from t2ProviderTable (t2ProviderNames), never typed here: a sixth
+// cloud joining the harness must answer these questions rather than inherit a fifth cloud's answers.
+//
+// What it CANNOT ask is whether a flag is registered — that question needs the binary, and it is
+// asked before spend by AssertCLIDemoBeatFlagsAreRegistered.
+func cliDemoProviderAxisProblems() []string {
+	var problems []string
+
+	providers := t2ProviderNames()
+	if len(providers) == 0 {
+		// The empty-set branch has to differ from the nothing-wrong branch, or this whole pass
+		// reports green having asked nothing.
+		return []string{"t2ProviderTable is EMPTY — the provider axis was not checked at all, and a " +
+			"beat that is wrong for every cloud would pass"}
+	}
+
+	for _, b := range CLIDemoBeats {
+		if b.Args == nil {
+			// Already reported by the caller; reporting it again would send two findings at one cause.
+			continue
+		}
+		for _, provider := range providers {
+			if argv := b.Args(&CLIDemoRun{Provider: provider}); len(argv) == 0 {
+				problems = append(problems, fmt.Sprintf(
+					"beat %q builds an EMPTY argv on %s — a switch with no case for that cloud performs "+
+						"nothing and exits 0", b.StepID, provider))
+			}
+		}
+	}
+
+	for _, provider := range providers {
+		if _, ok := cliDemoConnectorFlags[provider]; !ok {
+			problems = append(problems, fmt.Sprintf(
+				"cliDemoConnectorFlags has no row for %q — `connector %s` would be invoked with no "+
+					"cloud-specific flag at all, which under --no-input dies naming a flag nobody wrote",
+				provider, provider))
+		}
+		why, ok := cliDemoConnectorIssuerTrust[provider]
+		if !ok {
+			problems = append(problems, fmt.Sprintf(
+				"cliDemoConnectorIssuerTrust has no key for %q — nobody has said whether the connector "+
+					"beat can COMPLETE on that cloud against this dimension's console. An absent answer "+
+					"and \"yes\" must not be the same map lookup", provider))
+			continue
+		}
+		if why != "" && len(strings.Fields(why)) < 8 {
+			problems = append(problems, fmt.Sprintf(
+				"cliDemoConnectorIssuerTrust[%q] is %q — too short to be a reason anyone could argue with",
+				provider, why))
+		}
+	}
+
+	return problems
 }

@@ -22,6 +22,7 @@ import { useCloudProviderStore as useCloudProvider } from "@/lib/stores/use-clou
 import { useActiveOrgSlug } from "@/lib/stores/use-workspace-store";
 import { globalHref } from "@/lib/routing";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { Input } from "@repo/ui/input";
 import {
 	Select,
@@ -267,24 +268,28 @@ function DeployForm({
 	// enqueues a job the runner cannot build. Register needs no cloud at all.
 	if (identities.length === 0) {
 		return (
-			<div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-12 text-center">
-				<div className="rounded-full bg-muted p-3">
-					<Cloud className="h-6 w-6 text-muted-foreground" />
-				</div>
-				<div className="space-y-1">
-					<h3 className="text-sm font-medium text-foreground">
-						No {RUNNER_DEPLOY_PROVIDERS_LABEL} account connected
-					</h3>
-					<p className="mx-auto max-w-xs text-xs leading-relaxed text-muted-foreground">
+			// `level={3}` keeps the outline rung the hand-rolled `<h3>` had: this heads the deploy
+			// pane of the sheet, so `EmptyTitle`'s default `<div>` would take an entry out of the
+			// document outline. `Empty` ships `border-dashed` with no WIDTH, so the bare `border`
+			// is what paints the dashed outline this pane has always had.
+			<EmptyState
+				className="border border-border"
+				level={3}
+				icon={<Cloud />}
+				title={`No ${RUNNER_DEPLOY_PROVIDERS_LABEL} account connected`}
+				description={
+					<>
 						Deployed runners are {RUNNER_DEPLOY_PROVIDERS_LABEL} only. Connect an{" "}
 						{RUNNER_DEPLOY_PROVIDERS_LABEL} account to deploy one, or register your own runner —
 						that runs on any cloud, and needs none connected here.
-					</p>
-				</div>
-				<Button size="sm" onClick={() => onOpenChange(false)} nativeButton={false} render={<Link href={globalHref(orgSlug, "connectors")} />}>
-					Connect {RUNNER_DEPLOY_PROVIDERS_LABEL}
-				</Button>
-			</div>
+					</>
+				}
+				action={
+					<Button size="sm" onClick={() => onOpenChange(false)} nativeButton={false} render={<Link href={globalHref(orgSlug, "connectors")} />}>
+						Connect {RUNNER_DEPLOY_PROVIDERS_LABEL}
+					</Button>
+				}
+			/>
 		);
 	}
 
@@ -318,7 +323,7 @@ function DeployForm({
 							<FormControl>
 								<Input placeholder="e.g. prod-eu-west-1" className="h-9" autoFocus {...field} />
 							</FormControl>
-							<FormMessage className="text-[11px]" />
+							<FormMessage className="text-ui-xs" />
 						</FormItem>
 					)}
 				/>
@@ -336,7 +341,7 @@ function DeployForm({
 									onChange={(id) => field.onChange(id)}
 								/>
 							</FormControl>
-							<FormMessage className="text-[11px]" />
+							<FormMessage className="text-ui-xs" />
 						</FormItem>
 					)}
 				/>
@@ -384,7 +389,7 @@ function DeployForm({
 									))}
 								</SelectContent>
 							</Select>
-							<FormMessage className="text-[11px]" />
+							<FormMessage className="text-ui-xs" />
 						</FormItem>
 					)}
 				/>
@@ -542,7 +547,7 @@ alethia runner start`}
 							<FormControl>
 								<Input placeholder="e.g. fargate-eu-west-1" className="h-9" autoFocus {...field} />
 							</FormControl>
-							<FormMessage className="text-[11px]" />
+							<FormMessage className="text-ui-xs" />
 						</FormItem>
 					)}
 				/>

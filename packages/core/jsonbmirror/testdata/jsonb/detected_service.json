@@ -1,0 +1,9 @@
+{
+  "path": "services/api",
+  "name": "api",
+  "hasDockerfile": true,
+  "runtime": "node",
+  "port": 3000,
+  "needs": ["postgres", "redis"],
+  "env": ["DATABASE_URL", "REDIS_URL"]
+}

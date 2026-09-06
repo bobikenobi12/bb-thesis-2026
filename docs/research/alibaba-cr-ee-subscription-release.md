@@ -37,7 +37,7 @@ Two statements **inside this repository** contradict each other, and a fix had t
 
 | Source | Claim |
 |---|---|
-| `docs/testing/provisioning-e2e-parity.md` | *"a prepaid instance is not released by `tofu destroy` the way a pay-as-you-go one is … every Alibaba full-bar run leaves a **non-cancellable** monthly CR EE Basic instance behind and the teardown still reports clean"* |
+| `docs/testing/provisioning-e2e-parity.md` *(as it read then; the passage was removed when that board was stripped of its matrix — the measurement now lives in `PROGRAMME.md` and `test/e2e/maxconfig_verdicts_pure_test.go`)* | *"a prepaid instance is not released by `tofu destroy` the way a pay-as-you-go one is … every Alibaba full-bar run leaves a **non-cancellable** monthly CR EE Basic instance behind and the teardown still reports clean"* |
 | `infra/templates/project/alibaba/modules/cr/main.tf:63` | *"the only real change path is replacing the Subscription-billed registry (**Delete = RefundInstance with immediate release**)"* |
 
 The second reads as though teardown reclaims the instance. The first says it does not. Both are
@@ -109,8 +109,10 @@ action.
 - Alibaba Cloud — *Use Terraform to create a Container Registry Enterprise Edition instance*
   (first-party ACR developer reference).
   <https://www.alibabacloud.com/help/en/acr/developer-reference/terraform-integration-example>
-- `infra/templates/project/alibaba/modules/cr/main.tf` · `docs/testing/provisioning-e2e-parity.md` ·
-  `scripts/e2e/alibaba-cleanup.sh` — the in-repo statements this file reconciles.
+- `infra/templates/project/alibaba/modules/cr/main.tf` · `scripts/e2e/alibaba-cleanup.sh` ·
+  `test/e2e/maxconfig_verdicts_pure_test.go` — the in-repo statements this file reconciles. The fourth
+  was a passage in `docs/testing/provisioning-e2e-parity.md`, quoted above as it read at the time and
+  since removed with that board's matrix.
 
 Related: [`alibaba-cr-scan-rule-vpc.md`](./alibaba-cr-scan-rule-vpc.md) — the other Alibaba CR
 question that documentation cannot close, and whose answer likewise rides a real nightly run.

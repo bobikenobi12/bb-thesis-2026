@@ -6,6 +6,7 @@ import { Settings2 } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@repo/ui/button";
 import { Label } from "@repo/ui/label";
+import { SectionHeading } from "@repo/ui/section-heading";
 import {
 	Sheet,
 	SheetContent,
@@ -107,7 +108,7 @@ export function EnvSettingsSheet() {
 					<div className="mt-5 space-y-6 px-1">
 						{cluster && clusterSchema && (
 							<section className="space-y-2">
-								<h3 className="vx-eyebrow text-[10px]">Cluster</h3>
+								<SectionHeading level={3} title="Cluster" />
 						{/* Compat sits next to the Kubernetes version that causes it (#1221). Silent unless
 						    something actually fails — see CompatAlert's two honesty rules. */}
 						<CompatAlert
@@ -127,7 +128,7 @@ export function EnvSettingsSheet() {
 						)}
 						{network && networkSchema && (
 							<section className="space-y-2">
-								<h3 className="vx-eyebrow text-[10px]">Network (VPC)</h3>
+								<SectionHeading level={3} title="Network (VPC)" />
 								<ConfigFields
 									schema={networkSchema}
 									config={network.data.config}
@@ -139,10 +140,15 @@ export function EnvSettingsSheet() {
 							</section>
 						)}
 						<section className="space-y-2">
-							{/* A Label rather than an h3 (as cluster/network use) so the select has an
-							    accessible name — it is the only control in this section, and "Secrets" is
-							    exactly what names it. Styled identically, so the sections still read alike. */}
-							<Label htmlFor="env-secrets-store" className="vx-eyebrow text-[10px]">
+							{/* A Label rather than the `SectionHeading` cluster/network use, so the select has
+							    an accessible name — it is the only control in this section, and "Secrets" is
+							    exactly what names it. It carries `SectionHeading`'s own rung (`--text-ui-lg`,
+							    medium, tight) so all four sections still read alike, which is the whole
+							    reason that heading has ONE size at every level. */}
+							<Label
+								htmlFor="env-secrets-store"
+								className="text-ui-lg font-medium tracking-tight"
+							>
 								Secrets
 							</Label>
 							{secretNodes.length === 0 ? (
@@ -180,7 +186,10 @@ export function EnvSettingsSheet() {
 							)}
 						</section>
 						<section className="space-y-2">
-							<Label htmlFor="env-registry" className="vx-eyebrow text-[10px]">
+							<Label
+								htmlFor="env-registry"
+								className="text-ui-lg font-medium tracking-tight"
+							>
 								Container registry
 							</Label>
 							{registryNodes.length === 0 ? (

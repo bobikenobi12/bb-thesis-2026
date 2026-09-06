@@ -11,6 +11,7 @@ import { Button } from "@repo/ui/button";
 import { CopyButton } from "@repo/ui/copy-button";
 import { Input } from "@repo/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/tabs";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
 import {
 	NODE_STATUS_META,
@@ -318,10 +319,12 @@ function EnvironmentBlock({ env }: { env: EnvironmentInfo }) {
 		<div className="border border-border bg-surface-sunken">
 			<div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
 				<span className="vx-eyebrow">Environment</span>
-				<span className={cn("vx-status shrink-0", `vx-status--${vx}`)}>
-					<span className="vx-status__dot" />
-					{env.status.charAt(0) + env.status.slice(1).toLowerCase()}
-				</span>
+				<StatusBadge
+					status={env.status}
+					tier={vx}
+					label={env.status.charAt(0) + env.status.slice(1).toLowerCase()}
+					className="shrink-0"
+				/>
 			</div>
 			<dl className="grid grid-cols-[5rem_1fr] gap-y-1.5 px-3 py-2.5 text-xs">
 				<dt className="text-muted-foreground">Name</dt>
@@ -398,16 +401,13 @@ function StatusHeader({ nodeId }: { nodeId: string }) {
 	const drifted = status.drift.length;
 	return (
 		<div className="flex items-center gap-2.5 border-b border-border bg-surface-sunken/60 px-4 py-2.5">
-			<span className={cn("vx-status shrink-0", `vx-status--${meta.vx}`)}>
-				<span className="vx-status__dot" />
-				{meta.label}
-			</span>
+			<StatusBadge status={meta.label} tier={meta.vx} className="shrink-0" />
 			<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 				{status.message ?? STATUS_HINT[status.state] ?? ""}
 			</span>
 			{drifted > 0 && (
 				<span
-					className="shrink-0 border border-border-strong px-1.5 py-0.5 font-mono text-[10px] text-foreground"
+					className="shrink-0 border border-border-strong px-1.5 py-0.5 font-mono text-ui-2xs text-foreground"
 					title={status.drift.map((d) => d.address).join("\n")}
 				>
 					{drifted} drifted
@@ -456,10 +456,10 @@ function Overview({ node }: { node: CanvasNode }) {
 								key={o.label}
 								className="flex items-center gap-2 border border-border bg-surface-sunken px-2 py-1.5"
 							>
-								<dt className="shrink-0 text-[11px] text-muted-foreground">
+								<dt className="shrink-0 text-ui-xs text-muted-foreground">
 									{o.label}
 								</dt>
-								<dd className="min-w-0 flex-1 truncate text-right font-mono text-[11px]">
+								<dd className="min-w-0 flex-1 truncate text-right font-mono text-ui-xs">
 									{o.value}
 								</dd>
 								<CopyButton text={o.value} className="h-6 w-6 shrink-0" />
@@ -504,10 +504,10 @@ function Overview({ node }: { node: CanvasNode }) {
 						{status.drift.map((d) => (
 							<li
 								key={d.address}
-								className="flex items-center gap-2 border border-border bg-surface-sunken px-2 py-1 font-mono text-[10px]"
+								className="flex items-center gap-2 border border-border bg-surface-sunken px-2 py-1 font-mono text-ui-2xs"
 							>
 								<span className="min-w-0 flex-1 truncate">{d.address}</span>
-								<span className="vx-eyebrow shrink-0 text-[9px]">{d.kind}</span>
+								<span className="vx-eyebrow shrink-0 text-ui-3xs">{d.kind}</span>
 							</li>
 						))}
 					</ul>
@@ -564,7 +564,7 @@ function CostTab({ node }: { node: CanvasNode }) {
 				</span>
 			</div>
 			{env.costCapturedAt && (
-				<p className="text-[11px] text-muted-foreground">
+				<p className="text-ui-xs text-muted-foreground">
 					As of the last plan · {ago(env.costCapturedAt)} ago
 				</p>
 			)}
@@ -575,7 +575,7 @@ function CostTab({ node }: { node: CanvasNode }) {
 						{lines.map((l) => (
 							<li
 								key={l.address}
-								className="flex items-center gap-2 border border-border bg-surface-sunken px-2 py-1.5 font-mono text-[10px]"
+								className="flex items-center gap-2 border border-border bg-surface-sunken px-2 py-1.5 font-mono text-ui-2xs"
 							>
 								<span className="min-w-0 flex-1 truncate">{l.address}</span>
 								<span className="shrink-0">{formatMonthlyRate(l.monthlyCost, "exact")}</span>
@@ -620,16 +620,17 @@ function JobList({ jobs }: { jobs: EnvironmentJob[] }) {
 						key={job.id}
 						className="flex items-center gap-2 border border-border bg-surface-sunken px-2.5 py-1.5"
 					>
-						<span
-							className={cn("vx-status shrink-0", `vx-status--${vx}`)}
+						<StatusBadge
+							status={job.status}
+							tier={vx}
+							showLabel={false}
+							className="shrink-0"
 							suppressHydrationWarning
-						>
-							<span className="vx-status__dot" />
-						</span>
-						<span className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-wide">
+						/>
+						<span className="min-w-0 flex-1 truncate font-mono text-ui-2xs uppercase tracking-wide">
 							{JOB_LABEL[job.type] ?? job.type}
 						</span>
-						<span className="shrink-0 font-mono text-[9px] text-muted-foreground">
+						<span className="shrink-0 font-mono text-ui-3xs text-muted-foreground">
 							{ago(job.createdAt)}
 						</span>
 					</li>

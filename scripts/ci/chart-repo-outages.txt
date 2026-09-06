@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# CHART REPOSITORIES THAT ARE KNOWN TO BE DOWN RIGHT NOW, one per line:
+#
+#     <repo-url><space+><#issue><space+><reason>
+#
+# Blank lines and `#` comments are ignored. A line that is not empty and does not parse is FATAL —
+# a ledger that silently drops the entry it could not read excuses nothing and reports success.
+#
+# ── WHAT THIS IS FOR (#3961) ──────────────────────────────────────────────────────────────────
+#
+# `Add-on charts render` asks two questions with one exit code: "does this chart render with the
+# values this repo emits" (ours, always our defect) and "could we reach the repository at all"
+# (a third party's uptime, which nothing in a PR can affect). They want different responses, and
+# reporting them identically is how a gate becomes one people re-run without reading — including
+# the day it goes red for the reason it exists to catch.
+#
+# So the reachability probe is a SEPARATE CI step with its own name and its own outcome, and an
+# outage that a human has looked at and recorded here does not red it. What is recorded is a
+# CLAIM, dated by its issue: "we established this host is down, the chart is fine, the catalog is
+# right, and there is nothing to do but wait."
+#
+# ── WHY IT CANNOT GO STALE ────────────────────────────────────────────────────────────────────
+#
+# The probe checks BOTH directions, which is the only reason this file is safe to have:
+#
+#   unreachable + listed here   reported as a known outage, not fatal
+#   unreachable + NOT listed    FATAL. A new outage is a human decision, never an automatic pass.
+#   REACHABLE   + listed here   FATAL. The outage is over — delete the entry.
+#   listed here + no longer in the catalog   FATAL. The repo is not shipped any more.
+#
+# The third row is the one that matters. A recorded fact carried forward and never re-checked is
+# how an excuse outlives the thing it excused; here the excuse deletes itself the moment it stops
+# being true, and the deletion is a red check rather than a note somebody has to remember.
+#
+# ── WHAT IT DOES NOT EXCUSE ───────────────────────────────────────────────────────────────────
+#
+# ONLY a TRANSPORT failure — the shapes in chart-fetch-network-errors.txt. If helm reaches the host
+# and the host answers that this is not a chart repository, or that the pinned version is not in the
+# index, that is a repo that has MOVED or a chart that is gone, and this file will not excuse it no
+# matter what is written here. That case is precisely when the catalog must change, so it stays red.
+#
+# That distinction is NOT free, and getting it wrong is how this file becomes the thing it was
+# written to prevent. `helm repo add` wraps EVERY index failure in one sentence —
+#
+#     Error: looks like "<url>" is not a valid chart repository or cannot be reached: <the cause>
+#
+# — and that sentence is the first alternative in chart-fetch-network-errors.txt. So the two lines
+#
+#     …cannot be reached: Get "…/index.yaml": dial tcp: lookup X: no such host   <- down, wait
+#     …cannot be reached: failed to fetch …/index.yaml : 404 Not Found           <- MOVED, act
+#
+# classify identically against the shared list, and the first draft of this change duly excused
+# both. `isTransport()` in check-addon-charts-render.mjs reads past the wrapper and classifies what
+# helm WRAPPED, which is what makes the paragraph above true rather than merely intended. An inner
+# message it does not recognise counts as "the host answered" — a red check somebody reads beats a
+# green one that is wrong.
+#
+# ── ADDING A LINE ─────────────────────────────────────────────────────────────────────────────
+#
+# Establish the canonical source from the project's OWN documentation first. An unreachable host is
+# not evidence that the URL moved, and a speculative URL change is worse than the outage: it ships a
+# guess to every user, and it is still wrong after the host comes back.
+#
+# ── THE WORKED EXAMPLE, WHICH IS ALSO THE ONLY ENTRY THIS FILE HAS EVER HELD ───────────────────
+#
+# #3961, the outage this file was written for, was recorded and then RETIRED inside one session:
+#
+#     https://cloudnative-pg.github.io/charts  #3961  cloudnative-pg.io SERVFAILs; …
+#
+# That URL answered `301 -> https://cloudnative-pg.io/charts/index.yaml` and cloudnative-pg.io
+# SERVFAILed, because the four Route53 nameservers the .io registry delegated it to ALL answered
+# REFUSED — a hosted zone that was gone. Not NXDOMAIN, no DS record: a stale delegation on the
+# project's side, not a move. The catalog URL was never wrong; the project's own operator-chart
+# README on `main` names that exact string, and the content was in place the whole time
+# (`--resolve cloudnative-pg.io:443:185.199.108.153` returned `200 text/yaml` from GitHub Pages).
+#
+# Then, hours later, the registry delegation was REPLACED — ns-865.awsdns-44.net and three new
+# siblings, in place of the four that were refusing — the name resolved again, and the probe's
+# "REACHABLE + listed here" branch went red demanding this entry be deleted. Which is the entire
+# argument for that branch existing, made on this file's first and so far only entry: an excuse
+# that had stopped being true was retired by a check, hours after it was written, and not by
+# somebody remembering to look.
+#
+# THE FILE IS EMPTY BELOW THIS LINE, AND THAT IS THE NORMAL STATE. Empty means every unreachable
+# repository reds the probe. Keep it that way unless you have measured otherwise.

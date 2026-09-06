@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 	"github.com/alethialabs-io/alethialabs/packages/core/verify"
 )
@@ -728,7 +729,7 @@ func TestReceiptRowsRenderWaiverAndAnchor(t *testing.T) {
 	}
 	sr.Rekor = &verify.RekorAnchor{LogURL: "https://rekor.sigstore.dev"}
 
-	rows := receiptRows(sr, signatureVerdict{Verified: true, Reason: "ok", Trust: string(trustPlatform)})
+	rows := receiptRows(sr, signatureVerdict{Verified: true, Reason: "ok", Trust: string(trustPlatform)}, ui.FormatTable)
 	flat := ""
 	for _, r := range rows {
 		flat += strings.Join(r, " ") + "\n"

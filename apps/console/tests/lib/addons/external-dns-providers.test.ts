@@ -44,9 +44,34 @@ const OFFERED = (externalDns.fields.find((f) => f.key === "provider")?.options ?
  * therefore supplies a `workloadIdentity`, which a workload-identity provider now requires; the
  * refusal itself is asserted directly, further down. */
 function values(config: Record<string, unknown>) {
-	const resolved = resolveAddOnInstall({ addon_id: "external-dns", mode: "managed", values: config });
+	const resolved = resolveAddOnInstall({ addon_id: "external-dns", mode: "managed", values: installable(config) });
 	if (!resolved) throw new Error(`external-dns did not resolve: ${JSON.stringify(config)}`);
 	return resolved.values as Record<string, unknown>;
+}
+
+/**
+ * Knobs a provider needs BEYOND its credential before the schema will accept the configuration at
+ * all.
+ *
+ * Azure alone has any (#3589): its ExternalDNS provider reads `/etc/kubernetes/azure.json` before it
+ * applies any flag, so the three identifiers that file is assembled from are required alongside the
+ * workload identity — a valid client id on its own installs a controller that CrashLoops in its
+ * constructor.
+ *
+ * Filled in here, in one place, so this file stays about the CREDENTIAL path it was written for
+ * rather than restating azure's file requirement at a dozen call sites. The requirement itself is
+ * covered by `external-dns-azure-config.test.ts`; supplying it below only makes an azure
+ * configuration valid enough to render, which is what every assertion here is about.
+ */
+const AZURE_CONFIG_FILE_KNOBS = {
+	azureTenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47",
+	azureSubscriptionId: "3b1c9a55-2d6e-4f10-9c77-8ab4e0d61f23",
+	azureResourceGroup: "dns-zones-rg",
+};
+
+/** `config`, plus whatever else its provider needs before the schema will accept it. */
+function installable(config: Record<string, unknown>): Record<string, unknown> {
+	return config.provider === "azure" ? { ...AZURE_CONFIG_FILE_KNOBS, ...config } : config;
 }
 
 /** A config with BOTH credential knobs filled — the only shape that resolves for every offered
@@ -176,7 +201,7 @@ describe("the workload-identity providers", () => {
 			serviceAccount: { name: string; annotations: Record<string, string> };
 		};
 		expect(v.serviceAccount.annotations[annotation]).toBe("the-identity");
-		expect(v.serviceAccount.name).toBe("addon-external-dns-sa");
+		expect(v.serviceAccount.name).toBe("addon-external-dns");
 	});
 
 	// THE ADD-ON MUST NOT OWN THE PLATFORM RAIL'S SERVICEACCOUNT.
@@ -280,7 +305,12 @@ describe("a workload-identity provider refuses an empty identity (#3469)", () =>
 	});
 
 	it.each(IDENTITY_PROVIDERS)("%s accepts the configuration once the identity is there", (provider) => {
-		expect(externalDns.configSchema.safeParse({ provider, workloadIdentity: "an-identity" }).success).toBe(true);
+		// …and once anything ELSE that provider requires is there — azure's config-file identifiers
+		// (#3589). The refusal under test here is the identity's; `installable` supplies the rest so
+		// this case cannot pass or fail for the other rule's reason.
+		expect(
+			externalDns.configSchema.safeParse(installable({ provider, workloadIdentity: "an-identity" })).success,
+		).toBe(true);
 	});
 
 	// The token providers must stay installable with NOTHING filled in. `apiToken` is a secret knob,

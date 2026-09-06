@@ -4,17 +4,18 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
 var jobsCmd = &cobra.Command{
 	Use:   "jobs",
 	Short: "Manage provisioning jobs",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Use `alethia jobs list`, `alethia jobs get <id>`, `alethia jobs logs <id>`, or `alethia jobs cancel <id>`")
-	},
+	Long: `Provisioning jobs are the unit of work the Runner executes: a plan, a deploy, a
+destroy, a drift detection, a scan.
+
+` + "`alethia jobs list`" + ` shows them. ` + "`get`" + `, ` + "`logs`" + ` and ` + "`cancel`" + ` act on one — named by
+its id, chosen from a picker, or resolved with ` + "`--latest`" + ` so a script never has to copy an
+id out of another command's output.`,
 }
 
 func init() {

@@ -12,7 +12,7 @@ function NavItemBadge({ badge }: { badge: NavBadge }) {
 	return (
 		<span
 			className={cn(
-				"shrink-0 rounded-full px-1.5 py-px font-mono text-[9px] uppercase tracking-wide",
+				"shrink-0 rounded-full px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide",
 				badge.tone === "beta"
 					? "border text-muted-foreground"
 					: "border border-dashed text-muted-foreground/70",
@@ -43,7 +43,7 @@ export function NavRow({
 }) {
 	const Icon = item.icon;
 	const className = cn(
-		"flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-[13px] transition-colors",
+		"flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-ui-md transition-colors",
 		active
 			? "bg-muted text-foreground"
 			: "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

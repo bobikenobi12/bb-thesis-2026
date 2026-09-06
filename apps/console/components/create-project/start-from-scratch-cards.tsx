@@ -111,15 +111,15 @@ export function StartFromScratchCards({
 							)}
 						</span>
 						<span className="min-w-0 flex-1">
-							<span className="flex items-center gap-2 text-[14px] font-medium text-foreground">
+							<span className="flex items-center gap-2 text-ui-lg font-medium text-foreground">
 								{card.title}
 								{card.isNew && (
-									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-wider text-muted-foreground">
+									<span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
 										New
 									</span>
 								)}
 							</span>
-							<span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+							<span className="mt-0.5 block text-ui-sm text-muted-foreground">
 								{card.description}
 							</span>
 						</span>
