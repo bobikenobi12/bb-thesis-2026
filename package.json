@@ -104,8 +104,8 @@
   "pnpm": {
     "overrides": {
       "@alicloud/credentials": "2.4.7",
-      "@ai-sdk/provider": "3.0.13",
-      "@ai-sdk/provider-utils": "4.0.37",
+      "@ai-sdk/provider": "3.0.15",
+      "@ai-sdk/provider-utils": "4.0.50",
       "react": "19.2.8",
       "react-dom": "19.2.8",
       "@types/react": "19.2.8",

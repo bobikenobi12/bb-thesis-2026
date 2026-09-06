@@ -13,11 +13,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-sesv2": "^3.1118.0",
+    "@aws-sdk/client-sesv2": "^3.1124.0",
     "@react-email/components": "^1.0.12",
     "next-runtime-env": "^3.3.0",
-    "nodemailer": "^9.0.5",
-    "resend": "^6.24.0"
+    "nodemailer": "^9.1.1",
+    "resend": "^6.25.0"
   },
   "peerDependencies": {
     "react": "^19.2.8",
