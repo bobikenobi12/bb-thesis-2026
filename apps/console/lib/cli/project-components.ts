@@ -12,9 +12,23 @@
 import { createHash } from "node:crypto";
 import { createInsertSchema } from "drizzle-zod";
 import { and, eq, getTableColumns } from "drizzle-orm";
-import type { AnyColumn } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
+import {
+	DEFAULT_COUNT_CAP,
+	afterCursor,
+	countScoped,
+	cursorKey,
+	decodeCursor,
+	encodeCursor,
+	pageFetchLimit,
+	pageOrder,
+	parsePageOpts,
+	type CursorPosition,
+	type CursorScope,
+	type PageInfo,
+} from "@/lib/cli/paging";
 import { getServiceDb } from "@/lib/db";
 import { asRecord } from "@/lib/records";
 import {
@@ -75,6 +89,7 @@ const WIRE_EXCLUDE = new Set<string>([
 	"provider_outputs",
 	"repository_url",
 	"secret_ref",
+	"cursor_key",
 ]);
 
 /** The component-kind registry. The pick-lists are the columns a CLI caller may `--set`;
@@ -512,32 +527,231 @@ export function validateComponentFields(
 	return { ok: true, values: asRecord(parsed.data) };
 }
 
-/** Lists a project's components — all kinds, or a single kind when `kindFilter` is set —
- * flattened into the uniform wire shape.
+/** The tenancy and filter identity of one component collection. */
+export interface ComponentListScope {
+	readonly orgId: string;
+	readonly projectId: string;
+	readonly kindFilter?: string;
+	readonly environmentId?: string;
+}
+
+/** A heterogeneous component cursor: registry kind plus that table's immutable row position. */
+interface ComponentCursorPosition extends CursorPosition {
+	readonly kind: string;
+}
+
+/** Parsed paging inputs for the heterogeneous component collection. */
+export interface ComponentPageOpts {
+	readonly limit: number;
+	readonly after: ComponentCursorPosition | null;
+}
+
+/** The result returned by the paged component query. */
+export interface ComponentsPage {
+	readonly components: ComponentWire[];
+	readonly page: PageInfo;
+}
+
+/** An internal row coupled to the position from which its next cursor is minted. */
+interface PagedComponent {
+	readonly component: ComponentWire;
+	readonly position: ComponentCursorPosition;
+}
+
+/** Returns the registry slice selected by the optional kind filter. */
+function selectedComponentKinds(scope: ComponentListScope): string[] {
+	return scope.kindFilter ? [scope.kindFilter] : COMPONENT_KINDS;
+}
+
+/**
+ * Builds the shared codec scope for one position in the heterogeneous collection.
  *
- * `environmentId` scopes the result to one environment. Without it a two-environment project lists
- * every row from every environment, flattened, with the same `kind` and `name` appearing twice and
- * nothing in the table to tell them apart — the `environment_id` is only visible inside `config`.
- * Every caller that can name an environment should pass one. */
-export async function listProjectComponents(
-	projectId: string,
-	kindFilter?: string,
-	environmentId?: string,
-): Promise<ComponentWire[]> {
-	const db = getServiceDb();
-	const kinds = kindFilter ? [kindFilter] : COMPONENT_KINDS;
-	const out: ComponentWire[] = [];
+ * The route has already established the project tenancy boundary before it calls this module,
+ * but the cursor binds that same org and project plus both filters. Replaying a cursor after any
+ * of them changes is therefore a 400 rather than an unrelated page. The registry kind is part of
+ * the opaque scope because component UUIDs are unique only within their own physical table.
+ */
+function componentCursorScope(
+	scope: ComponentListScope,
+	positionKind: string,
+): CursorScope {
+	return {
+		orgId: scope.orgId,
+		list: JSON.stringify([
+			"project-components",
+			scope.projectId,
+			scope.kindFilter ?? null,
+			scope.environmentId ?? null,
+			positionKind,
+		]),
+	};
+}
+
+/**
+ * Parses the standard `limit` plus a cursor whose kind position is hidden inside its scope.
+ *
+ * The shared cursor envelope deliberately knows only `(created_at, id)`. Trying the finite
+ * registry scopes recovers the one kind that minted it without inventing a second codec, while
+ * preserving the shared malformed/foreign-scope error vocabulary.
+ */
+export function parseComponentPageOpts(
+	params: URLSearchParams,
+	scope: ComponentListScope,
+):
+	| { readonly ok: true; readonly opts: ComponentPageOpts }
+	| { readonly ok: false; readonly error: string } {
+	const kinds = selectedComponentKinds(scope);
+	const limitParams = new URLSearchParams();
+	const rawLimit = params.get("limit");
+	if (rawLimit !== null) limitParams.set("limit", rawLimit);
+	const parsedLimit = parsePageOpts(
+		limitParams,
+		componentCursorScope(scope, kinds[0] ?? "none"),
+	);
+	if (!parsedLimit.ok) return parsedLimit;
+
+	const rawCursor = params.get("cursor");
+	if (rawCursor === null || rawCursor === "") {
+		return {
+			ok: true,
+			opts: { limit: parsedLimit.opts.limit, after: null },
+		};
+	}
+
+	let syntacticallyValid = false;
 	for (const kind of kinds) {
+		const decoded = decodeCursor(componentCursorScope(scope, kind), rawCursor);
+		if (decoded.ok) {
+			return {
+				ok: true,
+				opts: {
+					limit: parsedLimit.opts.limit,
+					after: { kind, ...decoded.position },
+				},
+			};
+		}
+		if (decoded.reason === "foreign-scope") syntacticallyValid = true;
+	}
+	return {
+		ok: false,
+		error: syntacticallyValid
+			? "cursor was issued for a different component collection"
+			: "cursor is malformed",
+	};
+}
+
+/** Counts the filtered collection to the shared aggregate ceiling, never once per page row. */
+async function countProjectComponents(
+	scope: ComponentListScope,
+): Promise<{ readonly total: number; readonly mode: PageInfo["mode"] }> {
+	const db = getServiceDb();
+	let total = 0;
+	for (const kind of selectedComponentKinds(scope)) {
 		const def = getKindDef(kind);
 		if (!def) continue;
 		const cols = getTableColumns(def.table);
-		const rows = await db
-			.select()
-			.from(def.table)
-			.where(componentScope(cols, projectId, environmentId));
-		for (const row of rows) out.push(rowToComponentWire(kind, row));
+		const remaining = DEFAULT_COUNT_CAP - total;
+		const counted = await countScoped(
+			db,
+			def.table,
+			[componentScope(cols, scope.projectId, scope.environmentId)],
+			remaining,
+		);
+		total += counted.total;
+		if (counted.mode === "capped") {
+			return { total: DEFAULT_COUNT_CAP, mode: "capped" };
+		}
 	}
-	return out;
+	return { total, mode: "exact" };
+}
+
+/**
+ * Lists one deterministic page of a project's heterogeneous components.
+ *
+ * Kinds are grouped in the published registry order. Within each kind rows use the shared,
+ * immutable `(created_at DESC, id DESC)` order. Each physical table is queried for only the
+ * remaining `limit + 1` rows, so neither page construction nor next-page detection materializes
+ * a whole component table in JavaScript.
+ */
+export async function listProjectComponents(
+	scope: ComponentListScope,
+	opts: ComponentPageOpts,
+): Promise<ComponentsPage> {
+	if (opts.limit < 1) {
+		throw new Error(
+			`component page size must be at least 1, got ${opts.limit}`,
+		);
+	}
+	const db = getServiceDb();
+	const kinds = selectedComponentKinds(scope);
+	const start = opts.after ? kinds.indexOf(opts.after.kind) : 0;
+	if (start < 0)
+		throw new Error("component cursor kind is outside the selected registry");
+	const fetched: PagedComponent[] = [];
+	const fetchLimit = pageFetchLimit({ limit: opts.limit, after: null });
+
+	const countPromise = countProjectComponents(scope);
+	for (
+		let index = start;
+		index < kinds.length && fetched.length < fetchLimit;
+		index++
+	) {
+		const kind = kinds[index];
+		if (!kind) continue;
+		const def = getKindDef(kind);
+		if (!def) continue;
+		const cols = getTableColumns(def.table);
+		const after = opts.after?.kind === kind ? opts.after : null;
+		const where = and(
+			componentScope(cols, scope.projectId, scope.environmentId),
+			after ? afterCursor(after, cols.created_at, cols.id) : undefined,
+		);
+		const rows = await db
+			.select({
+				...cols,
+				cursor_key: cursorKey(cols.created_at),
+			})
+			.from(def.table)
+			.where(where)
+			.orderBy(...pageOrder(cols.created_at, cols.id))
+			.limit(fetchLimit - fetched.length);
+		for (const row of rows) {
+			const record = asRecord(row);
+			if (
+				typeof record.cursor_key !== "string" ||
+				typeof record.id !== "string"
+			) {
+				throw new Error(`component ${kind} row is missing its cursor position`);
+			}
+			fetched.push({
+				component: rowToComponentWire(kind, row),
+				position: {
+					kind,
+					createdAt: record.cursor_key,
+					id: record.id,
+				},
+			});
+		}
+	}
+
+	const counted = await countPromise;
+	const hasMore = fetched.length > opts.limit;
+	const served = hasMore ? fetched.slice(0, opts.limit) : fetched;
+	const last = served[served.length - 1];
+	return {
+		components: served.map((row) => row.component),
+		page: {
+			...counted,
+			limit: opts.limit,
+			next_cursor:
+				hasMore && last
+					? encodeCursor(
+							componentCursorScope(scope, last.position.kind),
+							last.position,
+						)
+					: null,
+		},
+	};
 }
 
 /** `project_id` AND, when given, `environment_id`. One helper so a caller cannot scope a read one
@@ -546,10 +760,10 @@ function componentScope(
 	cols: Record<string, AnyColumn>,
 	projectId: string,
 	environmentId?: string,
-) {
+): SQL {
 	const scope = eq(cols.project_id, projectId);
 	if (!environmentId || !cols.environment_id) return scope;
-	return and(scope, eq(cols.environment_id, environmentId));
+	return and(scope, eq(cols.environment_id, environmentId)) ?? scope;
 }
 
 /** Inserts a component of `kind` on a project, scoped to `environmentId`. Singletons upsert on the

@@ -5,7 +5,9 @@ import { authorizeCli } from "@/lib/authz/guard";
 import {
 	getKindDef,
 	listProjectComponents,
+	parseComponentPageOpts,
 } from "@/lib/cli/project-components";
+import { MAX_PAGE_SIZE } from "@/lib/cli/paging";
 import {
 	resolveCliEnvironment,
 	resolveCliProject,
@@ -62,12 +64,26 @@ export async function GET(
 			}
 			environmentId = env.id;
 		}
-		const components = await listProjectComponents(
-			project.id,
-			kind,
+		const scope = {
+			orgId: actor.orgId,
+			projectId: project.id,
+			kindFilter: kind,
 			environmentId,
-		);
-		return cliJson(cliComponentsResponse, { components });
+		};
+		const parsed = parseComponentPageOpts(url.searchParams, scope);
+		if (!parsed.ok) {
+			return NextResponse.json({ error: parsed.error }, { status: 400 });
+		}
+		const asked = (key: string) => {
+			const raw = url.searchParams.get(key);
+			return raw !== null && raw !== "";
+		};
+		const opts =
+			!asked("limit") && !asked("cursor")
+				? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+				: parsed.opts;
+		const result = await listProjectComponents(scope, opts);
+		return cliJson(cliComponentsResponse, result);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";
 		return NextResponse.json({ error: message }, { status: 500 });
