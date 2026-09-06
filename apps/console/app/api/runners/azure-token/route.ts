@@ -10,7 +10,10 @@
 // issuer signing key; the runner just fetches tokens over its authed channel.
 
 import { AZURE_TOKEN_AUDIENCE } from "@/lib/cloud-providers/session/azure";
-import { mintWorkloadToken, oidcIssuerConfigured } from "@/lib/oidc/issuer";
+import {
+	assertionSourceForProvider,
+	workloadAssertionSourceConfigured,
+} from "@/lib/oidc/assertion-source";
 import { authorizeTokenMint } from "@/lib/runners/token-mint-auth";
 import { NextResponse } from "next/server";
 
@@ -19,7 +22,7 @@ export async function POST(req: Request) {
 	const { error: authError } = await authorizeTokenMint(req, "azure");
 	if (authError) return authError;
 
-	if (!oidcIssuerConfigured()) {
+	if (!workloadAssertionSourceConfigured()) {
 		return NextResponse.json(
 			{ error: "The workload-identity issuer is not configured (ALETHIA_OIDC_SIGNING_KEY)." },
 			{ status: 501 },
@@ -27,10 +30,12 @@ export async function POST(req: Request) {
 	}
 
 	try {
-		const token = await mintWorkloadToken({ audience: AZURE_TOKEN_AUDIENCE });
+		const token = await assertionSourceForProvider("azure").getAssertion({
+			audience: AZURE_TOKEN_AUDIENCE,
+		});
 		return NextResponse.json({ token });
-	} catch (err) {
-		console.error("Azure token mint error:", err);
+	} catch {
+		console.error("Azure token mint failed");
 		return NextResponse.json({ error: "Failed to mint Azure token" }, { status: 500 });
 	}
 }
