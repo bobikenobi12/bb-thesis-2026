@@ -1,0 +1,17 @@
+{
+  "name": "@repo/e2e-issuer",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@repo/workload-identity": "workspace:*"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "typescript": "5.9.3",
+    "vitest": "^2.1.9"
+  }
+}
