@@ -208,7 +208,7 @@ score is over the rest, and the cell says so rather than letting a narrower meas
 | `/[org]/~/alerts` | 291 | 2/4 · 0.50 | 5/5 · 1.00 | 8/8 · 1.00 | 4/7 · 0.57 | 7/7 · 1.00 | **0.84** |
 | `/[org]/[project]/settings` · | 1 | all N/A | 1/2 · 0.50 · 1 withheld | 8/8 · 1.00 | all N/A | 3/4 · 0.75 | **0.86** |
 | `/[org]/~/settings` · | 1 | all N/A | 1/2 · 0.50 | 8/8 · 1.00 | all N/A | 3/4 · 0.75 | **0.86** |
-| `/[org]/~/connectors` | 210 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | 6/7 · 0.86 | 5/7 · 0.71 | **0.90** |
+| `/[org]/~/connectors` | 211 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | 6/7 · 0.86 | 5/7 · 0.71 | **0.90** |
 | `/[org]/~/runners` | 272 | 4/4 · 1.00 | 5/5 · 1.00 | 8/8 · 1.00 | 3/6 · 0.50 · 1 withheld | 7/7 · 1.00 | **0.90** |
 | `/[org]/~/settings/members` | 221 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | 5/7 · 0.71 | 6/7 · 0.86 | **0.90** |
 | `/[org]/[project]/settings/general` | 216 | 4/4 · 1.00 | 5/5 · 1.00 · 1 withheld | 8/8 · 1.00 | all N/A | 5/7 · 0.71 | **0.92** |
@@ -223,7 +223,7 @@ score is over the rest, and the cell says so rather than letting a narrower meas
 | `/[org]/[project]/settings/access` | 214 | 4/4 · 1.00 | 6/6 · 1.00 · 1 withheld | 8/8 · 1.00 | 6/7 · 0.86 | 6/7 · 0.86 | **0.94** |
 | `/[org]/[project]/settings/activity` | 279 | 4/4 · 1.00 | 6/6 · 1.00 · 1 withheld | 8/8 · 1.00 | 6/7 · 0.86 | 6/7 · 0.86 | **0.94** |
 | `/[org]/~/jobs/[id]` | 223 | 3/4 · 0.75 | 4/4 · 1.00 · 1 withheld | 8/8 · 1.00 | all N/A | 7/7 · 1.00 | **0.96** |
-| `/[org]/~/new` | 359 | 3/4 · 0.75 | 4/4 · 1.00 | 8/8 · 1.00 | all N/A | 7/7 · 1.00 | **0.96** |
+| `/[org]/~/new` | 360 | 3/4 · 0.75 | 4/4 · 1.00 | 8/8 · 1.00 | all N/A | 7/7 · 1.00 | **0.96** |
 | `/[org]/~/settings/classification` | 147 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | all N/A | 6/7 · 0.86 | **0.96** |
 | `/[org]/~/settings/general` | 135 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | all N/A | 6/7 · 0.86 | **0.96** |
 | `/[org]/~/support/ask` | 199 | 4/4 · 1.00 | 4/4 · 1.00 | 8/8 · 1.00 | all N/A | 6/7 · 0.86 | **0.96** |

@@ -11,7 +11,7 @@
 // key.
 
 import { AWS_TOKEN_AUDIENCE, awsConfigured } from "@/lib/cloud-providers/session/aws";
-import { mintWorkloadToken } from "@/lib/oidc/issuer";
+import { assertionSourceForProvider } from "@/lib/oidc/assertion-source";
 import { authorizeTokenMint } from "@/lib/runners/token-mint-auth";
 import { NextResponse } from "next/server";
 
@@ -28,14 +28,16 @@ export async function POST(req: Request) {
 	}
 
 	try {
-		const token = await mintWorkloadToken({ audience: AWS_TOKEN_AUDIENCE });
+		const token = await assertionSourceForProvider("aws").getAssertion({
+			audience: AWS_TOKEN_AUDIENCE,
+		});
 		return NextResponse.json({
 			token,
 			// STS is global, but the SDK wants a region; fall back to us-east-1.
 			region: process.env.AWS_REGION || "us-east-1",
 		});
-	} catch (err) {
-		console.error("AWS token mint error:", err);
+	} catch {
+		console.error("AWS token mint failed");
 		return NextResponse.json({ error: "Failed to mint AWS token" }, { status: 500 });
 	}
 }

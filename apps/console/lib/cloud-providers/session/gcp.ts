@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { IdentityPoolClient } from "google-auth-library";
-import { mintWorkloadToken } from "@/lib/oidc/issuer";
+import { assertionSourceForProvider } from "@/lib/oidc/assertion-source";
 import type { WifCredentialConfig } from "@/types/jsonb.types";
 
 /**
@@ -37,7 +37,10 @@ export function externalAccountClientFromWif(wif: WifCredentialConfig) {
 		token_url: wif.token_url ?? "https://sts.googleapis.com/v1/token",
 		service_account_impersonation_url: wif.service_account_impersonation_url,
 		subject_token_supplier: {
-			getSubjectToken: () => mintWorkloadToken({ audience: GCP_TOKEN_AUDIENCE }),
+			getSubjectToken: () =>
+				assertionSourceForProvider("gcp").getAssertion({
+					audience: GCP_TOKEN_AUDIENCE,
+				}),
 		},
 	});
 }
