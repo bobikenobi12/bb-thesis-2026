@@ -68,7 +68,7 @@ services:
   #   docker compose --profile tools up -d pgweb   →  http://localhost:8081
   # Connects to the bundled Postgres as the superuser role (sees every table;
   # the app role is RLS-restricted). For a Drizzle-native UI instead, run
-  # `pnpm -F console db:studio` (https://local.drizzle.studio).
+  # `pnpm -C apps/console run db:studio` (https://local.drizzle.studio).
   pgweb:
     image: sosedoff/pgweb:latest
     profiles: ["tools"]

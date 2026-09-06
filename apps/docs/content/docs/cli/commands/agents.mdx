@@ -14,6 +14,19 @@ The CLI is a client of the same Console API. These subcommands call `/cli/agents
 returns not-found, never its persona/mission.
 </Callout>
 
+## No id is copied between commands
+
+`get` takes the agent id as an **optional** first argument. Omit it on a terminal and the
+identities you can see are offered to choose from, so the id never has to be read out of
+`agent list` and pasted back in. The identity the CLI resolved is printed on **stderr**, so
+`-o json` still emits a document that parses.
+
+Only an **id** is accepted as the argument, and it is passed through byte for byte. A persona is
+not resolved to an id on purpose: personas are not unique, so "the one whose persona matches"
+would silently read a different identity the day a second agent takes the same persona. With
+`--no-input` (or a non-terminal stdin/stdout) nothing is asked and the command fails naming the
+argument to pass.
+
 ## `alethia agent list`
 
 List the agent identities you can see.
@@ -31,15 +44,18 @@ namespace), **Version**. Add `-o json` for the raw objects. Backing call: `GET /
 Show one agent identity's persona, mission, and tool scope.
 
 ```bash
-alethia agent get <agent-id>
+alethia agent get
+alethia agent get ag_01J8Z9QK3F
+alethia agent get ag_01J8Z9QK3F -o json
 ```
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `<agent-id>` | Yes | The agent identity's id (from `agent list`). |
+| `[agent-id]` | No | The agent identity's id. Omit it on a terminal to pick from a list. |
 
 Renders a field/value card: **id**, **persona**, **mission**, **tool scope** (the allowed tools),
-**namespace**, **version**. Add `-o json` for the full object. Backing call:
+**namespace**, **project** (the project it is scoped to, or `—` for an org-wide identity),
+**created**, **version**. Add `-o json` for the full object. Backing call:
 `GET /cli/agents/<agent-id>`.
 
 ## See also

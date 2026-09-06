@@ -93,7 +93,7 @@ metadata:
   labels:
     alethia.io/preview: "true"
 [[- range .SortedLabels ]]
-    [[ .Key ]]: "[[ .Value ]]"
+    "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -106,7 +106,7 @@ spec:
     - name: "[[ .VClusterName ]]-*"
       namespace: "[[ .NamespacePrefix ]]"
 [[- else ]]
-    - server: [[ .DestServerOrDefault ]]
+    - server: '[[ .DestServerOrDefault ]]'
       namespace: "[[ .NamespacePrefix ]]-*"
 [[- end ]]
   clusterResourceWhitelist:
@@ -123,7 +123,7 @@ metadata:
   labels:
     alethia.io/preview: "true"
 [[- range .SortedLabels ]]
-    [[ .Key ]]: "[[ .Value ]]"
+    "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -138,7 +138,7 @@ spec:
     - name: "[[ .VClusterName ]]-*"
       namespace: "[[ .NamespacePrefix ]]"
 [[- else ]]
-    - server: [[ .DestServerOrDefault ]]
+    - server: '[[ .DestServerOrDefault ]]'
       namespace: "[[ .NamespacePrefix ]]-*"
 [[- end ]]
   clusterResourceWhitelist: []
@@ -164,7 +164,7 @@ metadata:
   labels:
     alethia.io/preview: "true"
 [[- range .SortedLabels ]]
-    [[ .Key ]]: "[[ .Value ]]"
+    "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
 spec:
   goTemplate: true
@@ -172,11 +172,11 @@ spec:
   generators:
     - pullRequest:
         [[ .GitProvider ]]:
-          owner: [[ .RepoOwner ]]
-          repo: [[ .RepoName ]]
+          owner: '[[ .RepoOwner ]]'
+          repo: '[[ .RepoName ]]'
 [[- if .TokenSecretRef ]]
           tokenRef:
-            secretName: [[ .TokenSecretRef ]]
+            secretName: '[[ .TokenSecretRef ]]'
             key: token
 [[- end ]]
         requeueAfterSeconds: 60
@@ -187,20 +187,20 @@ spec:
         alethia.io/preview: "true"
         alethia.io/preview-pr: '{{ .number }}'
 [[- range .SortedLabels ]]
-        [[ .Key ]]: "[[ .Value ]]"
+        "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
     spec:
       project: preview-guardrails-[[ .Project ]]
       source:
-        repoURL: [[ .GuardrailsRepoURL ]]
+        repoURL: "[[ .GuardrailsRepoURL ]]"
         targetRevision: HEAD
         path: '[[ .GuardrailsPath ]]'
       destination:
 [[- if eq .PlacementModeStr "vcluster" ]]
         name: '[[ .VClusterName ]]-{{ .number }}'
-        namespace: [[ .NamespacePrefix ]]
+        namespace: '[[ .NamespacePrefix ]]'
 [[- else ]]
-        server: [[ .DestServerOrDefault ]]
+        server: '[[ .DestServerOrDefault ]]'
         namespace: '[[ .NamespacePrefix ]]-{{ .number }}'
 [[- end ]]
       syncPolicy:
@@ -247,28 +247,74 @@ func RenderPreviewGuardrails(in PreviewGuardrailsInput) (string, error) {
 // validate fails closed on missing inputs or an unsupported placement, so a broken config never
 // reaches ArgoCD as a half-formed manifest.
 func (in PreviewGuardrailsInput) validate() error {
-	switch {
-	case strings.TrimSpace(in.Project) == "":
-		return fmt.Errorf("preview guardrails: project is required")
-	case strings.TrimSpace(in.GitProvider) == "":
-		return fmt.Errorf("preview guardrails: git provider is required")
-	case strings.TrimSpace(in.RepoOwner) == "" || strings.TrimSpace(in.RepoName) == "":
-		return fmt.Errorf("preview guardrails: repo owner and name are required")
-	case strings.TrimSpace(in.GuardrailsRepoURL) == "":
-		return fmt.Errorf("preview guardrails: guardrails repo URL is required")
-	case strings.TrimSpace(in.GuardrailsPath) == "":
-		return fmt.Errorf("preview guardrails: guardrails path is required")
+	const what = "preview guardrails"
+
+	// Same shape rules as the app half (preview_validate.go). This renderer emits the AppProjects
+	// that CONSTRAIN the untrusted half, so a value that restructures its YAML would weaken the
+	// isolation the app half depends on — `namespace: "[[ .NamespacePrefix ]]-*"` is the
+	// destination pin, and a prefix that broke out of it would widen the glob.
+	if err := validatePreviewProject(what, in.Project); err != nil {
+		return err
 	}
+	if err := validatePreviewGitProvider(what, in.GitProvider); err != nil {
+		return err
+	}
+	if err := validatePreviewRepoRef(what, "repo owner", in.RepoOwner); err != nil {
+		return err
+	}
+	if err := validatePreviewRepoRef(what, "repo name", in.RepoName); err != nil {
+		return err
+	}
+	if err := validatePreviewSecretRef(what, in.TokenSecretRef); err != nil {
+		return err
+	}
+	if strings.TrimSpace(in.GuardrailsRepoURL) == "" {
+		return fmt.Errorf("%s: guardrails repo URL is required", what)
+	}
+	if err := validatePreviewURL(what, "guardrails repo URL", in.GuardrailsRepoURL, gitRemoteSchemes); err != nil {
+		return err
+	}
+	if strings.TrimSpace(in.GuardrailsPath) == "" {
+		return fmt.Errorf("%s: guardrails path is required", what)
+	}
+	// Alethia-controlled today, but it renders into `source.path` exactly as the app half's
+	// AppsPath does, and "it is trusted" is a property of the current caller rather than of this
+	// function. There is no caller yet at all.
+	if err := ValidateAppsPath(in.GuardrailsPath); err != nil {
+		return fmt.Errorf("%s: guardrails path: %w", what, err)
+	}
+	if err := validatePreviewNamespacePrefix(what, in.NamespacePrefix); err != nil {
+		return err
+	}
+	if err := validatePreviewURL(what, "destination server", in.DestServer, apiServerSchemes); err != nil {
+		return err
+	}
+	if err := validatePreviewLabels(what, in.Labels); err != nil {
+		return err
+	}
+	for _, repo := range in.AppSourceRepos {
+		// An entry renders INSIDE DOUBLE QUOTES (`sourceRepos:\n  - "[[ . ]]"`). A line break adds
+		// list entries; a quote terminates the scalar early and leaves trailing content, which is
+		// a syntax error that takes the whole guardrails document — the AppProjects constraining
+		// the untrusted half — down with it. "!*" and other globs are legal ArgoCD syntax and stay
+		// allowed, so only the two characters that restructure the document are refused.
+		if strings.ContainsAny(repo, yamlDQBreakers) {
+			return fmt.Errorf("%s: app source repo %q contains a line break or a quote character", what, repo)
+		}
+	}
+
 	switch in.PlacementMode {
 	case types.PlacementModeNamespace, types.PlacementModeVcluster:
 		// ok — the two valid preview tenancies.
 	case types.PlacementModeDedicated:
-		return fmt.Errorf("preview guardrails: dedicated placement is not valid for an ephemeral preview (want namespace|vcluster)")
+		return fmt.Errorf("%s: dedicated placement is not valid for an ephemeral preview (want namespace|vcluster)", what)
 	default:
-		return fmt.Errorf("preview guardrails: placement mode %q is not a valid preview placement (want namespace|vcluster)", in.PlacementMode)
+		return fmt.Errorf("%s: placement mode %q is not a valid preview placement (want namespace|vcluster)", what, in.PlacementMode)
 	}
-	if in.PlacementMode == types.PlacementModeVcluster && strings.TrimSpace(in.VClusterName) == "" {
-		return fmt.Errorf("preview guardrails: vcluster placement requires a vcluster name")
+	if in.PlacementMode == types.PlacementModeVcluster {
+		if err := validatePreviewClusterName(what, in.VClusterName); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -287,6 +333,23 @@ type previewGuardrailsData struct {
 // string, the in-cluster default destination, the namespace-prefix default, and a fail-closed
 // sourceRepos allowlist for the untrusted app project).
 func (in PreviewGuardrailsInput) templateData() previewGuardrailsData {
+	// Every shape guard judges the TRIMMED value, so the template must render the trimmed one too.
+	// Without this, `Project = "\ndemo"` passes validatePreviewProject (it trims to a valid label)
+	// and then renders `name: preview-` followed by `demo` at column 0 — the half-formed manifest
+	// validate() exists to prevent. vcluster_app.go:204 writes the trimmed value back for the same
+	// reason; this renderer did it only as an emptiness test.
+	in.Project = strings.TrimSpace(in.Project)
+	in.GitProvider = strings.TrimSpace(in.GitProvider)
+	in.RepoOwner = strings.TrimSpace(in.RepoOwner)
+	in.RepoName = strings.TrimSpace(in.RepoName)
+	in.TokenSecretRef = strings.TrimSpace(in.TokenSecretRef)
+	in.NamespacePrefix = strings.TrimSpace(in.NamespacePrefix)
+	in.VClusterName = strings.TrimSpace(in.VClusterName)
+	in.DestServer = strings.TrimSpace(in.DestServer)
+
+	in.GuardrailsRepoURL = strings.TrimSpace(in.GuardrailsRepoURL)
+	in.GuardrailsPath = strings.TrimSpace(in.GuardrailsPath)
+
 	prefix := in.NamespacePrefix
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "preview"

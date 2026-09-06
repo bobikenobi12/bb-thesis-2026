@@ -27,7 +27,7 @@ module "vpc_network" {
 # gke_node_pool_name.
 locals {
   # The network to attach the rule to, resolved for both paths exactly as gke.tf resolves it.
-  allow_list_network = var.provision_network ? module.vpc_network[0].network_name : data.google_compute_network.existing[0].name
+  allow_list_network = try(module.vpc_network[0].network_name, null) != null ? module.vpc_network[0].network_name : one(data.google_compute_network.existing[*].name)
 
   # Built from the SAME stem the NAMING-001 budget is computed against, and deliberately not from
   # the resolved network name: plain variables are known at plan time, so this is assertable before

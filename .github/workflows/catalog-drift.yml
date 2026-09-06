@@ -5,7 +5,7 @@
 # re-derives what each cloud actually offers for the managed-DB engines and files ONE deduped GitHub
 # issue when the shipped packages/core/catalog/catalog.json baseline drifts — a version the cloud
 # EOL'd but the canvas still offers, or worse, a `default_version` that is no longer creatable (which
-# every unversioned project provisions on). Remediation is `pnpm -F console derive:catalog -- --write`.
+# every unversioned project provisions on). Remediation is `pnpm -C apps/console run derive:catalog -- --write`.
 #
 # UNLIKE compat-drift, this scout has NO creds-free source: every managed-DB version API is
 # credential-gated, so with no cloud creds wired every cloud SKIPS and the run is green and silent.
@@ -60,7 +60,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # The scout is dependency-free Node; install only so `pnpm -F console` resolves the script.
+      # The scout is dependency-free Node; install only so `pnpm -C apps/console run` resolves it.
       - name: Install console deps
         run: pnpm install --frozen-lockfile --filter console
       # The SAME role the e2e workflows assume (vars.E2E_AWS_ROLE_ARN). The deriver only ever calls
@@ -87,4 +87,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: pnpm -F console derive:catalog ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '-- --dry-run' || '' }}
+        run: pnpm -C apps/console run derive:catalog ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '-- --dry-run' || '' }}

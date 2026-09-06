@@ -1,7 +1,7 @@
 {
-	"version": "string",
-	"release_notes": "string",
+	"version": "1.2.3",
+	"release_notes": "Release notes",
 	"released_at": "2026-01-01T00:00:00.000Z",
-	"github_release_url": "string",
-	"min_supported_version": "string"
+	"github_release_url": "https://github.com/alethialabs-io/alethia-cli/releases/tag/v1.2.3",
+	"min_supported_version": "1.0.0"
 }

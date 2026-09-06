@@ -40,11 +40,11 @@ async function seedPromotion(
 		.returning({ id: projects.id });
 	const [src] = await db
 		.insert(projectEnvironments)
-		.values({ project_id: p.id, user_id: owner, name: "staging", status: "ACTIVE" })
+		.values({ project_id: p.id, user_id: owner, name: "staging", status: "ACTIVE", is_default: true })
 		.returning({ id: projectEnvironments.id });
 	const [tgt] = await db
 		.insert(projectEnvironments)
-		.values({ project_id: p.id, user_id: owner, name: "prod", status: "ACTIVE" })
+		.values({ project_id: p.id, user_id: owner, name: "prod", status: "ACTIVE", is_default: false })
 		.returning({ id: projectEnvironments.id });
 	const [promo] = await db
 		.insert(environmentPromotions)

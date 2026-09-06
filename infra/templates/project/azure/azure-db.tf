@@ -17,7 +17,7 @@ module "azure_db" {
   backup_retention_days = var.azure_db_backup_retention_days
   port                  = var.azure_db_port
   iam_auth              = var.azure_db_iam_auth
-  subnet_id             = var.provision_vnet ? module.vnet[0].database_subnet_id : var.vnet_id
+  subnet_id             = try(module.vnet[0].database_subnet_id, null) != null ? module.vnet[0].database_subnet_id : var.vnet_id
 
   # MySQL validates Entra tokens with an identity attached to the SERVER (PostgreSQL takes an inline
   # authentication block instead). The dedicated db_admin identity doubles as it, so no third identity

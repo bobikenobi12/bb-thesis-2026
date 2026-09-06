@@ -55,14 +55,14 @@ export function PurchaseLayout({
 				<PlanChecklist meta={meta} />
 				<div className="mt-auto border-t border-border pt-5">
 					<div className="flex items-baseline justify-between gap-2">
-						<span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-text-primary">
+						<span className="font-display text-ui-lg font-semibold tracking-[-0.01em] text-text-primary">
 							{meta.name}
 						</span>
-						<span className="font-mono text-[11px] text-text-tertiary">
+						<span className="font-mono text-ui-xs text-text-tertiary">
 							{meta.priceLabel}
 						</span>
 					</div>
-					<p className="mt-1.5 text-[11.5px] leading-snug text-text-tertiary">
+					<p className="mt-1.5 text-ui-xs leading-snug text-text-tertiary">
 						{meta.tagline}
 					</p>
 				</div>
@@ -78,13 +78,13 @@ export function PurchaseLayout({
 				</button>
 				<div className="mx-auto w-full max-w-[420px] shrink-0">
 					<div className="mb-6 flex flex-col items-center text-center">
-						<span className="rounded-full border border-border-strong px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-text-secondary">
+						<span className="rounded-full border border-border-strong px-2.5 py-0.5 font-mono text-ui-2xs uppercase tracking-[0.12em] text-text-secondary">
 							{meta.name}
 						</span>
-						<h1 className="mt-3 font-display text-[22px] font-semibold tracking-[-0.02em] text-text-primary">
+						<h1 className="mt-3 font-display text-display-xs font-semibold tracking-[-0.02em] text-text-primary">
 							{heading}
 						</h1>
-						<p className="mt-1.5 text-[12.5px] text-text-tertiary">
+						<p className="mt-1.5 text-ui-sm text-text-tertiary">
 							{subheading ?? "Unlock collaboration and improved performance."}
 						</p>
 					</div>
@@ -125,10 +125,10 @@ export function InviteView({
 	return (
 		<div className="mx-auto flex w-full max-w-[460px] flex-col gap-4 px-7 py-8">
 			<div className="flex flex-col gap-1">
-				<h1 className="font-display text-[22px] font-semibold tracking-[-0.02em] text-text-primary">
+				<h1 className="font-display text-display-xs font-semibold tracking-[-0.02em] text-text-primary">
 					Invite your team
 				</h1>
-				<p className="text-[12.5px] text-text-tertiary">
+				<p className="text-ui-sm text-text-tertiary">
 					{isTrialOrg
 						? "Teammates are free during your trial — add them now or later from settings."
 						: "Add teammates now, or skip and invite them later from settings."}
@@ -136,7 +136,7 @@ export function InviteView({
 			</div>
 
 			<Seat avatar="YO" name={ownerEmail || "You"} meta="Organization owner">
-				<span className="rounded-full border border-border-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
+				<span className="rounded-full border border-border-strong px-2 py-0.5 font-mono text-ui-2xs uppercase tracking-wide text-text-secondary">
 					Owner
 				</span>
 			</Seat>
@@ -170,7 +170,7 @@ export function InviteView({
 					Invite
 				</Button>
 			</div>
-			<p className="text-[11.5px] text-text-tertiary">
+			<p className="text-ui-xs text-text-tertiary">
 				{isTrialOrg
 					? "Teammates are free while you're on trial — each becomes a $20/seat/mo charge once it converts (viewers are free)."
 					: "Each teammate becomes a billable seat once they accept (viewers are free)."}
@@ -182,7 +182,7 @@ export function InviteView({
 					name={inv.email}
 					meta="Invited · pending"
 				>
-					<span className="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] capitalize text-text-tertiary">
+					<span className="rounded-full border border-border px-2 py-0.5 font-mono text-ui-2xs capitalize text-text-tertiary">
 						{inv.role}
 					</span>
 				</Seat>
@@ -192,7 +192,7 @@ export function InviteView({
 				<button
 					type="button"
 					onClick={onAddPayment}
-					className="flex items-center justify-center gap-1.5 text-[11.5px] text-text-tertiary transition-colors hover:text-text-primary"
+					className="flex items-center justify-center gap-1.5 text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 				>
 					<CreditCard size={13} />
 					Add a payment method to keep your team after the trial
@@ -252,16 +252,16 @@ export function Field({
 }) {
 	return (
 		<div className="space-y-1.5">
-			<div className="flex items-center gap-1.5 text-[13px] font-medium text-text-primary">
+			<div className="flex items-center gap-1.5 text-ui-md font-medium text-text-primary">
 				{label}
 				{required && (
-					<span className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
+					<span className="font-mono text-ui-2xs uppercase tracking-wide text-text-tertiary">
 						required
 					</span>
 				)}
 			</div>
 			{children}
-			{error && <p className="text-[11px] text-destructive">{error}</p>}
+			{error && <p className="text-ui-xs text-destructive">{error}</p>}
 		</div>
 	);
 }
@@ -280,12 +280,12 @@ export function Seat({
 }) {
 	return (
 		<div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
-			<span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface-muted font-mono text-[10px] text-text-secondary">
+			<span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface-muted font-mono text-ui-2xs text-text-secondary">
 				{avatar}
 			</span>
 			<div className="flex min-w-0 flex-1 flex-col">
-				<span className="truncate text-[12.5px] text-text-primary">{name}</span>
-				<span className="font-mono text-[10px] text-text-tertiary">{meta}</span>
+				<span className="truncate text-ui-sm text-text-primary">{name}</span>
+				<span className="font-mono text-ui-2xs text-text-tertiary">{meta}</span>
 			</div>
 			{children}
 		</div>

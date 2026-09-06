@@ -7,12 +7,14 @@
 // renders through StatusBadge.
 
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { ProviderIcon } from "@repo/ui/provider-icon";
 import { StatusBadge } from "@repo/ui/status-badge";
+import { EmptyState } from "@repo/ui/empty";
 import { Skeleton } from "@repo/ui/skeleton";
 import type { JobWithMeta } from "@/app/server/actions/jobs";
-import { JOB_TYPES, formatDuration } from "@/lib/jobs/format";
+import { formatDuration, formatRelative } from "@repo/format";
+import { CARD_EMPTY } from "@/components/overview/card-empty";
+import { JOB_TYPES } from "@/lib/jobs/format";
 import { globalHref } from "@/lib/routing";
 import { useJobsQuery } from "@/lib/query/use-jobs-query";
 
@@ -47,12 +49,12 @@ export function RecentJobsCard({ orgSlug }: { orgSlug: string }) {
 				    jobs whatever their age, so an org whose last deploy was a month ago read as
 				    having failed five jobs today. A window would be worse than the label: it would
 				    empty the card for exactly the orgs with the least to look at. */}
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-ui-2xs text-muted-foreground">
 					latest {MAX_ROWS}
 				</span>
 				<Link
 					href={globalHref(orgSlug, "jobs")}
-					className="ml-auto font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+					className="ml-auto font-mono text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
 				>
 					All →
 				</Link>
@@ -65,23 +67,22 @@ export function RecentJobsCard({ orgSlug }: { orgSlug: string }) {
 					))}
 				</div>
 			) : isError ? (
-				// A fetch failure must not read as "No jobs yet." — compact, card-appropriate.
-				<div className="px-4 py-8 text-center">
-					<p className="font-mono text-xs text-muted-foreground">
-						Couldn&apos;t load recent jobs.
-					</p>
-					<button
-						type="button"
-						onClick={() => refetch()}
-						className="mt-2 font-mono text-[11px] text-foreground underline-offset-2 hover:underline"
-					>
-						Retry
-					</button>
-				</div>
+				// A fetch failure must not read as "No jobs yet." — same shape, different words.
+				<EmptyState
+					className={CARD_EMPTY}
+					title="Couldn't load recent jobs."
+					action={
+						<button
+							type="button"
+							onClick={() => refetch()}
+							className="font-mono text-ui-xs text-foreground underline-offset-2 hover:underline"
+						>
+							Retry
+						</button>
+					}
+				/>
 			) : recent.length === 0 ? (
-				<p className="px-4 py-8 text-center font-mono text-xs text-muted-foreground">
-					No jobs yet.
-				</p>
+				<EmptyState className={CARD_EMPTY} title="No jobs yet." />
 			) : (
 				recent.map((job) => {
 					const action = JOB_TYPES[job.job_type]?.label ?? job.job_type;
@@ -94,25 +95,25 @@ export function RecentJobsCard({ orgSlug }: { orgSlug: string }) {
 								{job.cloud_provider ? (
 									<ProviderIcon provider={job.cloud_provider} size={14} />
 								) : (
-									<span className="font-mono text-[10px] text-muted-foreground">
+									<span className="font-mono text-ui-2xs text-muted-foreground">
 										·
 									</span>
 								)}
 							</span>
 							<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-								<span className="truncate text-[13px] font-medium text-foreground">
+								<span className="truncate text-ui-md font-medium text-foreground">
 									{job.project_name ?? "—"}
 								</span>
-								<span className="font-mono text-[10px] text-muted-foreground">
+								<span className="font-mono text-ui-2xs text-muted-foreground">
 									{action} · OpenTofu
 								</span>
 							</div>
 							<div className="flex shrink-0 flex-col items-end gap-1">
 								<StatusBadge status={job.status} />
-								<span className="font-mono text-[10px] text-muted-foreground">
+								<span className="font-mono text-ui-2xs text-muted-foreground">
 									{jobDuration(job)}
 									{job.created_at
-										? ` · ${formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}`
+										? ` · ${formatRelative(job.created_at)}`
 										: ""}
 								</span>
 							</div>

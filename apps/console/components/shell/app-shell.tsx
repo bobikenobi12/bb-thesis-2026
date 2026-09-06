@@ -7,6 +7,7 @@
 // tree. Replaces the legacy header-centric `DashboardChrome`.
 
 import type React from "react";
+import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@repo/ui/sheet";
 import { cn } from "@repo/ui/utils";
@@ -18,6 +19,7 @@ import { AnalyticsIdentity } from "@/components/analytics/analytics-identity";
 import { SetupGuideCard } from "@/components/onboarding/setup-guide";
 import { AppSidebar } from "./app-sidebar";
 import { CommandPalette } from "./command-palette";
+import { CONTENT_FRAME } from "./content-frame";
 import { JobToaster } from "./job-toaster";
 import { SidebarRail } from "./sidebar-rail";
 import { SupportToaster } from "./support-toaster";
@@ -41,6 +43,16 @@ export function AppShell({
 	// width); it stays the full sidebar on every other project view and always at org scope. A nested
 	// drill (Settings) force-expands it, and a manual toggle pins the user's choice. See useSidebarCollapse.
 	const { collapsed } = useSidebarCollapse();
+
+	// The project workspace is the one subtree this frame must NOT wrap. `ProjectShell` mounts
+	// below this shell and is a full-viewport surface — the Architecture canvas pans to the edge
+	// and the docked inspector is pinned to the right rail — so it applies CONTENT_FRAME itself,
+	// to its scrolling views only. A cap on this ancestor would be inescapable from down there:
+	// ProjectShell's `-m-4 … -m-10` cancels padding, but no negative margin can cancel a
+	// `max-w-*` whose overflow it cannot measure. Org-scoped routes are `/{org}` and `/{org}/~/…`;
+	// anything with a second segment that is not `~` is the workspace.
+	const segments = usePathname().split("/").filter(Boolean);
+	const isProjectWorkspace = segments.length >= 2 && segments[1] !== "~";
 
 	// Load the workspace once here so every nav href resolves to the active org even
 	// before the org switcher mounts (the switcher used to be the only loader).
@@ -96,7 +108,13 @@ export function AppShell({
 							</div>
 						}
 					>
-						<div className="p-4 sm:p-6 lg:p-8 xl:p-10">{children}</div>
+						<div className="p-4 sm:p-6 lg:p-8 xl:p-10">
+							{isProjectWorkspace ? (
+								children
+							) : (
+								<div className={CONTENT_FRAME}>{children}</div>
+							)}
+						</div>
 					</Suspense>
 				</main>
 			</div>

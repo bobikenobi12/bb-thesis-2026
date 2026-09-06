@@ -1,34 +1,54 @@
 ---
 title: Runner Commands
-description: Deploy, list, and tear down runner agents from the CLI.
+description: Deploy, register, list, and tear down runner agents from the CLI.
 ---
 
 # Runner Commands
 
 Runners execute infrastructure jobs. Manage them with `alethia runner`.
 
+Every runner is named by its **name** — the one `alethia runner list` shows. No command in this
+group needs an id copied out of another command's output. The `--runner-id`,
+`--assigned-runner-id` and `--cloud-identity-id` forms still take a raw id for scripts that
+already pass one; passing a name form and an id form for the same field together is refused
+rather than silently resolved by precedence.
+
+Every field below is a flag, so every command in this group runs under `--no-input`.
+
 ## `alethia runner deploy`
 
-Deploy a new runner to an AWS account. Creates a runner record and queues a
-`DEPLOY_RUNNER` job using the latest stable release.
+Deploy a new runner into an AWS account. Creates a runner record and queues a `DEPLOY_RUNNER`
+job using the latest stable release.
 
 ```bash
-alethia runner deploy --cloud-identity-id <id> --name <name> --region <region>
+# Interactive: picks the cloud account, then asks for the name and region
+alethia runner deploy
+
+# Unattended: every field named, nothing asked
+alethia runner deploy --cloud-account prod-account --name eu-runner --region eu-west-1 --no-input
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--cloud-identity-id` | Cloud identity to deploy into (AWS only) |
-| `--name` | Runner name |
-| `--region` | Cloud region |
-| `--assigned-runner-id` | Which runner executes the deployment |
+| `--cloud-account` | Cloud account to deploy into, by **label** or id (AWS only; asked for on a terminal when omitted) |
+| `--cloud-identity-id` | Cloud identity id to deploy into — prefer `--cloud-account`, which also takes the label |
+| `--name` | Runner name (default: `runner-<hostname>`) |
+| `--region` | Cloud region (default: `eu-west-1`) |
+| `--assigned-runner` | Runner that executes the deployment, by **name** or id (any available when omitted) |
+| `--assigned-runner-id` | Runner id that executes the deployment — prefer `--assigned-runner` |
 | `--wait`, `-w` | Wait for job completion |
+
+With `--no-input`, `--name` and `--region` take the defaults above and the value used is printed,
+and an omitted `--assigned-runner` leaves the job for any available runner. Only the cloud account
+has no default: pass `--cloud-account` or `--cloud-identity-id`.
 
 <Callout type="warn">
   **Deployed runners are available on AWS only.** `infra/templates/runner/` holds one template,
   `aws`, so there is no runner template for GCP, Azure, Alibaba Cloud or Hetzner. Omit
-  `--cloud-identity-id` and the picker lists your verified AWS accounts alone. Pass an identity
-  for another cloud and the server refuses the deploy before it creates a runner or a job.
+  `--cloud-account` and the picker lists your verified AWS accounts alone; name an account on
+  another cloud and the command refuses before it creates a runner or a job. A raw
+  `--cloud-identity-id` is not resolved locally, so for that form the refusal comes from the
+  server instead.
 
   This limits **where the runner itself runs**, not what it provisions: a registered runner
   provisions every cloud Alethia supports, wherever it runs. To run a runner on another cloud, use
@@ -44,14 +64,19 @@ Register a runner you operate yourself. Nothing is provisioned — this is the c
 ```bash
 alethia runner register my-hetzner-box
 
-# Bound to a cloud account, and machine-readable for a provisioning script
-alethia runner register gcp-box-1 --cloud-identity-id <id>
+# Bound to a cloud account by its label, and unattended for a provisioning script
+alethia runner register gcp-box-1 --cloud-account prod-account --no-input
 ```
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<name>` | Yes* | Runner name (positional, or `--name`) |
-| `--cloud-identity-id` | No | Bind the runner to a cloud account |
+| `[name]` | Yes* | Runner name (positional, or `--name`; asked for on a terminal) |
+| `--name` | Yes* | Runner name, when not passed as the argument |
+| `--cloud-account` | No | Bind the runner to a cloud account, by **label** or id |
+| `--cloud-identity-id` | No | Cloud identity id to bind to — prefer `--cloud-account` |
+
+\* One of the two. On a terminal the name is asked for when omitted, and an optional cloud account
+is offered; with `--no-input` a missing name is an error naming the flag.
 
 It prints the two values the runner process needs, as assignments you can paste straight into an env
 file or a systemd unit:
@@ -75,7 +100,13 @@ Then start the runner with those two variables set and confirm it appears in
 
 ## `alethia runner list`
 
-List all runners (status, operator, version, last heartbeat). The **Operator** column shows `managed` or, for self runners, `self · deployed` / `self · registered`.
+List all runners (status, operator, version, last heartbeat). The **Operator** column shows `managed` or, for self runners, `self · deployed` / `self · registered`. This is where the runner names the other commands take come from.
+
+Those cells are for a person reading a column, and `-o csv` gives a script the values instead:
+**Operator** is the bare `managed` / `self` (the provisioning half is its own field under
+`-o json`), **Status** is the wire status without its glyph, **Default** is `true` / `false` rather
+than `◆` on one row and blank on the others, **Version** is an empty cell when unset, and **Last
+Heartbeat** is the RFC3339 stamp.
 
 ```bash
 alethia runner list
@@ -87,14 +118,25 @@ Tear down a runner's cloud infrastructure. Queues a `DESTROY_RUNNER` job; anothe
 runner executes the teardown.
 
 ```bash
-alethia runner destroy --runner-id <id>
+# Interactive: picks the runner, then the executor, then confirms
+alethia runner destroy
+
+# Unattended, by name
+alethia runner destroy --runner eu-runner --no-input --yes
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--runner-id` | ID of the runner to destroy |
-| `--assigned-runner-id` | Which runner executes the teardown |
+| `--runner` | Runner to destroy, by **name** or id (asked for on a terminal when omitted) |
+| `--runner-id` | Runner id to destroy — prefer `--runner`, which also takes the name |
+| `--assigned-runner` | Runner that executes the teardown, by **name** or id (any available when omitted) |
+| `--assigned-runner-id` | Runner id that executes the teardown — prefer `--assigned-runner` |
 | `--wait`, `-w` | Wait for job completion |
+| `--yes`, `-y` | Skip the confirmation prompt (**required** with `--no-input`) |
+
+A runner cannot execute its own teardown. Naming the same runner for both the executor and
+the target is refused before the job is queued — the interactive picker leaves it out of the
+list for the same reason. Omit the executor flags to let the control plane choose.
 
 ## `alethia runner remove`
 
@@ -102,5 +144,20 @@ Remove a runner's database record only (no cloud teardown). Run
 `alethia runner destroy` first to tear down cloud resources.
 
 ```bash
-alethia runner remove <runner_id>
+# Interactive: picks the runner, then confirms
+alethia runner remove
+
+# Unattended, by name
+alethia runner remove --runner eu-runner --no-input --yes
 ```
+
+| Argument / Flag | Description |
+|------|-------------|
+| `[runner-id]` | Runner id to remove (positional) — prefer `--runner`, which also takes the name |
+| `--runner` | Runner to remove, by **name** or id (asked for on a terminal when omitted) |
+| `--yes`, `-y` | Skip the confirmation prompt (**required** with `--no-input`) |
+
+<Callout type="warn">
+  `destroy` and `remove` are destructive, so with `--no-input` they refuse unless `--yes` is
+  passed. They do not silently do nothing: a scripted teardown that cannot confirm exits non-zero.
+</Callout>

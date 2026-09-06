@@ -104,7 +104,7 @@ export function ToolResultFrame({
 	const marker = (
 		<Marker
 			data-slot="tool-result-frame-marker"
-			className="min-h-5 font-mono text-[10px] uppercase tracking-wide"
+			className="min-h-5 font-mono text-ui-2xs uppercase tracking-wide"
 		>
 			<MarkerIcon className="flex size-auto items-center">
 				<span

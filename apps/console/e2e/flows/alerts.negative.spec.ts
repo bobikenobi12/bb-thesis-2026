@@ -80,8 +80,6 @@ test.describe("Alerts — channel verification failure", () => {
 });
 
 test.describe("Alerts — member permissions", () => {
-	test.skip(!process.env.HAVE_MEMBER, "member persona pending");
-
 	test("a reduced-permission member cannot manage channels", async ({ member }) => {
 		await member.page.goto(ALERTS(member.orgSlug!));
 		await expect(member.page).not.toHaveURL(/\/login/);

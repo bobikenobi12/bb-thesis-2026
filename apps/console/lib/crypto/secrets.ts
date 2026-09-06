@@ -22,7 +22,7 @@
 // Migration ordering (this is the ONLY safe sequence — legacy no-kid rows pin to the active key):
 //   1. Deploy this code with the existing key as ALETHIA_CRED_ENCRYPTION_KEY and a chosen
 //      ALETHIA_CRED_ENCRYPTION_KID (e.g. "1"). Nothing else changes; legacy rows still decrypt.
-//   2. Run `pnpm -F console db:reencrypt` — stamps the active kid onto EVERY ciphertext
+//   2. Run `pnpm -C apps/console run db:reencrypt` — stamps the active kid onto EVERY ciphertext
 //      (connector secrets, cloud-identity tokens, alert-channel secrets, inventory `sensitive`).
 //      After this, no no-kid rows remain, so the meaning of "active key" is no longer load-bearing
 //      for legacy decryption.

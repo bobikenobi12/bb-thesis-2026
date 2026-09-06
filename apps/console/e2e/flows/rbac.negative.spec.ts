@@ -3,18 +3,21 @@
 
 // RBAC — negative permission paths for a reduced-perm invited member.
 //
-// The `member` persona (an invited, non-owner member of the Pro `team` org) is NOT provisioned yet,
-// so every test here is skipped via `test.skip(!process.env.HAVE_MEMBER, …)` and enumerated in the
-// domain catalog. When the persona lands, drop HAVE_MEMBER=1 and these assert the server-side PDP
-// (requireAccessAdmin / owner-only) denials the UI otherwise renders optimistically.
+// The `member` persona is REAL as of #3633: e2e/global-setup.ts invites it into ownerTeam's org
+// through the product's own `organization/invite-member` → `accept-invitation` endpoints and reads
+// its role back out of the `member` table. These assert the server-side PDP (requireAccessAdmin /
+// owner-only) denials the UI otherwise renders optimistically.
+//
+// THERE IS NO `HAVE_MEMBER` GUARD ANY MORE, deliberately. It used to be `test.skip(!HAVE_MEMBER)`,
+// and an unset variable turned every denial below into a green skip — the suite reported nothing
+// and read as coverage. If the persona failed to be built, the `member` fixture now throws with the
+// reason, and this file goes RED, which is the correct verdict for "the RBAC negatives did not
+// run". `flows/_persona-integrity.spec.ts` is what proves the persona is genuinely distinct and
+// genuinely reduced-permission before any denial here is believed.
 
 import { test, expect } from "../fixtures/qa";
 
-const HAVE_MEMBER = !!process.env.HAVE_MEMBER;
-
 test.describe("RBAC — member permission denials", () => {
-	test.skip(!HAVE_MEMBER, "member persona pending");
-
 	test("a member can view the members list but cannot invite", async ({ member }) => {
 		await member.page.goto(`/${member.orgSlug}/~/settings/members`);
 		await expect(member.page).not.toHaveURL(/\/login/);

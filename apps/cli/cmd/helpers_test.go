@@ -93,10 +93,10 @@ func TestRunnerOperatorLabel(t *testing.T) {
 }
 
 func TestTruncID(t *testing.T) {
-	if got := truncID("0123456789"); got != "01234567…" {
+	if got := ui.TruncID("0123456789"); got != "01234567…" {
 		t.Errorf("truncID long: %q", got)
 	}
-	if got := truncID("short"); got != "short" {
+	if got := ui.TruncID("short"); got != "short" {
 		t.Errorf("truncID short: %q", got)
 	}
 }
@@ -124,26 +124,30 @@ func TestFormatDuration(t *testing.T) {
 }
 
 func TestFormatTime(t *testing.T) {
-	if got := formatTime(time.Time{}); got != ui.SymbolDash {
+	if got := ui.SmartTime(time.Time{}); got != ui.SymbolDash {
 		t.Errorf("zero time should be dash, got %q", got)
 	}
-	if got := formatTime(time.Now()); got == ui.SymbolDash {
+	if got := ui.SmartTime(time.Now()); got == ui.SymbolDash {
 		t.Error("recent time should be humanized")
 	}
-	old := time.Now().Add(-100 * 24 * time.Hour)
-	if got := formatTime(old); len(got) != len("2006-01-02") {
-		t.Errorf("old time should be an absolute date, got %q", got)
+	// A FIXED instant and a LITERAL. This asserted `len(got) != len("2006-01-02")`, which was
+	// already a weak test — it passed for any ten-character string — and became a wrong one when
+	// #3659 moved the absolute rendering to `format.Date(DateOnly)`, where a two-digit day is
+	// eleven characters and a one-digit day is ten. A length is not a format.
+	old := time.Date(2020, 3, 9, 15, 4, 5, 0, time.UTC)
+	if got := ui.SmartTime(old); got != "9 Mar 2020" {
+		t.Errorf("old time should be the console's absolute date, got %q want %q", got, "9 Mar 2020")
 	}
 }
 
 func TestFormatCreatedAt(t *testing.T) {
-	if got := formatCreatedAt(""); got != ui.SymbolDash {
+	if got := ui.RelativeTime(""); got != ui.SymbolDash {
 		t.Errorf("empty should be dash, got %q", got)
 	}
-	if got := formatCreatedAt("not-a-time"); got != "not-a-time" {
+	if got := ui.RelativeTime("not-a-time"); got != "not-a-time" {
 		t.Errorf("unparseable should pass through, got %q", got)
 	}
-	if got := formatCreatedAt("2026-01-01T00:00:00Z"); got == "" {
+	if got := ui.RelativeTime("2026-01-01T00:00:00Z"); got == "" {
 		t.Error("valid time should humanize")
 	}
 }

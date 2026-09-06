@@ -24,6 +24,7 @@
  */
 
 import type { AddOnInstallSpec } from "@/lib/addons/types";
+import { DNS1123_LABEL_PATTERN } from "@/lib/validations/names";
 
 /** The block-storage StorageClass the Hetzner/Talos template makes default (CSI driver). */
 const HCLOUD_STORAGE_CLASS = "hcloud-volumes";
@@ -51,13 +52,30 @@ const NS = {
  * repos at `tofu apply` time (not exercisable under type-check); bump here as the SSOT.
  */
 export const HETZNER_CHARTS = {
-	/** CloudNativePG operator — installed once per cluster when ≥1 Postgres node exists. */
+	/**
+	 * CloudNativePG operator — installed once per cluster when ≥1 Postgres node exists.
+	 *
+	 * ⚠️ THIS URL WENT UNREACHABLE FOR A DAY AND IS STILL CORRECT. DO NOT "FIX" IT (#3961). It
+	 * answers `301 -> https://cloudnative-pg.io/charts/index.yaml`, and for a while
+	 * `cloudnative-pg.io` SERVFAILed: the four Route53 nameservers the .io registry delegated it to
+	 * all answered REFUSED — a hosted zone that was gone. Not NXDOMAIN, no DS record, so a stale
+	 * delegation rather than a move, and the content was in place throughout (`--resolve
+	 * cloudnative-pg.io:443:185.199.108.153` returned `200 text/yaml` from GitHub Pages). The
+	 * project has since re-delegated the domain to a new nameserver set and it resolves again.
+	 *
+	 * The primary source never changed and still names this exact string — the project's own
+	 * operator-chart README on `main` says `helm repo add cnpg https://cloudnative-pg.github.io/charts`.
+	 * Recording it here because the next reader will meet a red fetch before they meet that README,
+	 * and the tempting repair — repointing at the 301 target, or at a guessed OCI ref — would have
+	 * shipped to every user who adds Postgres and would still have been wrong once the name came back.
+	 */
 	cnpgOperator: {
 		chartRepo: "https://cloudnative-pg.github.io/charts",
 		chart: "cloudnative-pg",
 		version: "0.22.1",
 	},
-	/** CloudNativePG `cluster` chart — one Application per database node (a Cluster CR). */
+	/** CloudNativePG `cluster` chart — one Application per database node (a Cluster CR). Same repo,
+	 *  and the same #3961 note applies: the URL is right; it was the project's DNS that was not. */
 	cnpgCluster: {
 		chartRepo: "https://cloudnative-pg.github.io/charts",
 		chart: "cluster",
@@ -284,6 +302,76 @@ function posInt(value: number | null | undefined, fallback: number): number {
  * Each id is unique per node (`db-<name>` / `cache-<name>` / `queue-<name>` / `registry-<name>`) so the runner's
  * `AddOnAppName` yields a distinct ArgoCD Application, and health reads back per component.
  */
+/**
+ * The id prefix each Hetzner-charted node kind gets, and the DNS-1123 rule that follows from it.
+ *
+ * These are the SINGLE definition: the `specs.push({ id: … })` sites below interpolate these
+ * constants, and `hetznerNodeNameProblem` derives its length bound from them. A gate that reports
+ * an emitter has to mirror every one of its conditions, and a hand-copied list of prefixes is a
+ * copy that decays the day a seventh kind ships.
+ *
+ * Note what is ABSENT and why: a `secret` node and a `chart repo` node get no id, because a secret
+ * is one KV entry inside the single project-wide Vault release rather than an object of its own.
+ * Their names never become a Kubernetes object name, so they are not bound by this rule.
+ */
+export const HETZNER_ADDON_ID_PREFIXES = {
+	databases: "db-",
+	topics: "topic-",
+	tables: "nosql-",
+	caches: "cache-",
+	registries: "registry-",
+	queues: "queue-",
+} as const;
+
+export type HetznerChartedKind = keyof typeof HETZNER_ADDON_ID_PREFIXES;
+
+/** Kubernetes' own ceiling for a label / object-name segment. */
+const DNS_1123_LABEL_MAX = 63;
+
+/**
+ * RFC-1123 DNS label: lower-case alphanumerics and hyphens, not starting or ending with one.
+ *
+ * The ONE grammar (lib/validations/names.ts). The runner has to agree with it — it derives every
+ * Secret and Application name from a node name and refuses anything outside this charset before
+ * interpolating one into a kubectl command — and it now does so by construction: `k8sNameRe` in
+ * packages/core/argocd/addon_secrets.go IS `names.NamespacePattern`, generated from the same
+ * constant and diff-gated by `pnpm -C apps/console run gen:go-names:check` (#3665). This file used to
+ * restate the charset twice, once here and once as `K8S_LABEL`, checked against Go by a test that
+ * read this file's source text.
+ */
+const DNS_1123_LABEL_RE = DNS1123_LABEL_PATTERN;
+
+/**
+ * Why a node name is unusable on Hetzner, or `null` when it is fine.
+ *
+ * The length bound is DERIVED — `63 - prefix.length` — not asserted. An earlier version of this
+ * rule hard-coded 40, which is a number no emitter produces: `db-` plus a 45-character name is 48
+ * and deploys today. A cap that refuses a name the cluster accepts introduces a failure instead of
+ * surfacing one.
+ */
+export function hetznerNodeNameProblem(
+	kind: HetznerChartedKind,
+	name: string,
+): string | null {
+	const prefix = HETZNER_ADDON_ID_PREFIXES[kind];
+	const max = DNS_1123_LABEL_MAX - prefix.length;
+	if (name.length > max) {
+		return (
+			`"${name}" is ${name.length} characters; on Hetzner it becomes the Kubernetes object ` +
+			`"${prefix}${name}", and Kubernetes allows at most ${DNS_1123_LABEL_MAX}. Use ${max} ` +
+			`characters or fewer.`
+		);
+	}
+	if (!DNS_1123_LABEL_RE.test(name)) {
+		return (
+			`"${name}" is not a valid DNS-1123 label. On Hetzner it becomes the Kubernetes object ` +
+			`"${prefix}${name}", so it must be lower-case letters, digits or hyphens, and start and ` +
+			`end with a letter or digit.`
+		);
+	}
+	return null;
+}
+
 export function hetznerDataServicesToAddOns(
 	services: HetznerDataServices,
 ): AddOnInstallSpec[] {
@@ -348,7 +436,7 @@ export function hetznerDataServicesToAddOns(
 			cluster.imageName = `ghcr.io/cloudnative-pg/postgresql:${db.engine_version}`;
 		}
 		specs.push({
-			id: `db-${db.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.databases}${db.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.cnpgCluster.chartRepo,
 			chart: HETZNER_CHARTS.cnpgCluster.chart,
@@ -364,7 +452,7 @@ export function hetznerDataServicesToAddOns(
 	// on.
 	for (const topic of topics) {
 		specs.push({
-			id: `topic-${topic.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.topics}${topic.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.nats.chartRepo,
 			chart: HETZNER_CHARTS.nats.chart,
@@ -404,7 +492,7 @@ export function hetznerDataServicesToAddOns(
 	}
 	for (const table of nosqlTables) {
 		specs.push({
-			id: `nosql-${table.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.tables}${table.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.scyllaCluster.chartRepo,
 			chart: HETZNER_CHARTS.scyllaCluster.chart,
@@ -418,7 +506,7 @@ export function hetznerDataServicesToAddOns(
 	// Caches → Valkey (standalone, or replication when >1 node).
 	for (const cache of caches) {
 		specs.push({
-			id: `cache-${cache.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.caches}${cache.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.valkey.chartRepo,
 			chart: HETZNER_CHARTS.valkey.chart,
@@ -435,7 +523,7 @@ export function hetznerDataServicesToAddOns(
 	// database is still coming up. Matches the marketplace add-on's own wave.
 	for (const registry of registries) {
 		specs.push({
-			id: `registry-${registry.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.registries}${registry.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.harbor.chartRepo,
 			chart: HETZNER_CHARTS.harbor.chart,
@@ -449,7 +537,7 @@ export function hetznerDataServicesToAddOns(
 	// Queues → RabbitMQ (single node in v1).
 	for (const queue of queues) {
 		specs.push({
-			id: `queue-${queue.name}`,
+			id: `${HETZNER_ADDON_ID_PREFIXES.queues}${queue.name}`,
 			mode: "managed",
 			chartRepo: HETZNER_CHARTS.rabbitmq.chartRepo,
 			chart: HETZNER_CHARTS.rabbitmq.chart,
@@ -545,14 +633,41 @@ export function hetznerRegistryValues(
 		size: `${HCLOUD_MIN_VOLUME_GB}Gi`,
 		storageClass: HCLOUD_STORAGE_CLASS,
 	};
+	const credentialSecret = `harbor-${registry.name}-admin`;
 	return {
 		// The admin password comes from a Secret the RUNNER seeds and never from a literal here:
 		// values are snapshot-persisted and reach the customer's cluster through a rendered
 		// manifest. Without these two keys the chart falls back to its published default
 		// (`harborAdminPassword: "Harbor12345"`) — which is what #2430 shipped, and what #2431 fixes.
 		// The names must match packages/core/argocd/harbor.go exactly; a mismatch is silent.
-		existingSecretAdminPassword: `harbor-${registry.name}-admin`,
+		existingSecretAdminPassword: credentialSecret,
 		existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD",
+		existingSecretSecretKey: credentialSecret,
+		core: {
+			existingSecret: credentialSecret,
+			existingXsrfSecret: credentialSecret,
+			existingXsrfSecretKey: "CSRF_KEY",
+			secretName: credentialSecret,
+		},
+		jobservice: {
+			existingSecret: credentialSecret,
+			existingSecretKey: "JOBSERVICE_SECRET",
+		},
+		registry: {
+			existingSecret: credentialSecret,
+			existingSecretKey: "REGISTRY_HTTP_SECRET",
+			credentials: {
+				existingSecret: credentialSecret,
+				// STATED, not inherited. The runner hashes this exact name into REGISTRY_HTPASSWD
+				// (harborRegistryUsername in packages/core/argocd/harbor.go) and Harbor core
+				// authenticates to the internal registry as whoever the chart names here. Leaving it
+				// to the chart's default meant the two agreed only by coincidence: a rename upstream
+				// would 401 every core->registry request while every pod reported Ready. The value is
+				// deliberately identical to the chart's default, so the render is byte-for-byte
+				// unchanged and this costs nothing but the correspondence.
+				username: "harbor_registry_user",
+			},
+		},
 		expose: {
 			type: "clusterIP",
 			tls: { enabled: false },
@@ -658,17 +773,53 @@ export function hetznerVaultValues(): Record<string, unknown> {
  * image (digest-pinned by the chart), not a Bitnami image — the previous `bitnami/rabbitmq`
  * chart's default image tag is now HTTP 404 (Broadcom relocated it to `bitnamilegacy/*`), so
  * every fresh Hetzner queue ImagePullBackOff'd. Keys verified with `helm template`.
+ *
+ * THE AUTH BLOCK IS WHAT KEEPS THE RELEASE STABLE (#3304). Left alone, this chart mints BOTH
+ * `auth.password` and `auth.erlangCookie` at RENDER time, so every render produces a different
+ * Secret: the Application is permanently OutOfSync and, with selfHeal on, rewrites both forever.
+ * Neither value tolerates that. The erlang cookie is the cluster's shared secret — rotating it
+ * partitions the nodes, which then refuse to re-form — and the password is the credential the
+ * customer's `queue` binding already handed to their application.
+ *
+ * So the RUNNER mints both ONCE into this Secret and the chart only reads them. The name must
+ * match HetznerQueue.CredentialSecretName in packages/core/argocd/rabbitmq.go exactly; a
+ * mismatch is silent, and shows up as a pod that cannot start.
  */
 export function hetznerQueueValues(
 	queue: QueueInput,
 ): Record<string, unknown> {
+	const persistence = {
+		enabled: true,
+		size: `${posInt(queue.storage_gb, 8)}Gi`,
+		storageClass: HCLOUD_STORAGE_CLASS,
+	};
+	// A NAME THE RUNNER CANNOT SEED KEEPS THE CHART'S OWN MINTING, deliberately. `HetznerQueues`
+	// (packages/core/argocd/rabbitmq.go) refuses anything that is not an RFC-1123 LABEL, because the
+	// names it derives interpolate into kubectl commands. `orders.v2` is a name Kubernetes accepts
+	// and that predicate does not: pointing the chart at a Secret the runner will never write turns a
+	// queue that runs — badly, rotating its credentials — into one that never starts at all.
+	//
+	// So the fix applies to the names it can actually fix, and everything else is left exactly as it
+	// was. The console refuses such names at the form now (#3588); this branch exists for the rows
+	// that were saved before it did.
+	if (!DNS_1123_LABEL_RE.test(queue.name)) {
+		return { replicaCount: 1, persistence };
+	}
 	return {
 		replicaCount: 1,
-		persistence: {
-			enabled: true,
-			size: `${posInt(queue.storage_gb, 8)}Gi`,
-			storageClass: HCLOUD_STORAGE_CLASS,
+		auth: {
+			existingSecret: `rabbitmq-${queue.name}-credentials`,
+			// The two key names are the chart's own defaults, RESTATED rather than inherited: the
+			// runner writes exactly these keys, and a default is a thing upstream may rename.
+			existingPasswordKey: "password",
+			existingErlangCookieKey: "erlang-cookie",
+			// STATED for the same reason as harbor's registry.credentials.username above: the
+			// password the runner mints belongs to ONE user, and if the chart names a different one
+			// the two agree only by coincidence. Deliberately the chart's current default, so the
+			// render is unchanged apart from the Secret it no longer mints.
+			username: "admin",
 		},
+		persistence,
 	};
 }
 

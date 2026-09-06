@@ -4,7 +4,7 @@
 // Mutation testing (the "non-biased check"): Stryker injects faults into the source and requires
 // the unit suite to FAIL. A vacuous test scores ~0; a real test kills its mutants. Scope mirrors
 // the coverage scope (logic), runs against the fast unit vitest config. Mutation runs are slow —
-// use `pnpm -F console mutate:since` for incremental PR runs, or `--mutate <glob>` to scope.
+// use `pnpm -C apps/console run mutate:since` for incremental PR runs, or `--mutate <glob>` to scope.
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {

@@ -1,0 +1,5 @@
+{
+  "endpoint": "db_writer_endpoint",
+  "port": "db_port",
+  "credential_secret": "db_master_secret_arn"
+}

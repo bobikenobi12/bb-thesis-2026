@@ -31,9 +31,9 @@
 //
 //   D0  the config and the manifest agree in BOTH directions. A new exclusion with no manifest
 //       entry fails; a manifest entry whose exclusion was removed from the config fails. A
-//       coverage-emitting project with exclusions and NO manifest fails too, unless it is
-//       recorded in PENDING_ENROLMENT — otherwise "every exclusion is manifested" is a claim
-//       about the one project that happens to carry a manifest.
+//       coverage-emitting project with exclusions and NO manifest fails too, unless the project
+//       itself carries a `coverage-exclusions.pending` marker — otherwise "every exclusion is
+//       manifested" is a claim about the one project that happens to carry a manifest.
 //   D1  every literal (non-glob) entry still names a real file. Globs stay unchecked HERE — see
 //       the comment at ts-coverage.mjs:855, preserved: a glob matching nothing is
 //       indistinguishable from a directory that emptied, and either way it misleads nobody. That
@@ -144,32 +144,147 @@ const INFRASTRUCTURAL_CLASSES = [
 ];
 
 /**
- * Coverage-emitting projects that hide files — behind an `include` allowlist, behind `exclude:`
- * entries, or both — and are NOT yet enrolled in a manifest. Named here rather than left silent.
+ * The per-project pending-enrolment marker. One per coverage-emitting project that hides files —
+ * behind an `include` allowlist, behind `exclude:` entries, or both — and is NOT yet enrolled in a
+ * manifest.
  *
- * `packages/ui` hand-lists 12 files as its coverage scope while `src/` holds 59, and its floor is
+ * `packages/ui` hand-lists 12 files as its coverage scope while `src/` holds 60, and its floor is
  * armed over that hand-picked scope. `apps/marketing` and `ee` carry three and two `exclude:`
  * entries respectively; `ee` is the paid tier whose floor the ratchet enforces. Recording all of
  * that is a SCOPE decision about somebody else's package and it lands as its own PR, so that the
  * manifest format and the classifications are separately attributable — the same split #2649
  * requires between the guard and any change that moves the published number.
  *
- * The issue is the coverage EPIC, not #3262: #3262 closes when this guard lands, and a record
- * pointing at a closed issue is exactly the amnesty the manifest header forbids.
+ * WHY A FILE AND NOT A LIST IN THIS SCRIPT (#4103). The record used to be a `Map` literal here,
+ * which made every enrolment PR an edit to THIS file: three projects, three lanes, one file, and
+ * the two claimable enrolment units (#4104, #4105) serialised behind each other on a conflict they
+ * had no other reason to have. A marker beside the project it describes is deleted by the lane
+ * that enrols that project and by nobody else, so the units are disjoint by construction.
  *
- * This is not a mute button and it cannot go slack. It fails in three directions: a project that
- * hides files and is NOT listed here fails; a listed project that has since GAINED a manifest
- * fails, asking for this entry to be deleted; and a listed project that hides nothing any more —
- * no allowlist, no exclusions — fails the same way. The measured count is printed on every run,
- * so the size of the hole is visible rather than remembered.
+ * It is also DERIVED rather than typed. The set of pending projects is whatever markers the tree
+ * carries — read out of `git ls-files`, never out of a list in this file — because a guard's
+ * hand-written list of what it watches stops covering silently.
  *
- * @type {Map<string, string>} project path -> the owning issue
+ * THE FORMAT, in full — a marker is read by the same kind of hand-rolled reader as the manifest,
+ * and REFUSES anything it cannot parse:
+ *
+ *     # whole-line comments are allowed, and are the place for the measurement
+ *     issue: #4104
+ *     reason: one line, in the product's voice          (optional)
+ *
+ * `issue:` is required, appears exactly once, and must be `#<digits>` — a marker pointing at prose
+ * ("the coverage epic", "TBD") records nothing anybody can chase. `reason:` is optional and is
+ * echoed in the note. Any other key is a FAILURE, not an ignore.
+ *
+ * This is not a mute button and it cannot go slack. It fails in FIVE directions: a project that
+ * hides files and carries no marker fails; a marked project that has since GAINED a manifest
+ * fails, asking for the marker to be deleted; a marked project that hides nothing any more — no
+ * allowlist, no exclusions — fails the same way; a marker beside a project that declares no
+ * coverage block fails; and a marker that does not parse fails NAMING the parse error, which is
+ * how "this project is recorded" stays distinguishable from "this project could not be read".
+ * The measured count is printed on every run, so the size of the hole is visible rather than
+ * remembered.
  */
-const PENDING_ENROLMENT = new Map([
-	["packages/ui", "#2649"],
-	["apps/marketing", "#2649"],
-	["ee", "#2649"],
-]);
+const MARKER = "coverage-exclusions.pending";
+
+/** The only keys a marker may declare. An unknown key is a FAILURE, not an ignore. */
+const MARKER_KEYS = ["issue", "reason"];
+
+/**
+ * How many pending-enrolment markers the tree may carry. RATCHETED IN BOTH DIRECTIONS.
+ *
+ * WHY A NUMBER AT ALL. Every other failure direction here fires on a marker that is WRONG — one
+ * naming a project with no coverage block, one whose project has since gained a manifest, one that
+ * now hides nothing. None of them fires on a marker that is merely NEW. So a PR could add
+ * `packages/foo/vitest.config.ts` with an `exclude:` plus a `coverage-exclusions.pending` beside
+ * it, and turn what would have been a hard failure into a note — with the only trace being one
+ * digit in the summary line. Before #4103 that took editing this guard; a per-project file made it
+ * cheaper, and the count has to become a claim rather than a readout to compensate.
+ *
+ * DOWNWARDS TOO, and that is the half that keeps it honest: enrolling a project has to LOWER this
+ * number in the same diff, so the win is banked and cannot be spent again on a different project.
+ * That is the same rule `apps/console/shared-surface-allowlist.yaml`'s `debt:` follows.
+ *
+ * Three today — ee (#4105), packages/ui (#4104), apps/marketing (#4103) — one per open enrolment
+ * issue, which is the invariant worth holding: a marker with no issue behind it is a mute.
+ */
+const PENDING_MARKER_CEILING = 3;
+
+/**
+ * Read one pending-enrolment marker.
+ *
+ * THROWS on anything it cannot read, and that is the point: a reader that shrugs at a line it does
+ * not understand turns a typo'd marker into an absent one, and an absent marker is a project that
+ * silently stops being recorded — the exact hole the marker exists to keep visible. A marker that
+ * fails here is reported as a marker problem, which is a different message from the one an
+ * unrecorded project gets, so "recorded" and "unreadable" never report identically.
+ *
+ * @param {string} text the marker source
+ * @param {string} rel the marker path, for messages
+ * @returns {{issue: string, reason: string|null}}
+ */
+export function parsePendingMarker(text, rel) {
+	/** @type {Record<string, string>} */
+	const fields = {};
+	const lines = text.split("\n");
+	for (let i = 0; i < lines.length; i += 1) {
+		const raw = lines[i].replace(/\r$/, "");
+		const at = `${rel}:${i + 1}`;
+		if (raw.trim() === "" || raw.trimStart().startsWith("#")) continue;
+		const field = /^([a-z_]+):[ \t]*(.*)$/.exec(raw);
+		if (!field) {
+			throw new Error(
+				`${at}: cannot parse this line — ${JSON.stringify(raw)}\n` +
+					`  A ${MARKER} holds whole-line \`#\` comments and \`key: value\` at column 0, nothing else.`,
+			);
+		}
+		if (!MARKER_KEYS.includes(field[1])) {
+			throw new Error(`${at}: unknown key \`${field[1]}\` — the only keys are ${MARKER_KEYS.join(", ")}`);
+		}
+		if (field[1] in fields) throw new Error(`${at}: key \`${field[1]}\` given twice`);
+		fields[field[1]] = field[2].trim();
+	}
+	if (!("issue" in fields)) {
+		throw new Error(`${rel}: no \`issue:\` — a pending record must name the issue that will delete it, as \`issue: #1234\`.`);
+	}
+	if (!/^#[0-9]+$/.test(fields.issue)) {
+		throw new Error(
+			`${rel}: \`issue: ${fields.issue || "(empty)"}\` is not an issue reference — it must be \`#\` followed by digits.\n` +
+				"  Prose here records nothing anybody can chase, which is what the marker is for.",
+		);
+	}
+	return { issue: fields.issue, reason: fields.reason ?? null };
+}
+
+/**
+ * Derive the pending-enrolment set from the tree.
+ *
+ * The SET is whatever markers the repository carries — not a list in this file. A marker that does
+ * not parse yields a problem and NO entry, so the project it sits beside is then treated as
+ * unrecorded and fails again for that too: an unreadable record must never be worth more than no
+ * record at all.
+ *
+ * @param {string} root
+ * @param {string[]} files every tracked file, repo-relative
+ * @returns {{pending: Map<string, {issue: string, reason: string|null, rel: string}>, problems: string[]}}
+ */
+export function derivePending(root, files) {
+	/** @type {Map<string, {issue: string, reason: string|null, rel: string}>} */
+	const pending = new Map();
+	/** @type {string[]} */
+	const problems = [];
+	for (const rel of files) {
+		if (path.basename(rel) !== MARKER) continue;
+		const projectRel = path.dirname(rel);
+		try {
+			const parsed = parsePendingMarker(readFileSync(path.join(root, rel), "utf8"), rel);
+			pending.set(projectRel, { ...parsed, rel });
+		} catch (err) {
+			problems.push(`${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+	return { pending, problems };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The manifest reader
@@ -1445,7 +1560,7 @@ function mergeEvidence(into, file, symbols) {
  *
  * A file absent from a hand-listed `include` is excluded exactly as surely as one named in
  * `exclude`, and the existing sweep, which walks `coverage.exclude`, cannot see it at all.
- * `packages/ui` names 12 files while `src/` holds 59, and its floor is armed at 98.83% over the 12
+ * `packages/ui` names 12 files while `src/` holds 60, and its floor is armed at 98.83% over the 12
  * somebody picked.
  *
  * TWO THINGS MAKE IT AN ALLOWLIST: a literal file in `include`, and at least one PEER of that file
@@ -1453,13 +1568,13 @@ function mergeEvidence(into, file, symbols) {
  * measured: sweeping the include roots recursively instead finds 42 unmeasured files under
  * `apps/marketing/app/**` and reclassifies marketing as an allowlist, which is the one thing this
  * rule exists to avoid. The cost is that a file in a SUBDIRECTORY of an allowlisted directory is
- * invisible here; `packages/ui/src` is flat today (59 files, 0 nested), so nothing is missed, and
+ * invisible here; `packages/ui/src` is flat today (60 files, 0 nested), so nothing is missed, and
  * the day it nests, that file is unmeasured and unreported. `apps/marketing`
  * also has a literal in its `include` (`proxy.ts`) and is NOT an allowlist: its scope is
  * `["proxy.ts", "lib/**"]`, a deliberate logic-surface choice whose own comment records why the
  * tempting tight scope was refused. What separates the two is the PEER SET — the files sitting in
  * the same directory as the literal, which is the set the author was choosing among. Marketing's
- * root peers are all `*.config.*` and already excluded; `packages/ui/src`'s peers are 47 real
+ * root peers are all `*.config.*` and already excluded; `packages/ui/src`'s peers are 48 real
  * components.
  *
  * @param {string} root
@@ -1527,28 +1642,64 @@ function trackedFiles(root) {
 /**
  * Run every check over a repository tree.
  *
- * `pending` is a PARAMETER rather than a direct read of PENDING_ENROLMENT so the self-test can
- * exercise its three failure directions on a hermetic tree — a guard whose enrolment record is
- * only reachable through the real repo is a branch no fixture can reach, and an unreached branch
- * is an unproven one.
+ * The pending-enrolment set is DERIVED from the tree's `coverage-exclusions.pending` markers, so
+ * the self-test exercises every one of its failure directions by writing a real marker into a
+ * hermetic fixture — the same input the repository gives it. There is no parameter to override it
+ * with, because a record only reachable by passing it in is a record no fixture proves.
  *
  * @param {string} root
  * @param {string[]} files every tracked file, repo-relative
- * @param {Map<string, string>} pending projects with an unenrolled include allowlist -> issue
  * @returns {{problems: string[], notes: string[], counts: Record<string, number>}}
  */
-export function run(root, files, pending = PENDING_ENROLMENT) {
+export function run(root, files, opts = {}) {
 	/** @type {string[]} */
 	const problems = [];
 	/** @type {string[]} */
 	const notes = [];
-	const counts = { configs: 0, manifests: 0, entries: 0, literals: 0, tierSuites: 0, symbols: 0, walked: 0, baselineSymbols: 0, exports: 0, allowlists: 0, unmanifestedExcludes: 0 };
+	const counts = { configs: 0, manifests: 0, entries: 0, literals: 0, tierSuites: 0, symbols: 0, walked: 0, baselineSymbols: 0, exports: 0, allowlists: 0, unmanifestedExcludes: 0, pendingMarkers: 0 };
+	const derived = derivePending(root, files);
+	const pending = derived.pending;
+	problems.push(...derived.problems);
+	counts.pendingMarkers = pending.size;
+	// The count is a CLAIM, not a readout — see PENDING_MARKER_CEILING. Both directions fail, and
+	// the message says which way it moved, because "expected 3, got 4" does not tell the reader
+	// whether they added a hole or closed one.
+	//
+	// PASSED IN RATHER THAN READ FROM MODULE SCOPE, so a fixture tree makes no claim at all. A
+	// ceiling is a fact about THIS repository; baking it into `run` would have made every one of
+	// the self-test's fixtures — which carry nought or one marker — fail against a 3 that has
+	// nothing to do with them. (It did: 21 assertions, before this was a parameter.)
+	const ceiling = opts.pendingCeiling;
+	if (ceiling === undefined) {
+		// no claim to check
+	} else if (counts.pendingMarkers > ceiling) {
+		problems.push(
+			`${counts.pendingMarkers} pending-enrolment marker(s) against a ceiling of ${ceiling}: a project was recorded as pending rather than enrolled.\n` +
+				`  That converts a hard failure into a note, which is the one thing ${MARKER} must not be able to do quietly.\n` +
+				`  If the enrolment really is a follow-up, raise PENDING_MARKER_CEILING in this file in the same diff and say why in the PR.`,
+		);
+	} else if (counts.pendingMarkers < ceiling) {
+		problems.push(
+			`${counts.pendingMarkers} pending-enrolment marker(s) against a ceiling of ${ceiling} — a project was enrolled. A win.\n` +
+				`  Lower PENDING_MARKER_CEILING to ${counts.pendingMarkers} and commit it, so the slack cannot be spent on a different project later.`,
+		);
+	}
 	/** @type {string[]} projects whose manifest was actually opened and re-read */
 	const manifested = [];
 	/** @type {Set<string>} unenrolled projects that hide files behind an `include` allowlist */
 	const owedAllowlist = new Set();
 	/** @type {Set<string>} unenrolled projects that carry `exclude:` entries with no manifest */
 	const owedExcludes = new Set();
+	/**
+	 * @type {Set<string>} projects whose coverage block did NOT parse.
+	 *
+	 * Kept apart from the two `owed*` sets because "we could not read it" is not "it hides
+	 * nothing", and the marker audit below cannot tell those apart from absence alone. Without
+	 * this, an unparseable `exclude: [...SHARED]` produced the correct #2724 failure AND a third,
+	 * false one instructing the reader to delete the project's marker — and the remedy that
+	 * instruction now names is `rm` on a file, not an edit to a Map.
+	 */
+	const unparsedCoverage = new Set();
 
 	const configs = files.filter((f) => f.endsWith("vitest.config.ts"));
 	/** @type {Array<{projectRel: string, configRel: string}>} */
@@ -1576,27 +1727,28 @@ export function run(root, files, pending = PENDING_ENROLMENT) {
 			// coverage-emitting project with no manifest owed nothing and was recorded nowhere —
 			// and the success line went on saying "every coverage exclusion is manifested" over
 			// six exclusions in three projects it had never opened (apps/marketing 3, ee 2,
-			// packages/ui 1, measured). D3 got PENDING_ENROLMENT with three failure directions and
+			// packages/ui 1, measured). D3 got the pending record with three failure directions and
 			// this direction got nothing, which made the un-enrolled projects an untracked hole
 			// rather than a named one. `ee` is the paid tier whose floor the ratchet enforces: an
 			// `exclude: ["src/license.ts"]` added there would have passed this guard in silence.
 			const excludes = coverageExcludes(readFileSync(path.join(root, configRel), "utf8"));
 			if (excludes === null) {
+				unparsedCoverage.add(projectRel);
 				problems.push(`${configRel}: the coverage exclude block did not parse — treated as a FAILURE, never as "no exclusions" (#2724)`);
 			} else if (excludes.length > 0) {
 				counts.unmanifestedExcludes += excludes.length;
 				owedExcludes.add(projectRel);
-				const issue = pending.get(projectRel);
-				if (issue === undefined) {
+				const record = pending.get(projectRel);
+				if (record === undefined) {
 					problems.push(
 						`${configRel}: coverage excludes ${excludes.length} path(s) and this project has no ${MANIFEST}.\n` +
 							`  ${excludes.join(", ")}\n` +
-							`  Add ${projectRel}/${MANIFEST} classifying each, or record the project in PENDING_ENROLMENT with an owning issue.`,
+							`  Add ${projectRel}/${MANIFEST} classifying each, or record the project with a ${projectRel}/${MARKER} naming the owning issue.`,
 					);
 				} else {
 					notes.push(
 						`${configRel}: ${excludes.length} coverage exclusion(s) are UNMANIFESTED — ${excludes.join(", ")}.\n` +
-							`  Recorded as PENDING ENROLMENT under ${issue}. This is not a mute: adding ${projectRel}/${MANIFEST}\n` +
+							`  Recorded by ${record.rel} under ${record.issue}${record.reason ? ` — ${record.reason}` : ""}. This is not a mute: adding ${projectRel}/${MANIFEST}\n` +
 							"  makes every one of them FAIL until it is classified, and the count above is what is unchecked today.",
 					);
 				}
@@ -1630,37 +1782,45 @@ export function run(root, files, pending = PENDING_ENROLMENT) {
 				);
 			}
 		} else if (pending.has(projectRel)) {
+			const record = pending.get(projectRel);
 			notes.push(
 				`${configRel}: coverage \`include\` is a hand-listed allowlist — ${d3.unlisted.length} peer file(s) are excluded by their ABSENCE from it, and the exclude sweep cannot see any of them.\n` +
-					`  Recorded as PENDING ENROLMENT under ${pending.get(projectRel)}: the manifest for this project is a follow-up PR, because classifying those files is a decision about this package's scope and it must be separately attributable from the guard.\n` +
+					`  Recorded by ${record.rel} under ${record.issue}${record.reason ? ` — ${record.reason}` : ""}: the manifest for this project is a follow-up PR, because classifying those files is a decision about this package's scope and it must be separately attributable from the guard.\n` +
 					`  This is not a mute: adding ${projectRel}/${MANIFEST} makes the ${d3.unlisted.length} unlisted files FAIL until each is classified, and removing the allowlist fails too.`,
 			);
 		} else {
 			problems.push(
 				`${configRel}: coverage \`include\` is a hand-listed allowlist and this project has no ${MANIFEST}.\n` +
 					`  ${d3.unlisted.length} peer file(s) are excluded by their ABSENCE from it: ${d3.unlisted.slice(0, 8).join(", ")}${d3.unlisted.length > 8 ? `, … (+${d3.unlisted.length - 8})` : ""}\n` +
-					`  Add ${projectRel}/${MANIFEST} classifying each, or record the project in PENDING_ENROLMENT with an owning issue.`,
+					`  Add ${projectRel}/${MANIFEST} classifying each, or record the project with a ${projectRel}/${MARKER} naming the owning issue.`,
 			);
 		}
 	}
 
 	// The record fails in three directions, over BOTH kinds of unmanifested exclusion it now holds:
-	// a project that owes one and is NOT listed here fails above; a listed project that has since
-	// gained a manifest fails; and a listed project that no longer owes anything — its allowlist
-	// went away AND its `exclude:` emptied — fails, asking for the entry to go. A record that can
-	// only be added to is the mute button it is written not to be.
-	for (const projectRel of pending.keys()) {
+	// a project that owes one and carries no marker fails above; a marked project that has since
+	// gained a manifest fails; and a marked project that no longer owes anything — its allowlist
+	// went away AND its `exclude:` emptied — fails, asking for the marker to go. A record that can
+	// only be added to is the mute button it is written not to be. (A marker that does not PARSE
+	// has already failed in `derivePending`, and left no entry here, so its project fails as
+	// unrecorded too: an unreadable record is worth less than none, never more.)
+	for (const [projectRel, record] of pending) {
 		if (!emitting.some((e) => e.projectRel === projectRel)) {
-			problems.push(`PENDING_ENROLMENT names \`${projectRel}\`, which declares no vitest coverage block — delete the entry.`);
+			problems.push(`${record.rel}: \`${projectRel}\` declares no vitest coverage block, so this marker records a hole that does not exist — delete it.`);
 		} else if (existsSync(path.join(root, projectRel, MANIFEST))) {
 			problems.push(
-				`PENDING_ENROLMENT names \`${projectRel}\`, which now has a ${MANIFEST}.\n` +
-					"  Delete the entry: the project is enrolled, and its exclusions are enforced from here on.",
+				`${record.rel}: \`${projectRel}\` now has a ${MANIFEST}.\n` +
+					"  Delete this marker: the project is enrolled, and its exclusions are enforced from here on.",
 			);
+		} else if (unparsedCoverage.has(projectRel)) {
+			// SILENT ON PURPOSE. The parse failure is already reported above, and it is the only
+			// thing known about this project — whether the marker still holds a real hole is
+			// exactly what could not be read. Saying "delete it" here would be a guess presented
+			// as an instruction, and the instruction is destructive.
 		} else if (!owedAllowlist.has(projectRel) && !owedExcludes.has(projectRel)) {
 			problems.push(
-				`PENDING_ENROLMENT names \`${projectRel}\`, which now hides nothing: its coverage \`include\` no longer hand-lists files and its \`exclude\` is empty.\n` +
-					`  Delete the \`${projectRel}\` entry from PENDING_ENROLMENT in scripts/check-coverage-exclusions.mjs.`,
+				`${record.rel}: \`${projectRel}\` now hides nothing: its coverage \`include\` no longer hand-lists files and its \`exclude\` is empty.\n` +
+					`  Delete ${record.rel}.`,
 			);
 		}
 	}
@@ -1698,7 +1858,8 @@ function report(result) {
 		`${c.configs} coverage-emitting config(s) · ${c.manifests} manifest(s) · ${c.entries} entr(ies) · ` +
 		`${c.literals} literal path(s) · ${c.tierSuites} suite claim(s) · ${c.symbols} symbol claim(s) · ` +
 		`${c.symbols + c.baselineSymbols} of ${c.exports} excluded export(s) accounted for · ` +
-		`${c.baselineSymbols} baseline symbol(s) · ${c.walked} module(s) walked · ${c.allowlists} include allowlist(s)`;
+		`${c.baselineSymbols} baseline symbol(s) · ${c.walked} module(s) walked · ${c.allowlists} include allowlist(s) · ` +
+		`${c.pendingMarkers} pending-enrolment marker(s)`;
 	if (result.problems.length > 0) {
 		process.stderr.write(`\n${result.problems.length} coverage-exclusion problem(s). Examined: ${summary}\n`);
 		return 1;
@@ -1708,7 +1869,7 @@ function report(result) {
 	// a ✓ that overstates its own scope is the failure mode this file exists to catch.
 	const pendingCount = c.unmanifestedExcludes;
 	process.stdout.write(
-		`\n✓ check-coverage-exclusions: every manifested exclusion is re-read${pendingCount > 0 ? `; ${pendingCount} exclusion(s) stand recorded as PENDING ENROLMENT above` : ""}.\n  Examined: ${summary}\n`,
+		`\n✓ check-coverage-exclusions: every manifested exclusion is re-read${pendingCount > 0 ? `; ${pendingCount} exclusion(s) stand recorded as pending enrolment above` : ""}.\n  Examined: ${summary}\n`,
 	);
 	return 0;
 }
@@ -1796,22 +1957,27 @@ function configFixture(keys) {
 /**
  * Build a fixture tree and run the guard over it.
  *
- * The enrolment record defaults to EMPTY here, not to the repo's own: a fixture tree contains no
- * `packages/ui`, so carrying the real record in would make every unrelated case fail for a reason
- * that has nothing to do with what it is testing.
+ * The enrolment record is DERIVED from the tree, so a fixture that wants a project recorded writes
+ * the marker file the repository would write. There is nothing to pass in and nothing that could
+ * leak in: a fixture tree contains no `packages/ui`, so it carries no marker unless a case put one
+ * there.
  *
  * @param {Record<string,string>} files
- * @param {Map<string,string>} pending
  */
-function runFixture(files, pending = new Map()) {
+function runFixture(files, opts = {}) {
 	const root = mkdtempSync(path.join(tmpdir(), "cov-excl-"));
 	for (const [rel, body] of Object.entries(files)) put(root, rel, body);
 	const list = Object.keys(files);
 	try {
-		return run(root, list, pending);
+		return run(root, list, opts);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+}
+
+/** A well-formed marker body naming `issue`. */
+function markerFixture(issue, extra = "") {
+	return `# measured: 2 peer file(s) hidden by the include allowlist\nissue: ${issue}\n${extra}`;
 }
 
 /** The shared shape every D2 case varies exactly one thing inside. */
@@ -2043,26 +2209,105 @@ function runSelfTest() {
 		return res.problems.some((p) => p.includes("hidden.ts") && !p.includes("nested.ts"));
 	}));
 
-	process.stdout.write("\n PENDING_ENROLMENT — a named hole, failing in all three directions\n");
-	const ui = new Map([["q", "#3262"]]);
-	check("an unenrolled allowlist NOT in the record FAILS", runFixture(allowlist).problems.some((p) => p.includes("no coverage-exclusions.yaml")));
-	check("...and one that IS in the record is a NOTE with its measured count, not a pass in silence", attempt(() => {
-		const res = runFixture(allowlist, ui);
-		return res.problems.length === 0 && res.notes.some((n) => n.includes("PENDING ENROLMENT") && n.includes("#3262") && n.includes("2 peer file(s)"));
+	// ── the pending-enrolment MARKER (#4103) ──
+	//
+	// The record used to be a `Map` literal in this file, passed into `run` as a parameter. It is
+	// now a per-project FILE, derived from the tree, so that the three enrolment PRs each delete a
+	// different file instead of all three editing this one. Every case below writes the marker the
+	// repository would write, which is the only way the derivation itself is under test: a record
+	// handed in as an argument proves the branch that consumes it and nothing about the branch
+	// that FINDS it.
+	process.stdout.write(`\n ${MARKER} — a per-project record, derived from the tree, failing in five directions\n`);
+	const marked = { ...allowlist, [`q/${MARKER}`]: markerFixture("#4104") };
+	check("an unenrolled allowlist with NO marker FAILS", runFixture(allowlist).problems.some((p) => p.includes("no coverage-exclusions.yaml")));
+	check("...and the failure NAMES the marker as the way to record it", runFixture(allowlist).problems.some((p) => p.includes(`q/${MARKER} naming the owning issue`)));
+	check("a marked project is a NOTE carrying the marker's path and issue, not a pass in silence", attempt(() => {
+		const res = runFixture(marked);
+		return (
+			(res.problems.length === 0 || JSON.stringify(res.problems)) &&
+			res.notes.some((n) => n.includes(`q/${MARKER}`) && n.includes("#4104") && n.includes("2 peer file(s)"))
+		);
+	}));
+	check("...and the derived count is reported, so the size of the hole is measured not remembered", runFixture(marked).counts.pendingMarkers === 1);
+
+	// ── the count is a CLAIM (PENDING_MARKER_CEILING) ──
+	//
+	// Reporting the number was not enough: none of the five failure directions above fires on a
+	// marker that is merely NEW, so a project could be recorded rather than enrolled and turn a
+	// hard failure into a note, leaving one changed digit in the summary as the only trace. These
+	// two cases are the claim, and they run in BOTH directions on purpose — a ceiling that only
+	// caught growth would let an enrolment leave slack behind for the next project to spend.
+	check(
+		"a marker ABOVE the ceiling fails, and the message says a hole was added",
+		attempt(() => {
+			const res = runFixture(marked, { pendingCeiling: 0 });
+			const hit = res.problems.find((x) => x.includes("against a ceiling of 0"));
+			if (!hit) return JSON.stringify(res.problems);
+			return hit.includes("recorded as pending rather than enrolled") || hit;
+		}),
+	);
+	check(
+		"a marker BELOW the ceiling fails too, so an enrolment has to bank the win",
+		attempt(() => {
+			const res = runFixture(marked, { pendingCeiling: 2 });
+			const hit = res.problems.find((x) => x.includes("against a ceiling of 2"));
+			if (!hit) return JSON.stringify(res.problems);
+			return hit.includes("Lower PENDING_MARKER_CEILING to 1") || hit;
+		}),
+	);
+	check(
+		"...and with no ceiling passed, a fixture makes no claim at all",
+		runFixture(marked).problems.every((x) => !x.includes("against a ceiling of")),
+	);
+	check("an optional `reason:` is echoed into the note", attempt(() => {
+		const res = runFixture({ ...allowlist, [`q/${MARKER}`]: markerFixture("#4104", "reason: shadcn re-exports, classified in the enrolment PR\n") });
+		return res.notes.some((n) => n.includes("shadcn re-exports"));
 	}));
 	check(
-		"a recorded project that GAINED a manifest FAILS, asking for the entry to go",
-		runFixture({ ...allowlist, "q/coverage-exclusions.yaml": "infrastructural:\n  - path: src/hidden.ts\n    reason: r\n" }, ui).some === undefined &&
-			runFixture({ ...allowlist, "q/coverage-exclusions.yaml": "infrastructural:\n  - path: src/hidden.ts\n    reason: r\n" }, ui).problems.some((p) => p.includes("now has a")),
+		"a marked project that GAINED a manifest FAILS, asking for the marker to go",
+		runFixture({ ...marked, "q/coverage-exclusions.yaml": "infrastructural:\n  - path: src/hidden.ts\n    reason: r\n" }).problems.some((p) => p.includes("now has a")),
 	);
 	check(
-		"a recorded project whose allowlist WENT AWAY FAILS too",
-		runFixture({ ...allowlist, "q/vitest.config.ts": configFixture(['\t\t\tinclude: ["src/**"],']) }, ui).problems.some((p) => p.includes("no longer hand-lists")),
+		"a marked project whose allowlist WENT AWAY FAILS too",
+		runFixture({ ...marked, "q/vitest.config.ts": configFixture(['\t\t\tinclude: ["src/**"],']) }).problems.some((p) => p.includes("no longer hand-lists")),
 	);
 	check(
-		"a recorded project that emits no coverage at all FAILS",
-		runFixture(allowlist, new Map([["nowhere", "#1"]])).problems.some((p) => p.includes("declares no vitest coverage block")),
+		"a marker beside a project that emits no coverage at all FAILS",
+		runFixture({ ...allowlist, [`nowhere/${MARKER}`]: markerFixture("#1") }).problems.some((p) => p.includes("declares no vitest coverage block")),
 	);
+	// The MUTATION cases. Everything above proves the marker is read; these prove it is CHECKED —
+	// that a marker which cannot be trusted fails, rather than quietly recording the project. Each
+	// one is a single field of the fixture that passes two cases up, mutated.
+	check(
+		"a marker with NO `issue:` FAILS — a record that names no owner is not a record",
+		runFixture({ ...allowlist, [`q/${MARKER}`]: "# nothing but prose\n" }).problems.some((p) => p.includes("must name the issue that will delete it")),
+	);
+	check(
+		"...and PROSE where the issue goes FAILS — `issue: the coverage epic` is not chaseable",
+		runFixture({ ...allowlist, [`q/${MARKER}`]: "issue: the coverage epic\n" }).problems.some((p) => p.includes("is not an issue reference")),
+	);
+	check(
+		"an UNKNOWN key FAILS rather than being ignored — a typo'd `issue` is an absent one",
+		runFixture({ ...allowlist, [`q/${MARKER}`]: "isue: #4104\n" }).problems.some((p) => p.includes("unknown key `isue`")),
+	);
+	check(
+		"an unparseable LINE FAILS, naming the line, never skipped",
+		runFixture({ ...allowlist, [`q/${MARKER}`]: "issue: #4104\nthis line is not a field\n" }).problems.some((p) => p.includes("cannot parse this line")),
+	);
+	// The direction that makes the four above matter. An unreadable marker must be worth LESS than
+	// no marker, never more: if a bad parse still recorded the project, the cheapest way past this
+	// guard would be to corrupt the file it complains about.
+	check(
+		"an unreadable marker leaves the project UNRECORDED — it fails for the parse AND for the hole",
+		attempt(() => {
+			const res = runFixture({ ...allowlist, [`q/${MARKER}`]: "isue: #4104\n" });
+			return (
+				(res.problems.some((p) => p.includes("unknown key")) && res.problems.some((p) => p.includes("hand-listed allowlist and this project has no"))) ||
+				JSON.stringify(res.problems)
+			);
+		}),
+	);
+	check("...and it is NOT counted as a pending marker", runFixture({ ...allowlist, [`q/${MARKER}`]: "isue: #4104\n" }).counts.pendingMarkers === 0);
 
 	process.stdout.write("\n vacuity — found nothing must never read like looked at nothing\n");
 	check("a tree with no coverage-emitting config FAILS", runFixture({ "p/README.md": "x\n" }).problems.some((p) => p.includes("declares a coverage block")));
@@ -2326,15 +2571,19 @@ function runSelfTest() {
 		"r/src/license.ts": "export const seats = 1;\n",
 	};
 	check("an exclusion in a project with no manifest FAILS", runFixture(unenrolled).problems.some((p) => p.includes("src/license.ts") && p.includes("no coverage-exclusions.yaml")));
-	check("…and is a NOTE naming its count once the project is recorded", attempt(() => {
-		const res = runFixture(unenrolled, new Map([["r", "#1"]]));
+	check("…and is a NOTE naming its count once the project carries a marker", attempt(() => {
+		const res = runFixture({ ...unenrolled, [`r/${MARKER}`]: markerFixture("#1") });
 		return (res.problems.length === 0 && res.notes.some((n) => n.includes("UNMANIFESTED") && n.includes("src/license.ts"))) || JSON.stringify(res.problems);
 	}));
 	check(
-		"a recorded project that hides NOTHING any more FAILS, asking for the entry to go",
-		runFixture({ ...base, "p/coverage-exclusions.yaml": manifest, "r/vitest.config.ts": configFixture(['\t\t\tinclude: ["src/**"],']), "r/src/a.ts": "export const a = 1;\n" }, new Map([["r", "#1"]])).problems.some((p) =>
-			p.includes("now hides nothing"),
-		),
+		"a marked project that hides NOTHING any more FAILS, asking for the marker to go",
+		runFixture({
+			...base,
+			"p/coverage-exclusions.yaml": manifest,
+			"r/vitest.config.ts": configFixture(['\t\t\tinclude: ["src/**"],']),
+			"r/src/a.ts": "export const a = 1;\n",
+			[`r/${MARKER}`]: markerFixture("#1"),
+		}).problems.some((p) => p.includes("now hides nothing")),
 	);
 	check(
 		"an unenrolled project whose exclude block does not PARSE fails too (#2724)",
@@ -2410,7 +2659,7 @@ function main() {
 		process.stderr.write(`check-coverage-exclusions: unknown argument ${unknown[0]}\n`);
 		process.exit(2);
 	}
-	process.exit(report(run(ROOT, trackedFiles(ROOT))));
+	process.exit(report(run(ROOT, trackedFiles(ROOT), { pendingCeiling: PENDING_MARKER_CEILING })));
 }
 
 if (process.argv[1] && import.meta.filename === realpathSync(process.argv[1])) main();

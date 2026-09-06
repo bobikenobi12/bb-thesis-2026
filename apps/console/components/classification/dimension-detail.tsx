@@ -8,6 +8,7 @@
 // add-value input, and the "coverage by resource kind" panel (loaded lazily for the dimension).
 
 import { Input } from "@repo/ui/input";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Skeleton } from "@repo/ui/skeleton";
 import { Switch } from "@repo/ui/switch";
 import { cn } from "@repo/ui/utils";
@@ -63,10 +64,10 @@ function ValueRow({
 				<GripVertical className="size-3 shrink-0 cursor-grab text-text-disabled" aria-hidden />
 			)}
 			<div className="w-[190px] min-w-0">
-				<div className="truncate text-[13px] font-medium text-text-primary">
+				<div className="truncate text-ui-md font-medium text-text-primary">
 					{value.label}
 				</div>
-				<div className="font-mono text-[10px] text-text-tertiary">{value.value}</div>
+				<div className="font-mono text-ui-2xs text-text-tertiary">{value.value}</div>
 			</div>
 			<div className="flex min-w-0 flex-1 items-center gap-2.5">
 				<div className="h-[5px] max-w-[180px] flex-1 overflow-hidden rounded-full border bg-surface-sunken">
@@ -81,8 +82,8 @@ function ValueRow({
 					className="inline-flex items-center gap-1.5 rounded-[2px] border border-transparent px-1.5 py-1 text-text-secondary transition-colors hover:border-border-strong hover:text-text-primary"
 					title="Resources carrying this value — click to see the breakdown"
 				>
-					<span className="font-mono text-[11px]">{value.assignmentCount}</span>
-					<span className="text-[10.5px] text-text-tertiary">
+					<span className="font-mono text-ui-xs">{value.assignmentCount}</span>
+					<span className="text-ui-2xs text-text-tertiary">
 						{value.assignmentCount === 1 ? "resource" : "resources"}
 					</span>
 					<ChevronRight className="size-[11px]" />
@@ -126,7 +127,7 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 	if (!isPending && dim.resourceCount === 0) {
 		return (
 			<div className="border-t bg-surface-sunken px-5 py-3.5">
-				<span className="font-mono text-[11px] text-text-tertiary">
+				<span className="font-mono text-ui-xs text-text-tertiary">
 					Not applied to any resource yet.
 				</span>
 			</div>
@@ -136,7 +137,7 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 	return (
 		<div className="border-t bg-surface-sunken px-5 pb-[18px] pt-[15px]">
 			<div className="mb-3 flex items-center gap-2">
-				<span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+				<span className="font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 					Applied to, by resource kind
 				</span>
 				<InfoHint>
@@ -144,7 +145,7 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 					rows are resource kinds (e.g. Environment = a project environment), not values.
 				</InfoHint>
 				<div className="h-px flex-1 bg-border" />
-				<span className="font-mono text-[10.5px] text-text-secondary">
+				<span className="font-mono text-ui-2xs text-text-secondary">
 					{dim.resourceCount} {dim.resourceCount === 1 ? "resource" : "resources"}
 				</span>
 			</div>
@@ -156,13 +157,13 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 			) : isError ? (
 				// A fetch failure must not read as an empty breakdown for a dimension that IS applied.
 				<div className="flex items-center gap-2">
-					<span className="font-mono text-[11px] text-text-tertiary">
+					<span className="font-mono text-ui-xs text-text-tertiary">
 						Couldn&apos;t load the breakdown.
 					</span>
 					<button
 						type="button"
 						onClick={() => void refetch()}
-						className="font-mono text-[11px] text-text-primary underline-offset-2 hover:underline"
+						className="font-mono text-ui-xs text-text-primary underline-offset-2 hover:underline"
 					>
 						Retry
 					</button>
@@ -171,7 +172,7 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 				<div className="grid grid-cols-1 gap-x-[26px] gap-y-2.5 sm:grid-cols-2">
 					{rows.map((k) => (
 						<div key={k.resource_kind} className="flex items-center gap-3">
-							<span className="w-[104px] shrink-0 text-[12px] text-text-secondary">
+							<span className="w-[104px] shrink-0 text-ui-sm text-text-secondary">
 								{kindLabel(k.resource_kind)}
 							</span>
 							<div className="h-[5px] flex-1 overflow-hidden rounded-full border bg-surface">
@@ -180,7 +181,7 @@ function CoverageByKind({ dim }: { dim: DimensionDTO }) {
 									style={{ width: max > 0 ? `${(k.count / max) * 100}%` : "0%" }}
 								/>
 							</div>
-							<span className="w-[34px] text-right font-mono text-[10.5px] text-text-secondary">
+							<span className="w-[34px] text-right font-mono text-ui-2xs text-text-secondary">
 								{k.count}
 							</span>
 						</div>
@@ -222,13 +223,13 @@ function AddValue({ onAdd }: { onAdd: (label: string) => Promise<void> }) {
 				}}
 				disabled={pending}
 				placeholder="Add a value — type a label, press Enter"
-				className="h-8 flex-1 border-border-strong bg-surface-sunken text-[12.5px]"
+				className="h-8 flex-1 border-border-strong bg-surface-sunken text-ui-sm"
 			/>
 			<button
 				type="button"
 				onClick={submit}
 				disabled={pending || !label.trim()}
-				className="inline-flex h-8 items-center gap-1.5 rounded-[2px] border border-border-strong bg-surface px-[11px] text-[12px] font-medium text-text-primary transition-colors hover:bg-surface-muted disabled:opacity-50"
+				className="inline-flex h-8 items-center gap-1.5 rounded-[2px] border border-border-strong bg-surface px-[11px] text-ui-sm font-medium text-text-primary transition-colors hover:bg-surface-muted disabled:opacity-50"
 			>
 				{pending ? <Spinner size={13} /> : <Plus className="size-3" />}
 				Add
@@ -300,10 +301,8 @@ export function DimensionDetail({
 			<div className="border-b px-5 pb-4 pt-[17px]">
 				<div className="flex items-start justify-between gap-4">
 					<div className="min-w-0">
-						<h2 className="m-0 font-display text-[17px] font-semibold tracking-tight">
-							{dim.label}
-						</h2>
-						<div className="mt-1 flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-text-tertiary">
+						<SectionHeading level={2} title={dim.label} />
+						<div className="mt-1 flex flex-wrap items-center gap-x-2 font-mono text-ui-xs text-text-tertiary">
 							<span>{dim.key}</span>
 							<span className="text-text-disabled">·</span>
 							<span>
@@ -316,7 +315,7 @@ export function DimensionDetail({
 							</span>
 						</div>
 						{dim.description && (
-							<p className="m-0 mt-2 max-w-[60ch] text-[12.5px] leading-relaxed text-text-secondary">
+							<p className="m-0 mt-2 max-w-[60ch] text-ui-sm leading-relaxed text-text-secondary">
 								{dim.description}
 							</p>
 						)}
@@ -347,7 +346,7 @@ export function DimensionDetail({
 				<div className="mt-3.5 flex items-center gap-2.5 border-t border-border-faint pt-3.5">
 					{canEdit && <MultiSwitch multi={dim.multi} onToggle={onToggleMulti} />}
 					<div>
-						<div className="flex items-center gap-1.5 text-[12.5px] font-medium text-text-primary">
+						<div className="flex items-center gap-1.5 text-ui-sm font-medium text-text-primary">
 							{dim.multi ? "Multiple values per resource" : "One value per resource"}
 							<InfoHint>
 								{dim.multi
@@ -355,7 +354,7 @@ export function DimensionDetail({
 									: "A resource holds at most one value — assigning a new one replaces the current."}
 							</InfoHint>
 						</div>
-						<div className="mt-px text-[11px] text-text-tertiary">
+						<div className="mt-px text-ui-xs text-text-tertiary">
 							{dim.multi
 								? "e.g. a service owned by two teams."
 								: "e.g. an environment is exactly one of dev / staging / prod."}
@@ -367,20 +366,20 @@ export function DimensionDetail({
 			{/* values */}
 			<div className="px-2 py-1.5">
 				<div className="flex items-center gap-2 px-3 pb-2 pt-2.5">
-					<span className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+					<span className="font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 						Values
 					</span>
-					<span className="font-mono text-[10px] text-text-tertiary">
+					<span className="font-mono text-ui-2xs text-text-tertiary">
 						{dim.values.length}
 					</span>
 					<div className="flex-1" />
 					{canReorder && (
-						<span className="text-[11px] text-text-tertiary">drag to reorder</span>
+						<span className="text-ui-xs text-text-tertiary">drag to reorder</span>
 					)}
 				</div>
 
 				{dim.values.length === 0 ? (
-					<div className="px-3 py-2 text-[12px] text-text-tertiary">
+					<div className="px-3 py-2 text-ui-sm text-text-tertiary">
 						No values yet — add one below.
 					</div>
 				) : (

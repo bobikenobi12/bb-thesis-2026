@@ -51,6 +51,17 @@ const nextConfig: NextConfig = {
 	// Allow the tunnel host to make cross-origin dev requests (server actions, /_next/*).
 	allowedDevOrigins: PUBLIC_DEV_ORIGINS,
 	// Also allow the Server Action Origin check behind the proxy (production-mode renders).
+	//
+	// ⚠️ Do NOT add `staleTimes` here without reading `resolveOrgScope` first (#4089).
+	// `app/(private)/[org]/layout.tsx` resolves the URL's org segment and WRITES the
+	// session's active organization; the rest of the request, and the next write the
+	// user makes, are scoped by that. It only happens because Next 16's default
+	// `staleTimes.dynamic = 0` re-runs the dynamic segment on every navigation.
+	// Setting `staleTimes.dynamic > 0` serves `/{org}/…` from the client Router Cache
+	// instead, so the layout does not re-run — and the session is then NEVER re-scoped
+	// on a soft navigation between two orgs. Nothing errors, no check goes red: the
+	// user simply keeps writing into whichever org they were last hard-loaded under.
+	// `tests/hooks/use-active-org-slug.test.tsx` asserts this key stays absent.
 	experimental: { serverActions: { allowedOrigins: PUBLIC_DEV_ORIGINS } },
 	// Monorepo: trace workspace files from the repo root so the standalone
 	// bundle is self-contained inside Docker.

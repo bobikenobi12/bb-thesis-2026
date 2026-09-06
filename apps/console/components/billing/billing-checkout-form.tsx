@@ -32,6 +32,7 @@ import {
   type TaxIdType,
   taxIdOption,
 } from "@/lib/billing/tax-ids";
+import { formatMoney } from "@repo/format";
 import type { SupportedCurrency } from "@repo/plan-catalog";
 import { Button } from "@repo/ui/button";
 import { Checkbox } from "@repo/ui/checkbox";
@@ -115,9 +116,31 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-function money(n: number, currency: SupportedCurrency): string {
-  const symbol = currency === "eur" ? "€" : "$";
-  return `${symbol}${n.toLocaleString("en-US")}`;
+/**
+ * The catalog and Stripe hand this form MAJOR units (29, 0.5); `formatMoney` takes minor ones.
+ *
+ * `Math.round` so a float price (29.99 * 100 is 2998.9999…) cannot land a fraction of a cent in
+ * an argument documented as an integer.
+ *
+ * This file used to carry its own `money()`, which picked the symbol from a two-entry `€`/`$`
+ * table and glued it onto `toLocaleString("en-US")`. It rendered `$29` where every other billing
+ * surface renders `$29.00`, and because the symbol was a VARIABLE rather than a literal, no
+ * `$`-in-front-of-an-interpolation guard could see it.
+ *
+ * `SupportedCurrency` is `"usd" | "eur"` — both two-decimal for charges, so the zero-decimal
+ * split `formatMoney` now applies (Stripe's charge table, see `packages/format/src/minor-units.ts`)
+ * resolves to a divisor of 100 either way and cannot change what this file renders. It is stated
+ * as a property of the TYPE rather than of `formatMoney`, because `formatMoney` no longer has the
+ * limitation this sentence used to cite — it divides by the charge divisor now, and the reason
+ * this call site is safe is that its currency union cannot reach the other branch.
+ */
+function toCents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
+/** ISO 4217 for `@repo/format`; `SupportedCurrency` is the lower-case Stripe spelling. */
+function isoCode(currency: SupportedCurrency): string {
+  return currency.toUpperCase();
 }
 
 interface BillingCheckoutFormProps {
@@ -201,6 +224,13 @@ export function BillingCheckoutForm({
     ...(showMembers ? [{ label: "1 member", cost: 0, member: true }] : []),
   ];
   const total = lineItems.reduce((s, li) => s + li.cost, 0);
+  // Minor units and the ISO code, resolved ONCE: every figure this form prints goes through
+  // `formatMoney` from these three, so no two rows of the order summary can disagree about the
+  // symbol, the separators or the decimals.
+  const code = isoCode(currency);
+  const unitCents = toCents(unit);
+  const creditCents = toCents(credit);
+  const totalCents = toCents(total);
 
   const submitting = form.formState.isSubmitting;
   const cardOptions = { style, showIcon: true } as const;
@@ -265,7 +295,7 @@ export function BillingCheckoutForm({
           {/* included credit */}
           {credit > 0 && (
             <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-              <div className="flex items-center gap-2 text-[13px] text-text-secondary">
+              <div className="flex items-center gap-2 text-ui-md text-text-secondary">
                 <span className="font-medium text-text-primary">
                   Included credit
                 </span>
@@ -286,15 +316,15 @@ export function BillingCheckoutForm({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <span className="font-mono text-[13px] text-text-primary">
-                {money(credit, currency)}
+              <span className="font-mono text-ui-md text-text-primary">
+                {formatMoney(creditCents, code)}
               </span>
             </div>
           )}
 
           {/* card row — number full-width, expiry + cvc below */}
           <div className="space-y-2">
-            <Label className="text-[13px]">Card information</Label>
+            <Label className="text-ui-md">Card information</Label>
             <CardField>
               <CardNumberElement options={cardOptions} />
             </CardField>
@@ -306,7 +336,7 @@ export function BillingCheckoutForm({
                 <CardCvcElement options={cardOptions} />
               </CardField>
             </div>
-            <p className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+            <p className="flex items-center gap-1.5 text-ui-xs text-text-tertiary">
               <Lock size={11} />
               You authorize Alethia to charge your card for this and future
               payments per the terms below.
@@ -396,7 +426,7 @@ export function BillingCheckoutForm({
             control={form.control}
             name="useAsPrimary"
             render={({ field }) => (
-              <label className="flex items-center gap-2.5 text-[12.5px] text-text-secondary">
+              <label className="flex items-center gap-2.5 text-ui-sm text-text-secondary">
                 <Checkbox
                   checked={field.value}
                   onCheckedChange={(v) => field.onChange(v === true)}
@@ -418,9 +448,9 @@ export function BillingCheckoutForm({
           />
 
           {/* legal paragraph */}
-          <p className="text-[11px] leading-relaxed text-text-tertiary">
+          <p className="text-ui-xs leading-relaxed text-text-tertiary">
             By clicking {submitLabel ?? "Create"}, you authorize a charge of{" "}
-            {money(total, currency)} now and the same amount each month until
+            {formatMoney(totalCents, code)} now and the same amount each month until
             you cancel. Any applicable tax is estimated and finalized on your
             invoice.
           </p>
@@ -428,16 +458,16 @@ export function BillingCheckoutForm({
           {/* order summary */}
           <div className="rounded-lg border border-border">
             {/* header */}
-            <div className="flex items-center justify-between border-b border-border px-4 py-2.5 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5 font-mono text-ui-2xs uppercase tracking-wide text-text-tertiary">
               <span>Product</span>
               <span>Cost</span>
             </div>
 
             {/* plan row */}
-            <div className="flex items-center justify-between px-4 py-3 text-[12.5px]">
+            <div className="flex items-center justify-between px-4 py-3 text-ui-sm">
               <span className="font-medium text-text-primary">{meta.name}</span>
-              <span className="font-mono text-[12px] text-text-secondary">
-                {money(unit, currency)}
+              <span className="font-mono text-ui-sm text-text-secondary">
+                {formatMoney(unitCents, code)}
               </span>
             </div>
 
@@ -447,7 +477,7 @@ export function BillingCheckoutForm({
                 <button
                   type="button"
                   onClick={() => setMembersExpanded((v) => !v)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-[12.5px]"
+                  className="flex w-full items-center justify-between px-4 py-3 text-ui-sm"
                 >
                   <span className="flex items-center gap-1.5 text-text-secondary">
                     <ChevronRight
@@ -459,19 +489,19 @@ export function BillingCheckoutForm({
                     />
                     1 member
                   </span>
-                  <span className="font-mono text-[12px] text-text-secondary">
-                    {money(0, currency)}
+                  <span className="font-mono text-ui-sm text-text-secondary">
+                    {formatMoney(0, code)}
                   </span>
                 </button>
                 {membersExpanded && ownerEmail && (
-                  <div className="flex items-center justify-between px-4 pb-3 pl-[34px] text-[11px] text-text-tertiary">
+                  <div className="flex items-center justify-between px-4 pb-3 pl-[34px] text-ui-xs text-text-tertiary">
                     <span className="flex items-center gap-1.5">
                       <span className="truncate">{ownerEmail}</span>
-                      <span className="rounded-full border border-border px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wide text-text-tertiary">
+                      <span className="rounded-full border border-border px-1.5 py-px font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
                         Owner
                       </span>
                     </span>
-                    <span className="font-mono text-[10.5px]">Included</span>
+                    <span className="font-mono text-ui-2xs">Included</span>
                   </div>
                 )}
               </div>
@@ -479,12 +509,12 @@ export function BillingCheckoutForm({
 
             {/* total — below divider, right-aligned */}
             <div className="flex items-center justify-end gap-3 border-t border-border px-4 py-3">
-              <span className="text-[13px] font-medium text-text-primary">
+              <span className="text-ui-md font-medium text-text-primary">
                 Total
               </span>
-              <span className="font-display text-[16px] font-semibold text-text-primary">
-                {money(total, currency)}
-                <span className="font-mono text-[11px] font-normal text-text-tertiary">
+              <span className="font-display text-ui-xl font-semibold text-text-primary">
+                {formatMoney(totalCents, code)}
+                <span className="font-mono text-ui-xs font-normal text-text-tertiary">
                   {" "}
                   / month
                 </span>
@@ -500,7 +530,7 @@ export function BillingCheckoutForm({
           )}
         >
           {form.formState.errors.root?.message && (
-            <p className="text-[12px] text-destructive">
+            <p className="text-ui-sm text-destructive">
               {form.formState.errors.root.message}
             </p>
           )}
@@ -512,7 +542,7 @@ export function BillingCheckoutForm({
           >
             {submitting
               ? "Processing…"
-              : (submitLabel ?? `Create — ${money(total, currency)}`)}
+              : (submitLabel ?? `Create — ${formatMoney(totalCents, code)}`)}
           </Button>
         </div>
       </form>
@@ -537,7 +567,7 @@ function TaxIdSection({
       <button
         type="button"
         onClick={onShow}
-        className="flex items-center gap-1.5 text-[12.5px] text-text-secondary transition-colors hover:text-text-primary"
+        className="flex items-center gap-1.5 text-ui-sm text-text-secondary transition-colors hover:text-text-primary"
       >
         <Plus size={13} />
         Add a tax ID
@@ -548,14 +578,14 @@ function TaxIdSection({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-text-primary">
+        <span className="text-ui-md font-medium text-text-primary">
           Tax ID
         </span>
         <button
           type="button"
           onClick={onHide}
           aria-label="Remove tax ID"
-          className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-text-tertiary transition-colors hover:text-text-primary"
+          className="flex items-center gap-1 font-mono text-ui-2xs uppercase tracking-wide text-text-tertiary transition-colors hover:text-text-primary"
         >
           <X size={12} />
           Remove
@@ -624,16 +654,16 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-[13px] font-medium text-text-primary">
+      <div className="flex items-center gap-1.5 text-ui-md font-medium text-text-primary">
         {label}
         {optional && (
-          <span className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
+          <span className="font-mono text-ui-2xs uppercase tracking-wide text-text-tertiary">
             optional
           </span>
         )}
       </div>
       {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
+      {error && <p className="text-ui-xs text-destructive">{error}</p>}
     </div>
   );
 }

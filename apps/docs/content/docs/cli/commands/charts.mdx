@@ -1,17 +1,34 @@
 ---
 title: Chart Commands
-description: Inspect the BYO Helm charts attached to a project environment.
+description: Attach, scan, list and detach the BYO Helm charts on a project environment.
 ---
 
 # Chart Commands
 
-The `chart` group (alias `charts`) lists your **BYO Helm charts** — your own charts, pulled from a
-connected git repo and deployed into an environment via ArgoCD alongside the marketplace add-ons.
+The `chart` group (alias `charts`) manages your **BYO Helm charts** — your own charts, pulled from a
+connected git repo or an OCI registry and deployed into an environment through ArgoCD alongside the
+marketplace add-ons.
 
 <Callout type="info">
-The CLI is a client of the same Console API. `chart list` calls `/cli/projects/<project>/byo-charts`
-with your [CLI token](/cli/authentication) and operates on the **active organization**.
+The CLI is a client of the same Console API. These commands call `/cli/projects/PROJECT/byo-charts`
+with your [CLI token](/cli/authentication) and operate on the **active organization**.
 </Callout>
+
+## Common flags
+
+Every command in the group takes the same two selectors. They are registered on the group, so they
+work in any position.
+
+{/* fieldspec: alethia chart */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Project | The project, by name or id; omit it on a terminal and you are asked | `--project` |
+| Environment | The environment, by name, stage or id; empty means the project's default | `--env` |
+
+`--project` has the short form `-p` and `--env` has `-e`. On a terminal, omitting `--project` opens
+the project picker; with `--no-input`, with `-o json`, or with the output redirected to a file, it
+is required — a form drawn into a redirected stream would corrupt the document you are piping.
 
 ## `alethia chart list`
 
@@ -23,42 +40,56 @@ alethia chart list -p my-project -e staging
 alethia chart list -p my-project -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
-| `--env`, `-e` | No | Environment name, stage, or id. Omit to use the project's default environment. |
-
-Columns: **Chart** (its per-env id/release name), **Repo** (the git URL), **Path** (the chart dir),
-**Ref** (git ref), **Status**, **Scan** (chart-safety scan lifecycle: `unscanned` | `scanning` |
-`done` | `failed`). Add `-o json` for the full view (the elench scan report itself is console-only);
-`-o csv` for the rows. Backing call: `GET /cli/projects/<project>/byo-charts`.
+Columns: **Chart** (its per-env id and release name), **Repo** (the git or OCI URL), **Path** (the
+chart directory, a dash for an OCI chart), **Ref** (the git ref, a dash when it tracks the default
+branch), **Status**, **Scan** (chart-safety scan lifecycle: `unscanned`, `scanning`, `done`,
+`failed`). Add `-o json` for the full view — the elench scan report itself is console-only — or
+`-o csv` for the rows. The dashes in **Path** and **Ref** are for a person reading a column; under
+`-o csv` a chart that has neither gets an empty cell, the same split `alethia config get` makes.
+Backing call: `GET /cli/projects/PROJECT/byo-charts`.
 
 ## `alethia chart attach`
 
 Attach a chart from your own repository — git or OCI — to one environment.
 
 ```bash
-# A chart in a git repo
-alethia chart attach api -p shop -e dev \
-  --repo https://github.com/acme/charts --chart-path charts/api --ref v1.2.3
-
-# An OCI chart (no --chart-path: the URL's last segment names it)
+alethia chart attach api -p shop -e dev --repo https://github.com/acme/charts --chart-path charts/api --ref v1.2.3
 alethia chart attach api -p shop --repo oci://registry.example.com/acme/api
-
-# With values
-alethia chart attach api -p shop --repo https://github.com/acme/charts \
-  --chart-path charts/api --set replicas=2 --values-file ./api-values.yaml
+alethia chart attach api -p shop --repo https://github.com/acme/charts --chart-path charts/api --set replicas=2 --values-file ./api-values.yaml
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<id>` | Yes | Your name for the chart (positional). Slugified server-side. |
-| `--repo` | Yes | Repository URL — `https://`, `git@…` or `oci://…`. |
-| `--chart-path` | git only | Path to the chart within the repo. |
-| `--ref` | No | Git ref (branch, tag or SHA). |
-| `--namespace` | No | Destination namespace. |
-| `--set key=value` | No | A chart value. Repeatable; JSON-typed when it parses. |
-| `--values-file` | No | Raw Helm values YAML override. |
+{/* fieldspec: alethia chart attach */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Chart id | Your name for this chart; the server slugifies it and the result is the id every later command uses | `[id]` |
+| Repository | Where the chart lives — a git URL, or an oci:// reference to a chart registry | `--repo` |
+| Chart path | Where the chart sits inside a git repository; an OCI chart is named by its URL and needs none | `--chart-path` |
+| Git ref | The branch, tag or commit to deploy; empty tracks the repository's default branch | `--ref` |
+| Namespace | The destination namespace; empty lets the environment place it | `--namespace` |
+| Values file | A path on this machine to a raw Helm values YAML override, sent as the file's content | `--values-file` |
+| Chart value | One key=value chart value, repeatable, JSON-typed when the value parses as JSON | `--set` |
+
+### The interactive path
+
+Run `alethia chart attach` on a terminal with nothing else and it asks for each field it was not
+given. A flag you did pass is never questioned again, so a half-written command finishes itself.
+
+The **repository is chosen, not typed**: the form asks which connected provider to look in, then
+offers the repositories Alethia can already see, with `Type a URL instead…` at the bottom of the
+list for anything else. That is the whole reason this form exists — the URL used to be something you
+read off `alethia repo list` and typed back in. If no provider is connected, or the listing fails,
+the question falls back to a plain typed line rather than refusing the attach.
+
+`--chart-path` is asked for git repositories only: an OCI chart is named by its URL's last segment.
+
+The run finishes by printing the flags that would have produced the same result, so the command you
+answered once is the command you can commit to a repository.
+
+### With `--no-input`
+
+Nothing is asked, and the chart id and `--repo` are required. Leaving one out fails and names it.
+Every field above has a flag, so any attach the form can perform, a script can perform.
 
 <Callout type="info">
   **A private repository needs no credential flag.** The runner fetches a short-lived token at job
@@ -68,18 +99,27 @@ alethia chart attach api -p shop --repo https://github.com/acme/charts \
 </Callout>
 
 Re-attaching the same id **updates** it, so this is also how you move a chart to a new ref. The
-success line echoes the id the server stored — it slugifies what you send, and that is the id the
-next command needs.
+success line echoes the id the server stored, because it slugifies what you send.
 
 ## `alethia chart scan`
 
 ```bash
 alethia chart scan api -p shop -e dev
+alethia chart scan -p shop -e dev
 ```
 
+{/* fieldspec: alethia chart scan */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Chart | Which attached chart to scan; an unscanned chart is refused at deploy | `[id]` |
+
 An attached chart is **not deployable until it has been scanned**: the scan renders it and records
-the verdict the plan-time gate reads. Re-scan whenever the chart's repository moves. The printed job
-id follows with `alethia jobs logs <id> --follow`.
+the verdict the plan-time gate reads. Re-scan whenever the chart's repository moves.
+
+The id is optional. Omit it on a terminal and the environment's attached charts are offered, so
+nothing is copied out of `alethia chart list`. The scan is asynchronous: the queued job id is
+printed, and `alethia jobs logs --latest --follow` tails it without repeating that id back.
 
 ## `alethia chart detach`
 
@@ -88,9 +128,19 @@ alethia chart detach api -p shop -e dev
 alethia chart detach api -p shop --yes
 ```
 
+{/* fieldspec: alethia chart detach */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Chart | Which attached chart to detach; its workloads leave the cluster on the next sync | `[id]` |
+
+Like `chart scan`, the id is optional on a terminal and the attached charts are offered instead.
+
 <Callout type="warn">
   Detaching removes the chart's workloads from the cluster on the next sync. The command confirms
-  first, and requires `--yes` when it cannot prompt.
+  first, and the confirmation **names the chart it resolved to** — including the one you picked from
+  the list. With `--no-input`, or when stdin is not a terminal, `--yes` is required and the command
+  fails without it rather than cancelling quietly.
 </Callout>
 
 <Callout type="info">
@@ -102,4 +152,5 @@ alethia chart detach api -p shop --yes
 
 - [Add-on Commands](/cli/commands/addons) — the marketplace OSS add-ons.
 - [IaC Commands](/cli/commands/iac) — your BYO Terraform/OpenTofu source.
+- [Repository Commands](/cli/commands/repositories) — the repositories the pickers offer.
 - [Command Reference](/cli/commands) — the full command tree and global flags.

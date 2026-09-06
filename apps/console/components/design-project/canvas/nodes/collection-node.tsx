@@ -4,6 +4,7 @@
 
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { useMemo } from "react";
+import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
 import { NODE_REGISTRY } from "../graph/node-registry";
 import { configName } from "../graph/node-config";
@@ -73,15 +74,15 @@ export function CollectionNode({
 				>
 					<Icon className="h-5 w-5 text-muted-foreground" />
 				</span>
-				<span className="max-w-[76px] truncate font-mono text-[10px] text-muted-foreground">
+				<span className="max-w-[76px] truncate font-mono text-ui-2xs text-muted-foreground">
 					{title} · {count}
 				</span>
-				<span
-					className={cn("vx-status", `vx-status--${meta.vx}`)}
+				<StatusBadge
+					status={meta.label}
+					tier={meta.vx}
+					showLabel={false}
 					suppressHydrationWarning
-				>
-					<span className="vx-status__dot" />
-				</span>
+				/>
 			</div>
 		);
 	}
@@ -108,21 +109,22 @@ export function CollectionNode({
 					<Icon className="h-3.5 w-3.5 text-muted-foreground" />
 				</span>
 				<span className="vx-eyebrow truncate">{title}</span>
-				<span
-					className={cn("vx-status ml-auto min-w-0 shrink-0", `vx-status--${meta.vx}`)}
+				{/* The label is HIDDEN on a nominal card, never unmounted — status comes from the
+				    sessionStorage-persisted client store, so SSR and the first client paint can
+				    disagree, and `showLabel={false}` would change the CHILD COUNT across hydration
+				    (which `suppressHydrationWarning` does not cover). Same contract, and the same
+				    `truncate`-on-the-flex-item reason, as `base-node.tsx`. */}
+				<StatusBadge
+					status={meta.label}
+					tier={meta.vx}
+					className={cn(
+						"ml-auto min-w-0 shrink-0 [&>span:last-child]:truncate",
+						(worst.state === "ready" || worst.state === "live") &&
+							"[&>span:last-child]:hidden",
+					)}
 					title={worst.message ?? meta.label}
 					suppressHydrationWarning
-				>
-					<span className="vx-status__dot" />
-					<span
-						className={cn(
-							"truncate",
-							worst.state === "ready" || worst.state === "live" ? "hidden" : "",
-						)}
-					>
-						{meta.label}
-					</span>
-				</span>
+				/>
 			</div>
 
 			<div className="space-y-2 px-2.5 py-2.5">
@@ -132,7 +134,7 @@ export function CollectionNode({
 						{count === 1 ? def.collection?.singular : `${def.collection?.singular}s`}
 					</span>
 					{worst.drifted > 0 && (
-						<span className="ml-auto shrink-0 border border-border-strong px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+						<span className="ml-auto shrink-0 border border-border-strong px-1.5 py-0.5 font-mono text-ui-2xs text-foreground">
 							{worst.drifted} drifted
 						</span>
 					)}
@@ -145,13 +147,13 @@ export function CollectionNode({
 						{preview.map((m) => (
 							<div
 								key={m.id}
-								className="truncate bg-card px-1.5 py-1 font-mono text-[10px] text-muted-foreground"
+								className="truncate bg-card px-1.5 py-1 font-mono text-ui-2xs text-muted-foreground"
 							>
 								{configName(m.data) || "—"}
 							</div>
 						))}
 						{count > PREVIEW && (
-							<div className="bg-card px-1.5 py-1 font-mono text-[10px] text-muted-foreground/60">
+							<div className="bg-card px-1.5 py-1 font-mono text-ui-2xs text-muted-foreground/60">
 								+{count - PREVIEW} more
 							</div>
 						)}

@@ -157,7 +157,7 @@ export function NewEnvironmentDialog({
 						>
 							{mode === "duplicate" && (
 								<div className="mt-3 space-y-1.5">
-									<Label className="text-[11px] text-muted-foreground">
+									<Label className="text-ui-xs text-muted-foreground">
 										Base environment
 									</Label>
 									<Select value={baseId} onValueChange={setBaseId}>

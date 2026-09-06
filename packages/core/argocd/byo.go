@@ -9,8 +9,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
-	"strings"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/names"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,23 +120,24 @@ func encodeByoDocs(what string, docs ...any) (string, error) {
 // value outright so it fails here rather than later and more confusingly.
 var byoRepoUnsafe = regexp.MustCompile(`[\x00-\x1f\x7f]`)
 
-var slugUnsafe = regexp.MustCompile(`[^a-z0-9-]+`)
+// byoProjectPrefix is what an AppProject name for BYO charts starts with. It is part of the
+// LENGTH BUDGET, which is why the slug below is capped against it rather than after the join.
+const byoProjectPrefix = "byo-"
 
-// ByoProjectName derives a stable, RFC1123-safe ArgoCD AppProject name for a project's BYO
-// charts: "byo-<sanitized-slug>". `slug` is typically the project name; a fallback keeps the
-// name non-empty and bounded (ArgoCD names must be ≤63 chars).
+// ByoProjectName derives a stable ArgoCD AppProject name for a project's BYO charts:
+// "byo-<segment>". `slug` is typically the project's free-text name; the fallback keeps the name
+// non-empty and the cap keeps it inside 63 characters.
+//
+// The derivation is names.LegacyObjectSegment, which is FROZEN and is deliberately not
+// names.Slugify — this name is the identity of an AppProject that is already applied. See that
+// function for the four shapes where the two differ and for why closing the gap is a migration
+// rather than a rename. The local copy of the regex is gone; the rule now has one definition.
 func ByoProjectName(slug string) string {
-	s := slugUnsafe.ReplaceAllString(strings.ToLower(strings.TrimSpace(slug)), "-")
-	s = strings.Trim(s, "-")
+	s := names.LegacyObjectSegment(slug)
 	if s == "" {
 		s = "project"
 	}
-	name := "byo-" + s
-	if len(name) > 63 {
-		name = name[:63]
-		name = strings.TrimRight(name, "-")
-	}
-	return name
+	return names.Bounded(byoProjectPrefix + s)
 }
 
 // RenderByoAppProject renders the hardened AppProject YAML locking BYO charts to their own repos
@@ -227,9 +228,13 @@ func RenderByoAppProject(name string, sourceRepos, namespaces []string, commonLa
 // dns1123Label is Kubernetes' own rule for a Namespace name: lowercase alphanumerics and '-',
 // starting and ending alphanumeric, at most 63 characters. Matched in FULL — an unanchored pattern
 // would accept a valid prefix followed by anything at all, which is the whole attack.
-var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+//
+// One definition, generated from apps/console/lib/validations/names.ts (#3665). These names stay
+// as package-local aliases so the many call sites in this package and preview_validate.go read
+// unchanged.
+var dns1123Label = names.NamespacePattern
 
-const dns1123LabelMaxLen = 63
+const dns1123LabelMaxLen = names.NamespaceMaxLength
 
 // validateByoNamespace REFUSES a namespace Kubernetes itself would refuse, rather than normalising
 // it.

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // E2E: the Usage page — that an authed user reaches it and the time-range filters drive the
-// over-time section. Run locally with `pnpm dev:up` + `pnpm -F console test:e2e`.
+// over-time section. Run locally with `pnpm dev:up` + `pnpm -C apps/console run test:e2e`.
 
 import { expect, test } from "./fixtures/auth";
 

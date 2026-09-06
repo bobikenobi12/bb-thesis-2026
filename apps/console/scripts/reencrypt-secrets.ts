@@ -15,7 +15,7 @@
 // stamp (legacy no-kid → active kid) and for a rotation (old kid → new kid). NEVER logs key material
 // or plaintext — only row counts.
 //
-// Run: pnpm -F console db:reencrypt   (needs ALETHIA_DATABASE_URL + the keyring env vars set)
+// Run: pnpm -C apps/console run db:reencrypt   (needs ALETHIA_DATABASE_URL + the keyring env vars set)
 // See lib/crypto/secrets.ts for the full rotation runbook + ordering.
 
 import { fileURLToPath } from "node:url";

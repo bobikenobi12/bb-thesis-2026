@@ -8,6 +8,7 @@
 
 import { lookup } from "@/lib/typed-object";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { AddRunnerButton } from "@/components/runners/add-runner-button";
 import { ErrorState } from "@/components/errors/error-state";
 import { PoolCard, PoolCardSkeleton, PoolsEmpty } from "@/components/runners/pool-card";
@@ -216,15 +217,11 @@ export function RunnersClient() {
 	// Hosted tenants without the BYO-runners entitlement get the upsell in place of the page.
 	// (Self-managed operators are never gated here.)
 	if (isHosted && !canByoRunners) {
-		return (
-			<div className="mx-auto w-full max-w-[1360px]">
-				<FeatureUpsell feature="byoRunners" />
-			</div>
-		);
+		return <FeatureUpsell feature="byoRunners" />;
 	}
 
 	return (
-		<div className="mx-auto w-full max-w-[1360px]">
+		<>
 			<div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(320px,0.36fr)_minmax(0,0.64fr)]">
 				{/* Left column — pools (self-managed only), then versions. */}
 				<div className="flex flex-col gap-6">
@@ -234,7 +231,7 @@ export function RunnersClient() {
 							<div className="flex items-baseline gap-2">
 								<span className="text-sm font-semibold tracking-tight text-foreground">Pools</span>
 								{hasPools && (
-									<span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+									<span className="font-mono text-ui-2xs uppercase tracking-[0.08em] text-muted-foreground">
 										{poolViews.length} configured
 									</span>
 								)}
@@ -247,7 +244,7 @@ export function RunnersClient() {
 						</div>
 
 						{canManageFleet && hasPools && !fleetProviderActive && (
-							<p className="border border-dashed border-border px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+							<p className="border border-dashed border-border px-3 py-2 font-mono text-ui-2xs leading-relaxed text-muted-foreground">
 								No cloud provider wired — pools are advisory. Set{" "}
 								<span className="text-foreground">FLEET_PROVIDER=hcloud</span> to provision real runners.
 							</p>
@@ -285,9 +282,9 @@ export function RunnersClient() {
 				<div className="min-w-0 space-y-4">
 					<div className="flex items-center justify-between gap-3">
 						<div className="flex items-baseline gap-2">
-							<span className="font-display text-[15px] font-semibold tracking-tight">Runners</span>
+								<span className="font-display text-ui-lg font-semibold tracking-tight">Runners</span>
 							{/* The count pill shows the RESULT count (the standard) — never "N of M" prose. */}
-							<span className="rounded-full border px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground">
+								<span className="rounded-full border px-2 py-0.5 font-mono text-ui-2xs text-muted-foreground">
 								{filtered.length}
 							</span>
 						</div>
@@ -320,9 +317,7 @@ export function RunnersClient() {
 					) : runnerRows.length === 0 ? (
 						<EmptyRunners />
 					) : filtered.length === 0 ? (
-						<p className="py-12 text-center text-sm text-muted-foreground">
-							No runners match your filters.
-						</p>
+						<EmptyState title="No runners match your filters." className="py-12" />
 					) : (
 						<>
 							<div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(340px,1fr))]">
@@ -353,23 +348,20 @@ export function RunnersClient() {
 					usedProviders={poolConfigs.map((c) => c.provider)}
 				/>
 			)}
-		</div>
+		</>
 	);
 }
 
 /** First-run state when no runners exist at all. */
 function EmptyRunners() {
 	return (
-		<div className="flex flex-col items-center justify-center py-16 text-center">
-			<div className="mb-4 rounded-full bg-muted/50 p-3">
-				<Server className="h-7 w-7 text-muted-foreground" />
-			</div>
-			<h3 className="mb-1 text-sm font-medium text-foreground">No runners yet</h3>
-			<p className="mb-4 max-w-sm text-xs text-muted-foreground">
-				Runners execute provisioning jobs. Managed runners are operated and billed by Alethia; you
-				can also deploy your own into a cloud account or register an existing one.
-			</p>
-			<AddRunnerButton />
-		</div>
+		<EmptyState
+			icon={<Server />}
+			level={3}
+			title="No runners yet"
+			description="Runners execute provisioning jobs. Managed runners are operated and billed by Alethia; you can also deploy your own into a cloud account or register an existing one."
+			action={<AddRunnerButton />}
+			className="py-16"
+		/>
 	);
 }

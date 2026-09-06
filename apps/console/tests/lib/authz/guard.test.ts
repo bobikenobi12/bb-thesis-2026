@@ -227,6 +227,136 @@ describe("authorizeCli", () => {
 	});
 });
 
+// ── X-Alethia-Org: THE SCOPE SERVED IS THE SCOPE NAMED (#3863). ──
+//
+// `isOrgMember` returns true when orgId === userId — a personal org's id IS the user id, so it
+// has no `member` row and needs none. That made the header check pass for a value every caller
+// can supply about themselves; the scope resolver then found no member row for it and fell back
+// to the caller's EARLIEST membership, so `X-Alethia-Org: <own user id>` was answered with a TEAM
+// org's rows. Not an escalation — the fallback lands on an org they belong to — but the request
+// was answered from a scope it never named, and `jobs cancel --latest` resolves through the same
+// list.
+//
+// Two halves close it, and this file owns the second: ee/src/scope.ts resolves a personal org to
+// itself (ee/src/scope.test.ts), and authorizeCli refuses ANY scope that is not the org the header
+// named, rather than serving the substitute.
+describe("authorizeCli with an X-Alethia-Org header", () => {
+	/** A request from an ordinary (non-service) CLI token, carrying an org header. */
+	function headerReq(headerOrg: string): Request {
+		const headers = new Headers({ "X-Alethia-Org": headerOrg });
+		return new Request("https://example.test/api/cli", { headers });
+	}
+
+	beforeEach(() => {
+		vi.mocked(verifyCliToken).mockResolvedValue({
+			payload: { sub: "u-cli", type: "access" },
+			error: undefined,
+		} as never);
+	});
+
+	// THE ONE THAT MATTERS. The header names the caller's own user id — the personal org — and
+	// resolution comes back pointing at a team org. That is exactly the #3863 sequence, and the
+	// answer is a refusal.
+	it("REFUSES when resolution lands on an org other than the one the header named", async () => {
+		// The member check passes on the personal-org branch without touching the database: if
+		// this ever needs a row, the branch under test has moved.
+		vi.mocked(getActiveScope).mockResolvedValue({ userId: "u-cli", orgId: "org-team" });
+
+		const result = await authorizeCli(headerReq("u-cli"), "manage_connectors", {
+			type: "connector",
+		});
+
+		expect("error" in result).toBe(true);
+		expect((result as { error: Response }).error.status).toBe(403);
+		// The 403 came from the scope check and from NOTHING ELSE. Without this the same status
+		// would be produced by a PDP denial, an invalid token or a missing member row, and the
+		// test would pass while measuring a mechanism it is not about.
+		expect(getActiveScope).toHaveBeenCalledWith("u-cli", "u-cli");
+		expect(enforce).not.toHaveBeenCalled();
+		expect(dbLimit).not.toHaveBeenCalled();
+	});
+
+	// The other side of the same branch: the header IS honoured when resolution agrees with it,
+	// so the refusal above is not simply "personal-org headers are rejected".
+	it("scopes to the caller's PERSONAL org when the header names it and resolution agrees", async () => {
+		vi.mocked(getActiveScope).mockResolvedValue({ userId: "u-cli", orgId: "u-cli" });
+
+		const result = await authorizeCli(headerReq("u-cli"), "manage_connectors", {
+			type: "connector",
+		});
+
+		expect(result).toEqual({ actor: { userId: "u-cli", orgId: "u-cli" } });
+		// The literal, not `actor.userId`: the team org the old fallback served was "org-team".
+		expect((result as { actor: Actor }).actor.orgId).toBe("u-cli");
+		expect(enforce).toHaveBeenCalledWith({ userId: "u-cli", orgId: "u-cli" }, "manage_connectors", {
+			type: "connector",
+			id: undefined,
+		});
+	});
+
+	it("honours a header naming a team org the caller is a member of", async () => {
+		dbLimit.mockResolvedValue([{ id: "m-1" }]);
+		vi.mocked(getActiveScope).mockResolvedValue({ userId: "u-cli", orgId: "org-team" });
+
+		const result = await authorizeCli(headerReq("org-team"), "manage_connectors", {
+			type: "connector",
+		});
+
+		expect(result).toEqual({ actor: { userId: "u-cli", orgId: "org-team" } });
+		expect(getActiveScope).toHaveBeenCalledWith("u-cli", "org-team");
+	});
+
+	it("REFUSES a header naming an org with no member row, resolving no scope at all", async () => {
+		dbLimit.mockResolvedValue([]);
+
+		const result = await authorizeCli(headerReq("org-stranger"), "manage_connectors", {
+			type: "connector",
+		});
+
+		expect("error" in result).toBe(true);
+		expect((result as { error: Response }).error.status).toBe(403);
+		expect(getActiveScope).not.toHaveBeenCalled();
+		expect(enforce).not.toHaveBeenCalled();
+	});
+
+	// AN ERROR IS NOT AN ABSENCE. A failed membership read must not render as "not a member" —
+	// that is one blip away from a 403 storm indistinguishable from a real denial, and one
+	// inverted branch away from the silent wrong scope this whole describe block is about.
+	it("propagates a member-lookup failure instead of turning it into a denial", async () => {
+		const boom = new Error("connection terminated");
+		dbLimit.mockRejectedValue(boom);
+
+		await expect(
+			authorizeCli(headerReq("org-team"), "manage_connectors", { type: "connector" }),
+		).rejects.toBe(boom);
+	});
+
+	it("propagates a scope-resolution failure instead of turning it into a denial", async () => {
+		const boom = new Error("connection terminated");
+		dbLimit.mockResolvedValue([{ id: "m-1" }]);
+		vi.mocked(getActiveScope).mockRejectedValue(boom);
+
+		await expect(
+			authorizeCli(headerReq("org-team"), "manage_connectors", { type: "connector" }),
+		).rejects.toBe(boom);
+	});
+
+	// The no-header path has no named org to compare against — resolving the caller's default
+	// scope IS the intent there, so it must not acquire a refusal it never asked for.
+	it("leaves the header-less path resolving the default scope", async () => {
+		vi.mocked(getActiveScope).mockResolvedValue(CLI_ACTOR);
+
+		const result = await authorizeCli(
+			new Request("https://example.test/api/cli"),
+			"manage_connectors",
+			{ type: "connector" },
+		);
+
+		expect(result).toEqual({ actor: CLI_ACTOR });
+		expect(getActiveScope).toHaveBeenCalledWith("u-cli");
+	});
+});
+
 // ── SERVICE-ACCOUNT TOKENS: the organization pin. ──
 //
 // A service token's org is fixed when it is minted. An interactive session picks its org with an
@@ -295,6 +425,24 @@ describe("authorizeCli with a service-account token", () => {
 
 		expect("error" in result).toBe(true);
 		expect((result as { error: Response }).error.status).toBe(403);
+		expect(enforce).not.toHaveBeenCalled();
+	});
+
+	// The pin is a NAMED org exactly as a header is, so it gets the same #3863 treatment: the scope
+	// served must BE the pinned org. A token pinned to its minter's personal org would otherwise
+	// resolve through the same missing-member-row fallback and drive a pipeline against a team org
+	// nobody named — the "writing to org B while every write lands in org A" failure this block
+	// already refuses in its header form.
+	it("REFUSES when the pinned org resolves to a different scope", async () => {
+		vi.mocked(getActiveScope).mockResolvedValue({ userId: "u-minter", orgId: "org-B" });
+
+		const result = await authorizeCli(serviceReq(), "manage_tokens", { type: "org" });
+
+		expect("error" in result).toBe(true);
+		expect((result as { error: Response }).error.status).toBe(403);
+		// From the scope check, not from the PDP or the membership re-check.
+		expect(dbLimit).toHaveBeenCalled();
+		expect(getActiveScope).toHaveBeenCalledWith("u-minter", "org-A");
 		expect(enforce).not.toHaveBeenCalled();
 	});
 

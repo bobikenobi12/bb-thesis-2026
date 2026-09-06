@@ -27,7 +27,7 @@
 // TS engines are the deeper authority (and the Go couplings_drift_test locks the
 // real template/Dockerfile pins to the matrix); this is the fast, Go-toolchain-free
 // mirror that runs in the console `guards` job. Run: `node scripts/check-compat.mjs`
-// (`pnpm -F console check:compat`), or `--self-test` to exercise the evaluator.
+// (`pnpm -C apps/console run check:compat`), or `--self-test` to exercise the evaluator.
 
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";

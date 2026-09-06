@@ -32,21 +32,27 @@ describeIfDb("resolveCliEnvironment — id/name/stage matching", () => {
 			region: "westeurope",
 			iac_version: "1.0",
 		});
-		await db.insert(projectEnvironments).values({
-			id: ENV_STAGING,
-			project_id: PROJ,
-			user_id: USER,
-			name: "staging",
-			stage: "staging",
-			is_default: false,
-		});
-		await db.insert(projectEnvironments).values({
-			id: ENV_PROD,
-			project_id: PROJ,
-			user_id: USER,
-			name: "production",
-			stage: "production",
-			is_default: true,
+		// One transaction: the first insert alone leaves this project with an environment and no
+		// default, which `project_environments_one_default_check` (lib/db/programmables.sql) refuses.
+		// The trigger is DEFERRED, so it judges the state at COMMIT — the pair is what has to be
+		// valid, not each statement.
+		await db.transaction(async (tx) => {
+			await tx.insert(projectEnvironments).values({
+				id: ENV_STAGING,
+				project_id: PROJ,
+				user_id: USER,
+				name: "staging",
+				stage: "staging",
+				is_default: false,
+			});
+			await tx.insert(projectEnvironments).values({
+				id: ENV_PROD,
+				project_id: PROJ,
+				user_id: USER,
+				name: "production",
+				stage: "production",
+				is_default: true,
+			});
 		});
 	});
 

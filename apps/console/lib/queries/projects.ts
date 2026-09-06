@@ -14,11 +14,53 @@ import {
 	projects,
 	resourceHierarchy,
 } from "@/lib/db/schema";
+import { pickFreeSlug, RESERVED_PROJECT_CHILD_SLUGS } from "@/lib/routing";
+import { slugify } from "@/lib/utils/slugify";
 import {
-	pickFreeSlug,
-	RESERVED_PROJECT_CHILD_SLUGS,
-	slugify,
-} from "@/lib/routing";
+	environmentNameProblem,
+	namespaceProblem,
+	normalizeEnvironmentName,
+} from "@/lib/validations/names";
+
+/**
+ * Why an environment spec cannot be fanned out, or `null` when it can.
+ *
+ * Re-validated at all because `createProject` does not re-parse the client input, so a crafted
+ * request must not smuggle path separators into a tofu state key or a Fabric name.
+ *
+ * It asks the SHARED rules (lib/validations/names.ts) rather than keeping its own copy. The copy
+ * it used to keep was a pair of bounded charset patterns, one per field, and both required a
+ * leading LETTER — the rule #3665 removes, because Kubernetes accepts `1dev`. `POST
+ * /api/cli/projects` parses the matrix with `environmentMatrixSchema` and hands it straight to the
+ * fan-out, so the two disagreeing meant `alethia project create --env 1dev:namespace` passed
+ * validation and then threw out of the fan-out — which the route's catch renders as a 500, not the
+ * 400 a rejected name deserves.
+ *
+ * Exported so that agreement is a TEST rather than a claim: tests/lib/queries-projects-specs.test.ts
+ * drives this and `environmentMatrixSchema` over one corpus and asserts they answer alike.
+ */
+export function environmentSpecProblem(spec: {
+	name: string;
+	namespace?: string | null;
+}): string | null {
+	const nameProblem = environmentNameProblem(spec.name);
+	if (nameProblem) return `Invalid environment name "${spec.name}": ${nameProblem}`;
+	// The name arrives already normalized when it came through environmentMatrixSchema. Checked
+	// again because the fan-out is also reachable from callers that never parsed it, and a name
+	// that still needs normalizing would be stored in a form no URL resolves.
+	const canonical = normalizeEnvironmentName(spec.name);
+	if (canonical !== spec.name) {
+		return (
+			`Invalid environment name "${spec.name}": it must already be normalized ` +
+			`("${canonical}") before it reaches the fan-out.`
+		);
+	}
+	if (spec.namespace != null) {
+		const nsProblem = namespaceProblem(spec.namespace);
+		if (nsProblem) return `Invalid namespace "${spec.namespace}": ${nsProblem}`;
+	}
+	return null;
+}
 
 /** One environment the front door seeds, with its placement onto a Fabric. The placement selector
  * (#844) emits these; the fan-out below turns them into `project_fabrics` + `project_environments`
@@ -133,33 +175,188 @@ export interface CreateProjectCoreResult {
  * The org-scoped slug select filters `org_id` EXPLICITLY so it is correct under a service-role
  * (BYPASSRLS) transaction as well as an RLS-scoped one — never rely on RLS alone for uniqueness here.
  */
+
+/**
+ * The name collision, as something a caller can catch.
+ *
+ * Raised by BOTH write paths — `insertProjectWithDefaultFabric` on create and `updateProjectName`
+ * on rename — so a duplicate reads the same whether it was found by the pre-check or by the index
+ * losing a race. Without it the caller sees drizzle's wrapper, whose message is
+ * `Failed query: insert into …`, and the console answers a 500 for a thing the user can fix.
+ */
+export class ProjectNameTakenError extends Error {
+	constructor(readonly project_name: string) {
+		super(
+			`A project named "${project_name}" already exists in this organization. ` +
+				"Project names are unique per organization and are compared without regard to case.",
+		);
+		this.name = "ProjectNameTakenError";
+	}
+}
+
+/** Every error in a `cause` chain, outermost first.
+ *
+ * Drizzle WRAPS the driver error: what a failing `.insert()` throws is a DrizzleQueryError whose
+ * message is "Failed query: insert into ..." and whose `cause` is the postgres.js error carrying
+ * `code` and `constraint_name`. Inspecting only the thrown object finds neither, so a check written
+ * against the driver's shape silently never fires and every unique violation falls through as an
+ * unmapped 500. That is not hypothetical — it is what the integration suite caught here. The depth
+ * bound is paranoia about a self-referential cause, not a real chain length. */
+function causeChain(err: unknown): unknown[] {
+	const chain: unknown[] = [];
+	let cur = err;
+	for (let i = 0; i < 8 && cur !== null && cur !== undefined; i++) {
+		chain.push(cur);
+		if (typeof cur !== "object" || cur === null || !("cause" in cur)) break;
+		// `in` narrows; no cast — CLAUDE.md §6 forbids `as`, and the narrowing is what makes the
+		// read safe rather than asserted.
+		const next: unknown = cur.cause;
+		if (next === cur) break;
+		cur = next;
+	}
+	return chain;
+}
+
+/** The Postgres error code, if this error or anything it wraps carries one (23505 = unique
+ * violation). */
+function pgErrorCode(err: unknown): string | undefined {
+	for (const link of causeChain(err)) {
+		if (typeof link === "object" && link !== null && "code" in link) {
+			const code: unknown = link.code;
+			if (typeof code === "string") return code;
+		}
+	}
+	return undefined;
+}
+
+/** Whether this error is the project-name unique violation — exported so `updateProjectName`,
+ * the other path that can mint a duplicate, maps the race onto the same error as create. */
+export function isProjectNameTaken(err: unknown): boolean {
+	return violates(err, "projects_org_id_project_name_key");
+}
+
+/** Whether a driver error names a particular constraint. `constraint_name` is what postgres-js
+ * surfaces; the message is checked too because a wrapped error can lose the field. */
+function violates(err: unknown, constraint: string): boolean {
+	if (pgErrorCode(err) !== "23505") return false;
+	for (const link of causeChain(err)) {
+		if (typeof link !== "object" || link === null) continue;
+		if ("constraint_name" in link && link.constraint_name === constraint) {
+			return true;
+		}
+		// A wrapper that dropped the field can still name the constraint in its text. Checked
+		// second, so the structured answer always wins.
+		if (link instanceof Error && link.message.includes(constraint)) return true;
+	}
+	return false;
+}
+
 export async function insertProjectWithDefaultFabric(
 	tx: Tx,
 	input: CreateProjectCoreInput,
 ): Promise<CreateProjectCoreResult> {
-	// Unique-per-org URL slug, skipping reserved project-child segments (e.g. "settings") so a
-	// project slug can never shadow a project-scoped route.
+	// One org-scoped read serves both uniqueness questions, and they are answered DIFFERENTLY on
+	// purpose (#3145). The slug is DERIVED, so a collision is de-duplicated silently — that is what
+	// `api-2` is for, and no user ever typed it. The NAME is the user's, and is the token
+	// `alethia project get <name>` addresses, so a collision is REFUSED rather than quietly
+	// rewritten: silently creating "api" when "api" exists gives them two projects they cannot tell
+	// apart from the terminal.
 	const existing = await tx
-		.select({ slug: projects.slug })
+		.select({ slug: projects.slug, project_name: projects.project_name })
 		.from(projects)
 		.where(eq(projects.org_id, input.orgId));
-	const slug = pickFreeSlug(slugify(input.project_name) || "project", [
+
+	// Case-insensitive, matching `projects_org_id_project_name_key` (UNIQUE on
+	// (org_id, lower(project_name))). Checking with a different predicate than the index enforces
+	// is how a friendly message gets skipped and a raw 23505 reaches the user instead.
+	const wanted = input.project_name.toLowerCase();
+	if (existing.some((r) => r.project_name.toLowerCase() === wanted)) {
+		throw new ProjectNameTakenError(input.project_name);
+	}
+
+	// Unique-per-org URL slug, skipping reserved project-child segments (e.g. "settings") so a
+	// project slug can never shadow a project-scoped route.
+	const takenSlugs = [
 		...existing.map((r) => r.slug).filter((s): s is string => Boolean(s)),
 		...RESERVED_PROJECT_CHILD_SLUGS,
-	]);
+	];
+	const slug = pickFreeSlug(slugify(input.project_name, "project"), takenSlugs);
 
-	const [project] = await tx
-		.insert(projects)
-		.values({
-			project_name: input.project_name,
-			region: input.region,
-			iac_version: input.iac_version,
-			cloud_identity_id: input.cloud_identity_id ?? null,
-			slug,
-			user_id: input.owner,
-			org_id: input.orgId,
-		})
-		.returning();
+	// Both checks above are read-then-write inside the caller's transaction, which at READ
+	// COMMITTED is optimistic: two concurrent creates of "api" both read the same rows and both
+	// compute the same answer. The constraints are what actually enforce uniqueness, so the loser
+	// used to surface a raw Postgres error — a bare 500 through `POST /api/cli/projects`. Mapping
+	// it here means the race and the ordinary case give the SAME message.
+	//
+	// A name violation cannot be another tenant's: the index is keyed on (org_id, ...), so a
+	// conflict is necessarily inside the caller's own org and the message leaks nothing.
+	// A SLUG COLLISION MUST NOT RAISE, and that is the whole reason for `onConflictDoNothing`
+	// here rather than a try/catch around a plain insert.
+	//
+	// This function always runs inside the CALLER's transaction — `withScope` →
+	// `getAppDb().transaction(...)` on the console path, `db.transaction(...)` at
+	// `app/api/cli/projects/route.ts` on the CLI path — and neither drizzle nor postgres-js opens
+	// an implicit savepoint per statement. So a 23505 puts the whole transaction in the aborted
+	// state, and the next command on that connection fails with 25P02 `current transaction is
+	// aborted`. A retry written as catch-then-re-read therefore CANNOT succeed: it replaces a raw
+	// slug violation with a stranger error, and only under the concurrency it was written for, so
+	// every test with distinct names stays green over it.
+	//
+	// Targeting the slug constraint alone keeps the two conflicts distinguishable: a slug race
+	// returns zero rows and is retried, while a NAME violation still raises and is mapped below.
+	// (`onConflictDoNothing()` untargeted would swallow both and silently return nothing for a
+	// duplicate name — the friendly error replaced by no error at all.)
+	const insertProject = (withSlug: string) =>
+		tx
+			.insert(projects)
+			.values({
+				project_name: input.project_name,
+				region: input.region,
+				iac_version: input.iac_version,
+				cloud_identity_id: input.cloud_identity_id ?? null,
+				slug: withSlug,
+				user_id: input.owner,
+				org_id: input.orgId,
+			})
+			.onConflictDoNothing({ target: [projects.org_id, projects.slug] })
+			.returning();
+
+	let inserted: Awaited<ReturnType<typeof insertProject>>;
+	try {
+		inserted = await insertProject(slug);
+	} catch (err) {
+		if (violates(err, "projects_org_id_project_name_key")) {
+			throw new ProjectNameTakenError(input.project_name);
+		}
+		throw err;
+	}
+
+	// Zero rows means the slug lost a race — the derived value, not the user's. The remedy is the
+	// one pickFreeSlug already implements: re-read so the retry sees whatever the winner actually
+	// took, rather than incrementing blindly. ONE retry, because a second miss is no longer a race
+	// and a loop here would hide a real defect. The transaction is healthy at this point, which is
+	// exactly what the catch-based version could not say.
+	if (inserted.length === 0) {
+		const now = await tx
+			.select({ slug: projects.slug })
+			.from(projects)
+			.where(eq(projects.org_id, input.orgId));
+		try {
+			inserted = await insertProject(
+				pickFreeSlug(slugify(input.project_name, "project"), [
+					...now.map((r) => r.slug).filter((s): s is string => Boolean(s)),
+					...RESERVED_PROJECT_CHILD_SLUGS,
+				]),
+			);
+		} catch (err) {
+			if (violates(err, "projects_org_id_project_name_key")) {
+				throw new ProjectNameTakenError(input.project_name);
+			}
+			throw err;
+		}
+	}
+
+	const [project] = inserted;
 	if (!project) throw new Error("Failed to create project");
 
 	// The Fabric(s) are the front door's infra units. Project-level region/cloud stay populated for
@@ -192,17 +389,9 @@ export async function insertProjectWithDefaultFabric(
 		if (defaults.length !== 1) {
 			throw new Error("Exactly one environment must be the default.");
 		}
-		// Slug-safe names (DNS-1123 label): the env name feeds the tofu state-path segment and the
-		// Fabric name — validated HERE because createProject does not re-parse the client input, so a
-		// crafted request must not smuggle path separators into a storage key.
-		const SLUG_LABEL = /^[a-z][a-z0-9-]{0,39}$/;
 		for (const s of specs) {
-			if (!SLUG_LABEL.test(s.name)) {
-				throw new Error(`Invalid environment name "${s.name}".`);
-			}
-			if (s.namespace != null && !/^[a-z][a-z0-9-]{0,62}$/.test(s.namespace)) {
-				throw new Error(`Invalid namespace "${s.namespace}".`);
-			}
+			const problem = environmentSpecProblem(s);
+			if (problem) throw new Error(problem);
 		}
 		// Still reserved even though the fan-out no longer mints a Fabric by this name: projects
 		// created before that fix carry one, so the name would be ambiguous in a state key and in

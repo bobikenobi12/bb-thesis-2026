@@ -219,6 +219,25 @@
 			"values": {
 				"existingSecretAdminPassword": "harbor-app-images-admin",
 				"existingSecretAdminPasswordKey": "HARBOR_ADMIN_PASSWORD",
+				"existingSecretSecretKey": "harbor-app-images-admin",
+				"core": {
+					"existingSecret": "harbor-app-images-admin",
+					"existingXsrfSecret": "harbor-app-images-admin",
+					"existingXsrfSecretKey": "CSRF_KEY",
+					"secretName": "harbor-app-images-admin"
+				},
+				"jobservice": {
+					"existingSecret": "harbor-app-images-admin",
+					"existingSecretKey": "JOBSERVICE_SECRET"
+				},
+				"registry": {
+					"existingSecret": "harbor-app-images-admin",
+					"existingSecretKey": "REGISTRY_HTTP_SECRET",
+					"credentials": {
+						"existingSecret": "harbor-app-images-admin",
+						"username": "harbor_registry_user"
+					}
+				},
 				"expose": {
 					"type": "clusterIP",
 					"tls": {
@@ -270,6 +289,12 @@
 			"namespace": "queues",
 			"values": {
 				"replicaCount": 1,
+				"auth": {
+					"existingSecret": "rabbitmq-jobs-credentials",
+					"existingPasswordKey": "password",
+					"existingErlangCookieKey": "erlang-cookie",
+					"username": "admin"
+				},
 				"persistence": {
 					"enabled": true,
 					"size": "8Gi",

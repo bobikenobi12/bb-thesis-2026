@@ -19,18 +19,12 @@
 # cache, queue, registry, secret, topic and nosql node KINDS — from the same pinned coordinates,
 # and often the same chart. Harbor is rendered from BOTH sources, and every hardening the
 # marketplace copy received had to be applied twice because nothing compared them. Twice, it was
-# applied once. These two are what covering the second fixture found on its first run.
+# applied once. The registry renderer left this list in #3299 after the runner began seeding the
+# full credential set and the chart referenced that Secret through every existingSecret knob. The
+# ratchet measured 28 differing lines falling to 0.
 
-hetzner-service.registry-app-images
-# The `registry` node's Harbor. 28 differing lines across core-secret, jobservice-secrets and
-# registry-secret, plus the `checksum/secret-*` annotations they stamp onto the three Deployments —
-# which is what rolls the pods and, on ReadWriteOnce storage, deadlocks the rollout (#3286).
-# #2823 pinned all of this for the marketplace `harbor` add-on through the add-on Secret machinery;
-# the `registry` node path does not use that machinery and never got it. See #3299, which also
-# covers the harder half — this path ships the chart's PUBLISHED `secretKey` and registry password.
-
-hetzner-service.queue-jobs
-# The `queue` node's RabbitMQ mints `password` and `erlang-cookie` per render. Worse than an
-# OutOfSync Application: the cookie is the cluster's shared secret, so rotating it partitions the
-# cluster, and the password is the credential the customer's queue binding hands to their app.
-# See #3304.
+# the `queue` node's RabbitMQ left this list on 2026-09-01 (#3304): the chart now reads both values
+# from `auth.existingSecret`, a Secret the RUNNER mints ONCE
+# (packages/core/argocd/rabbitmq.go), so it renders no Secret at all and nothing rotates. The
+# ratchet MEASURED the result — it fails if an entry here has become deterministic, which is why
+# this line is a note and not a deletion nobody would have noticed.

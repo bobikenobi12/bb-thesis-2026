@@ -27,10 +27,13 @@
 			"provider": {
 				"name": "aws"
 			},
+			"domainFilters": [
+				"addon-e2e.invalid"
+			],
 			"serviceAccount": {
-				"name": "addon-external-dns-sa",
+				"name": "addon-external-dns",
 				"annotations": {
-					"eks.amazonaws.com/role-arn": "arn:aws:iam::000000000000:role/external-dns"
+					"eks.amazonaws.com/role-arn": "alethia-infra:external-dns-workload-identity"
 				}
 			}
 		},

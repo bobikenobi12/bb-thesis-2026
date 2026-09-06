@@ -34,7 +34,7 @@ var grantsListCmd = &cobra.Command{
 		client := api.NewClient(token)
 		if interactiveTable(cmd) {
 			var grants []api.Grant
-			ui.RunSpinner("Fetching grants...", func() { grants, err = client.ListGrants() })
+			runSpinner("Fetching grants...", func() { grants, err = client.ListGrants() })
 			if err != nil {
 				failf("Failed to list grants: %v", err)
 			}
@@ -42,7 +42,7 @@ var grantsListCmd = &cobra.Command{
 				ui.Muted("No access grants found.")
 				return
 			}
-			_ = ui.ShowTable(grantListColumns, grantRows(grants), "grants")
+			_ = ui.ShowTable(grantListColumns, grantRows(grants, ui.FormatTable), "grants")
 			return
 		}
 		if err := runGrantsList(client, os.Stdout, outputFormat(cmd)); err != nil {
@@ -63,14 +63,14 @@ func grantScope(g api.Grant) string {
 
 // grantRows projects grants into plain table rows. The principal is rendered as
 // "type id"; role and permission fall back to a dash (a grant carries exactly one).
-func grantRows(grants []api.Grant) [][]string {
+func grantRows(grants []api.Grant, outFmt string) [][]string {
 	rows := make([][]string, len(grants))
 	for i, g := range grants {
 		rows[i] = []string{
 			fmt.Sprintf("%s %s", g.PrincipalType, g.PrincipalID),
 			g.Effect,
-			orDash(g.Role),
-			orDash(g.PermissionKey),
+			ui.Cell(outFmt, g.Role, ui.OrDash(g.Role)),
+			ui.Cell(outFmt, g.PermissionKey, ui.OrDash(g.PermissionKey)),
 			grantScope(g),
 			g.ID,
 		}
@@ -90,7 +90,7 @@ func runGrantsList(c apiClient, out io.Writer, format string) error {
 	}
 	return ui.Render(out, format, ui.TableSpec{
 		Columns: grantListColumns,
-		Rows:    grantRows(grants),
+		Rows:    grantRows(grants, format),
 	}, grants)
 }
 
@@ -109,25 +109,81 @@ var grantsAddCmd = &cobra.Command{
 	Short: "Assign an access grant",
 	Long: `Assign an access grant. Bind a principal to EXACTLY one of a role (--role) or
 a single permission (--permission), with an allow or deny effect. Omit --resource for
-an org-wide grant. Requires an Enterprise license.`,
+an org-wide grant. Requires an Enterprise license.
+
+--principal takes an email (or a team name) as readily as an id, and --role takes a role
+name; both are looked up against the active org. With no --principal on a terminal, the
+whole grant is asked for.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
-		if (grantRoleID == "") == (grantPermission == "") {
-			failf("Provide exactly one of --role or --permission")
-		}
-		params := api.AddGrantParams{
+		client := api.NewClient(token)
+		// Resolved but NOT required. A grant whose principal and role are already ids needs no
+		// member list, so an org that cannot be resolved must not fail a command that never asks
+		// for one; the error is carried and reported only by a lookup that actually needs it.
+		orgID, orgErr := currentOrgID()
+
+		answers := grantsAddAnswers{
 			PrincipalType: grantPrincipalType,
-			PrincipalID:   grantPrincipalID,
+			Principal:     grantPrincipalID,
 			Effect:        grantEffect,
 			RoleID:        grantRoleID,
-			PermissionKey: grantPermission,
+			Permission:    grantPermission,
 			ResourceType:  grantResourceType,
 			ResourceID:    grantResourceID,
 		}
-		if err := runGrantsAdd(api.NewClient(token), os.Stdout, params); err != nil {
+		if answers.Principal == "" {
+			if orgErr != nil {
+				fail(orgErr)
+			}
+			answers, err = promptGrantsAdd(client, orgID, answers)
+			if err != nil {
+				fail(err)
+			}
+		}
+
+		// The closed sets are checked AFTER the form, not instead of it: the form can only write
+		// back a value it was given, so this arm exists for the flags — and checking both through
+		// one gate is what keeps the two paths from diverging.
+		principalType, err := canonicalOneOf("principal-type", answers.PrincipalType, grantPrincipalTypes)
+		if err != nil {
+			fail(err)
+		}
+		effect, err := canonicalOneOf("effect", answers.Effect, grantEffects)
+		if err != nil {
+			fail(err)
+		}
+		if (answers.RoleID == "") == (answers.Permission == "") {
+			failf("Provide exactly one of --role or --permission")
+		}
+
+		principals := func() ([]orgChoice, error) {
+			if orgErr != nil {
+				return nil, orgErr
+			}
+			return grantPrincipalChoices(client, orgID, answers.PrincipalType)()
+		}
+		principal, err := resolveByNameOrID(grantPrincipalPickSpec, answers.Principal, principals)
+		if err != nil {
+			fail(err)
+		}
+		boundRole, err := resolveByNameOrID(grantRolePickSpec, answers.RoleID, bindableRoleChoices(client))
+		if err != nil {
+			fail(err)
+		}
+
+		params := api.AddGrantParams{
+			PrincipalType: principalType,
+			PrincipalID:   principal.ID,
+			Effect:        effect,
+			RoleID:        boundRole.ID,
+			PermissionKey: answers.Permission,
+			ResourceType:  answers.ResourceType,
+			ResourceID:    answers.ResourceID,
+		}
+		if err := runGrantsAdd(client, os.Stdout, params); err != nil {
 			failf("Failed to add grant: %v", err)
 		}
 	},
@@ -152,18 +208,30 @@ func runGrantsAdd(c apiClient, out io.Writer, params api.AddGrantParams) error {
 var grantsRemoveYes bool
 
 var grantsRemoveCmd = &cobra.Command{
-	Use:   "remove <id>",
+	Use:   "remove [grant_id]",
 	Short: "Revoke an access grant",
-	Args:  cobra.ExactArgs(1),
+	Long: `Revoke an access grant. Pass the grant id, or pick one from the org's grants. A grant has
+no name — it IS the binding — so the picker is the only way to name one without its id.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
+		client := api.NewClient(token)
+		id := ""
+		if len(args) > 0 {
+			id = args[0]
+		}
+		ref, err := resolveOrgChoice(grantPickSpec, id, "", grantChoices(client))
+		if err != nil {
+			fail(err)
+		}
+		announceResolvedChoice(ref.Summary, "Revoking")
 		if !confirmDestructive(grantsRemoveYes, "Revoke this grant?", "The principal loses this access. This cannot be undone.") {
 			return
 		}
-		if err := runGrantsRemove(api.NewClient(token), os.Stdout, args[0]); err != nil {
+		if err := runGrantsRemove(client, os.Stdout, ref.ID); err != nil {
 			failf("Failed to remove grant: %v", err)
 		}
 	},
@@ -181,13 +249,14 @@ func runGrantsRemove(c apiClient, out io.Writer, id string) error {
 func init() {
 	addYesFlag(grantsRemoveCmd, &grantsRemoveYes)
 	grantsAddCmd.Flags().StringVar(&grantPrincipalType, "principal-type", "user", "Principal kind (user or team)")
-	grantsAddCmd.Flags().StringVar(&grantPrincipalID, "principal", "", "Principal id (user or team id)")
+	grantsAddCmd.Flags().StringVar(&grantPrincipalID, "principal", "", "Principal — an email, a team name, or the id itself")
 	grantsAddCmd.Flags().StringVar(&grantEffect, "effect", "allow", "Effect (allow or deny)")
-	grantsAddCmd.Flags().StringVar(&grantRoleID, "role", "", "Role id to bind (XOR --permission)")
+	grantsAddCmd.Flags().StringVar(&grantRoleID, "role", "", "Role to bind, by name or id (XOR --permission)")
 	grantsAddCmd.Flags().StringVar(&grantPermission, "permission", "", "Single permission key to bind (XOR --role)")
 	grantsAddCmd.Flags().StringVar(&grantResourceType, "resource-type", "org", "Resource type to scope to (project, runner, cloud_identity, org)")
 	grantsAddCmd.Flags().StringVar(&grantResourceID, "resource", "", "Resource id to scope to (omit for org-wide)")
-	_ = grantsAddCmd.MarkFlagRequired("principal")
+	// --principal is deliberately NOT MarkFlagRequired any more: cobra enforces that before Run,
+	// which made the interactive form unreachable — the command died before it could ask.
 
 	grantsCmd.AddCommand(grantsListCmd)
 	grantsCmd.AddCommand(grantsAddCmd)

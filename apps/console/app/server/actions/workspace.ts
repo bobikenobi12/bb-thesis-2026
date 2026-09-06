@@ -22,8 +22,17 @@ import {
 export interface WorkspaceOrg {
 	id: string;
 	name: string;
-	/** URL slug for C2 routing (`/{slug}/…`). Personal scope uses the reserved `~`. */
-	slug: string;
+	/**
+	 * URL slug for C2 routing (`/{slug}/…`). The synthetic personal scope uses the reserved `~`.
+	 *
+	 * NULLABLE, AND IT MUST NOT BE ALIASED. `organizations.slug` is `text().unique()` with no
+	 * notNull, so a real org can have none — and this used to answer `r.slug ?? PERSONAL_ORG_SLUG`
+	 * for that case, which made a real org indistinguishable on the wire from the user's PERSONAL
+	 * workspace. The switcher then navigated anyone who picked it to `/~`: a different tenant,
+	 * silently, with no error. An org with no slug has no URL, and saying so is the only honest
+	 * answer — `null` here, and the switcher renders it non-selectable.
+	 */
+	slug: string | null;
 	/** Served logo URL, or null → monogram. */
 	logo: string | null;
 	role: string;
@@ -78,8 +87,9 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext> {
 			? rows.map((r) => ({
 					id: r.id,
 					name: r.name,
-					// Fall back to the reserved personal slug if an org somehow has none.
-					slug: r.slug ?? PERSONAL_ORG_SLUG,
+					// NOT `?? PERSONAL_ORG_SLUG` — see the field's doc. Aliasing a slugless org onto
+					// the reserved personal slug is how picking it navigated to the wrong tenant.
+					slug: r.slug,
 					logo: r.logo,
 					role: r.role,
 					// Effective plan: the paid plan only while the subscription is live.

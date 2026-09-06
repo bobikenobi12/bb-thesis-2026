@@ -59,7 +59,7 @@ export function SidebarDrill({
 	};
 
 	const headClassName =
-		"flex flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-[13.5px] font-semibold text-foreground transition-colors hover:bg-muted/60";
+		"flex flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-ui-md font-semibold text-foreground transition-colors hover:bg-muted/60";
 
 	// The Settings drill backs out to its scope's home: the project overview when inside a
 	// project's settings, otherwise the org overview. Other route-owned drills back to the org.

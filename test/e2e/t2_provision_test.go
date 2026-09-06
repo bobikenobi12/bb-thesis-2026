@@ -397,9 +397,18 @@ func TestT2RealCloudProvisioning(t *testing.T) {
 		cliDemo.Project, cliDemo.EnvName = project, env
 		// The SAME shape the seeded path merges — read from ALETHIA_E2E_CLUSTER_JSON, not restated.
 		cliDemo.ClusterSets = CLIDemoClusterSets(t)
-		// Before anything is bought: refuse a beat that names a command GROUP. `drift`, `cost` and
-		// `verify` are groups whose help exits 0, so such a beat performs nothing and PASSES.
+		// ── Three refusals before anything is bought, cheapest first. ──
+		//
+		// 1. A cloud whose `connector` beat cannot COMPLETE against this dimension's console. Costs
+		//    nothing, and it is the one that would otherwise be discovered twelve minutes in.
+		// 2. A beat that names a command GROUP. `drift`, `cost` and `verify` are groups whose help
+		//    exits 0, so such a beat performs nothing and PASSES.
+		// 3. A beat that names a FLAG the command does not register — the same class as (2) one
+		//    token to the right, and the one #4083 died on. Asked for every cloud, so the cheapest
+		//    dispatch proves all of them.
+		AssertCLIDemoConnectorIsDrivable(t, cliDemo)
 		AssertCLIDemoBeatsAreLeafCommands(ctx, t, cliDemo)
+		AssertCLIDemoBeatFlagsAreRegistered(ctx, t, cliDemo)
 		DriveCLIDemoPhase(ctx, t, cliDemo, CLIDemoAuthoring)
 		DriveCLIDemoPhase(ctx, t, cliDemo, CLIDemoEnqueue)
 		jobID = cliDemo.ApplyJobID
@@ -699,6 +708,9 @@ func TestT2RealCloudProvisioning(t *testing.T) {
 	} else if err := AssertArgoAppsHealthy(ctx, kc, assertedApps, ArgoAssertTimeout()); err != nil {
 		t.Fatalf("ArgoCD application health assertion failed: %v", err)
 	}
+	if AllAddOnsEnabled() {
+		assertMarketplaceExternalDnsIdentity(t, ctx, kc, provider, meta.ClusterName)
+	}
 	// The exclusions RATCHET. A withheld add-on that reached Healthy+Synced means the reason it was
 	// withheld no longer holds, and leaving it on the list would make every later run assert less
 	// than it could. One read, not a poll: staleness does not resolve by waiting.
@@ -738,13 +750,18 @@ func TestT2RealCloudProvisioning(t *testing.T) {
 			t.Logf("FT-5 max-config: %d kind(s) are DEFERRED debt on %s (a shipped chart backs them; the mapping is missing): %v",
 				len(proof.Deferred), provider, proof.Deferred)
 		}
-		// (7.6b) The SECOND assertion, for in-cluster cells whose converged Application does not
-		//        itself prove delivery. `secrets` on hetzner is the case that forced it: a SEALED
-		//        Vault's Helm release is Healthy AND Synced, so `addon-secrets-vault` going green is
-		//        fully compatible with the Vault serving nothing. The cell names the object whose
-		//        readiness actually discriminates (its ESO ClusterSecretStore), and this runs it. A
-		//        no-op on every cloud whose cells declare no probe.
-		if perr := AssertMaxConfigClusterProbes(ctx, kc, provider, ArgoAssertTimeout()); perr != nil {
+		// (7.6b) The SECOND assertion, for cells whose PRIMARY evidence does not itself prove
+		//        delivery. `secrets` on hetzner forced it: a SEALED Vault's Helm release is Healthy
+		//        AND Synced, so `addon-secrets-vault` going green is fully compatible with the Vault
+		//        serving nothing.
+		//
+		//        It is no longer hetzner-only. `secrets` on the four MANAGED clouds is a tofu cell,
+		//        and counting an `aws_secretsmanager_secret` in state proves the secret exists, not
+		//        that anything can read it — a workload reads it only through the ESO
+		//        ClusterSecretStore, whose apply failed on aws/full run 32883119943 behind a retry
+		//        that swallowed the error (#2652). Every cloud now names the store whose readiness
+		//        discriminates, so this is a no-op on no cloud that provisions `secrets`.
+		if perr := AssertMaxConfigClusterProbes(ctx, kc, provider, MaxConfigProbeTimeout()); perr != nil {
 			t.Fatalf("FT-5 max-config cluster probe: %v", perr)
 		}
 		t.Logf("FT-5 max-config on %s: %d kind(s) proven in tofu state %v, %d proven as converged ArgoCD Applications %v",

@@ -10,7 +10,7 @@
 
 import { unstable_cache } from "next/cache";
 import Stripe from "stripe";
-import { type SupportedCurrency, formatSeatPrice, planMeta } from "@repo/plan-catalog";
+import { asSupportedCurrency, type SupportedCurrency, formatSeatPrice, planMeta } from "@repo/plan-catalog";
 
 let client: Stripe | null = null;
 
@@ -53,12 +53,16 @@ export const getTeamPrice = unstable_cache(
 			if (typeof price.unit_amount !== "number") return fallback;
 			const interval = price.recurring?.interval;
 			const eurUnit = price.currency_options?.eur?.unit_amount;
+			const baseCurrency = asSupportedCurrency(price.currency);
+			if (!baseCurrency) return fallback;
 			return {
-				usd: formatSeatPrice(price.unit_amount, price.currency, interval),
+				usd: baseCurrency === "usd" ? formatSeatPrice(price.unit_amount, baseCurrency, interval) : fallback.usd,
 				eur:
 					typeof eurUnit === "number"
 						? formatSeatPrice(eurUnit, "eur", interval)
-						: fallback.eur,
+						: baseCurrency === "eur"
+							? formatSeatPrice(price.unit_amount, baseCurrency, interval)
+							: fallback.eur,
 			};
 		} catch {
 			return fallback;

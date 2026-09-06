@@ -65,35 +65,15 @@ Every direction fails closed: unset, empty, whitespace, `"false"`, an empty answ
 and a timeout all read as **unsatisfied**. `ScoreCLIDemo` stays pure and never runs a probe, so a
 caller that forgets to evaluate gets the strict answer, never a laxer one.
 
-## Status — 2026-08-26
+## Status
 
-Scored against `alethia` built from `dev`. Every `CLIDriven` claim below is **executed**, not
-asserted: the run half runs `alethia <cmd> --help` for each and fails on a non-zero exit.
-
-| Cloud | CLI-driven | CLI gaps | Ceilings | of which satisfied | Console by design | Verdict |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **AWS** | 19 | 0 | 1 | 1 | 1 | ✅ |
-| **GCP** | 19 | 0 | 2 | 1 | 1 | ❌ [#1871] |
-| **Azure** | 19 | 0 | 1 | 1 | 1 | ✅ |
-| **Alibaba** | 19 | 0 | 2 | 1 | 1 | ❌ [#2333] |
-| **Hetzner** | 19 | 0 | 2 | 2 | 1 | ✅ |
-
-The verdict column is what the scored table plus the current satisfaction state resolves to; the
-**recorded** proof is whichever run next dispatches this bar, as always.
-
-**19 of 20 applicable steps are CLI-driven on every cloud, and the CLI gap column is zero.** What
-still fails the bar is a ceiling nobody has met yet — GCP's billing-budgets publisher binding, which
-genuinely does not exist, and Alibaba's Container Registry sweep, which **recurs** after every full
-bar rather than retiring once.
-
-That distinction is the one worth carrying into a demo. Nothing red here is ours: every remaining ❌
-is a thing the cloud does not offer an API for **and** that has not been done by hand, not a thing
-Alethia has not built.
-
-[#1773]: https://github.com/alethialabs-io/alethialabs/issues/1773
-[#2332]: https://github.com/alethialabs-io/alethialabs/issues/2332
-[#1871]: https://github.com/alethialabs-io/alethialabs/issues/1871
-[#2333]: https://github.com/alethialabs-io/alethialabs/issues/2333
+> **Status is not here.** It rots, and this table proved it: it printed a verdict per cloud dated
+> 2026-08-26, counted "19 of 20" steps where `programme.json` carries 28, and cited #1871 and
+> #2333 as open when both are closed.
+>
+> The proof grid, the per-cell evidence and the open blockers are derived in **`PROGRAMME.md`**,
+> below its generated marker. Read it there. What stays below is the reasoning the ledger cannot
+> hold — decisions, post-mortems and measurements.
 
 ### The CLI gap that closed — [#2331]
 
@@ -123,6 +103,24 @@ command, not "open the console".
 | Hetzner Object Storage keys — Hetzner ships no API that mints them | hetzner | [#2332] |
 | GCP billing-budgets publisher binding — an out-of-band Cloud Console grant | gcp | [#1871] |
 | Alibaba prepaid CR EE release — `payment_type = "Subscription"`, not released by `tofu destroy`, and teardown reports clean anyway | alibaba | [#2333] |
+
+**All four of those trackers are CLOSED, and that is correct.** The maintainer's ruling on #3591 is
+that the `Issue` field means two different things depending on the verdict:
+
+| Verdict | Contract | Why |
+|---|---|---|
+| `CLIGap` | the tracker must still be **OPEN** | it is *our* debt, and debt must be able to close. A tracker that closes while the gap still stands is how debt becomes permanent by being forgotten — the same failure the must-be-OPEN rule on `test/e2e/addon_exclusions.go` exists to prevent |
+| `CloudManual` | the tracker need only be **FILED** | it is a fact about a cloud. Hetzner still ships no key-minting API and a prepaid CR EE instance is still released by hand; the ceiling does not lift because somebody closed the issue, and reopening one to satisfy a guard would be the guard editing reality to match itself |
+
+`scripts/check-exclusion-issues.mjs` enforces exactly that split — it is the only guard in the tree
+with three modes, and the third is this one. The state question cannot live in
+`t2_cli_demo_pure_test.go` because it needs the network and that file runs credential-free on every
+PR; the pure test checks the *shape*, the script checks the *state*.
+
+The table has **zero `CLIGap` rows** today (#2331 cleared the CLI debt), so the enforced arm covers
+nothing on a live run. It says so in those words rather than printing a tick, and its power to
+discriminate is proven by `node scripts/check-exclusion-issues.mjs --self-test`, which flips a real
+`CloudManual` row in the shipped source to `CLIGap` and asserts the arm reds.
 
 ### The one deliberate console step
 

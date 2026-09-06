@@ -11,8 +11,14 @@ a project at when authoring its infrastructure.
 
 <Callout type="info">
 The CLI is a client of the same Console API — it authors nothing locally. `repo list` calls
-`/cli/repositories/<provider>` with your [CLI token](/cli/authentication) and the git connection on
-your **active organization** (`alethia org switch`, or `--org <id>` per invocation).
+`/cli/repositories/PROVIDER` with your [CLI token](/cli/authentication) and the git token captured
+when you logged in. It is the one listing in the CLI that is NOT org-scoped: the repositories you
+can see are the ones your git account can see, so the global `--org <id>` changes nothing about the
+result here.
+
+It is still *checked*, though, and under a [service token](/cli/authentication) it must name the
+token's own organization — naming a different one is refused with `403` before this route runs at
+all. A scripted `repo list --org <other>` therefore fails rather than returning the same list.
 </Callout>
 
 ## `alethia repo list`
@@ -25,9 +31,18 @@ alethia repo list --provider gitlab
 alethia repo list --provider bitbucket -o json
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--provider` | `github` | Git provider to list from (`github`, `gitlab`, `bitbucket`). |
+{/* fieldspec: alethia repo list */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Provider | Which connected git provider to browse | `--provider` |
+
+The provider defaults to `github`; the other accepted values are `gitlab` and `bitbucket`. Because
+it has a default, this command asks no questions — there is no missing value to ask about.
+
+The same provider list backs the repository picker in
+[`chart attach` and `iac attach`](/cli/commands/charts), which is what stops a URL printed here from
+having to be typed into the next command.
 
 Columns: **Name** (the repo's full `owner/name`, falling back to its short name), **Visibility**
 (`public` | `private`), **Default branch**, **URL**. In an interactive TTY this renders as a
@@ -40,7 +55,7 @@ acme/app    private     main            https://github.com/acme/app
 acme/site   public      trunk           https://github.com/acme/site
 ```
 
-Backing call: `GET /cli/repositories/<provider>`.
+Backing call: `GET /cli/repositories/PROVIDER`.
 
 ## See also
 

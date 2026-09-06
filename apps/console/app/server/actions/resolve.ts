@@ -31,12 +31,57 @@ export interface ResolvedOrg {
  * Resolves the URL org segment to a scope and syncs the session's active org so the
  * rest of the request runs under it. `~` = the personal scope (orgId = userId). A
  * real slug must belong to an org the user is a member of, else it throws.
+ *
+ * ## This is a session mutation on a GET, on BOTH branches (#4089)
+ *
+ * `[org]/layout.tsx` calls this on every render of every `/{org}/…` route, and it
+ * WRITES `session.active_organization_id` — the `~` branch clears a stale org, the
+ * real-slug branch sets the URL's. That write is durable, cross-request and
+ * cross-tab. A patch that gates only the `~` branch leaves half the defect standing.
+ *
+ * A GET that mutates the session is dangerous because **Next issues GETs the user
+ * never made**: `<Link>` prefetches every link in the viewport, and each prefetch
+ * renders this layout. In #4089 a hydration-window bug painted `/~/~/…` hrefs, Next
+ * prefetched them, and the session moved to the personal org while the address bar
+ * still said `/acme/…` — so the next write landed in the wrong tenant, silently.
+ *
+ * **The write cannot be gated on the request being a prefetch.** `next-router-prefetch`
+ * is on the wire, but Next 16.3.3 does not let userland see it. It is a member of
+ * `FLIGHT_HEADERS` (`next/dist/client/components/app-router-headers.js`), which
+ * `next/dist/server/async-storage/request-store.js` folds into `HIDDEN_REQUEST_HEADERS`
+ * — "Internal request headers that userland `headers()` must not expose" — and seals
+ * out of the view `headers()` returns, so `.get()` answers `null` and `.has()` answers
+ * `false` on a real prefetch. `proxy.ts` cannot see it either: `server/web/adapter.js`
+ * DELETES every flight header from the request before constructing the `NextRequest`
+ * middleware receives. `rsc` is hidden the same way, and the `_rsc` query parameter
+ * does not distinguish a prefetch from a soft navigation. There is no server-side
+ * prefetch signal in this version; do not add a `headers()` check believing there is.
+ *
+ * So what keeps this safe is an invariant one layer up, not a guard here: **every
+ * prefetchable href names the org the address bar already names.** `useActiveOrgSlug`
+ * reads `useParams().org` for exactly that reason (see its doc comment). Under that
+ * invariant a speculative resolve can only re-assert the org the user is already in
+ * — the same value a real navigation to that page would write — so it is idempotent.
+ * Breaking the invariant, by painting a link to some OTHER org's slug, reopens the
+ * defect: prefetching it silently switches the tenant. Such a link needs
+ * `prefetch={false}`.
+ *
+ * Note also that this module is `"use server"`, so every export is additionally a
+ * POST-able action endpoint. Were a request-shape check added here, it would read the
+ * ACTION's request when invoked that way, not the render's.
+ *
+ * The remaining correctness gap is deliberately NOT fixed here: readers downstream
+ * resolve their tenant from the session rather than from the `[org]` route param, so
+ * a session on tenant A renders A's data under B's address instead of refusing. That
+ * is what makes a mis-scoped write silent rather than loud. Tracked separately —
+ * threading the route param into the readers is a different-sized change.
  */
 export async function resolveOrgScope(orgSlug: string): Promise<ResolvedOrg> {
 	const { userId, activeOrgId } = await getOwnerScope();
 
 	if (orgSlug === PERSONAL_ORG_SLUG) {
 		// Personal scope: orgId === userId. Clear any active org if one is set.
+		// WRITE ON A GET — see the invariant in this function's doc comment.
 		if (activeOrgId && activeOrgId !== userId) {
 			await setActiveOrganization(userId);
 		}
@@ -59,6 +104,7 @@ export async function resolveOrgScope(orgSlug: string): Promise<ResolvedOrg> {
 	// than a raw Error that floods error tracking with stale-link/crawler hits.
 	if (!org) notFound();
 
+	// WRITE ON A GET — the second of the two branches; see this function's doc comment.
 	if (activeOrgId !== org.id) {
 		await setActiveOrganization(org.id);
 	}

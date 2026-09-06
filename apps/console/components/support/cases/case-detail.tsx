@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { PageHeader } from "@repo/ui/page-header";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { formatBytes, formatDate } from "@repo/format";
 import { Button } from "@repo/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -108,7 +108,11 @@ export function CaseDetail({
 					<div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
 						{formatCaseNumber(supportCase.case_number)}
 					</div>
-					<PageHeader
+					{/* A section heading, not a page title. The console dropped its page titles because
+					    the breadcrumb already says the route's name — but no breadcrumb will ever carry
+					    a case SUBJECT: this route's last crumb is the case id, and the subject is the
+					    thing the page is about. */}
+					<SectionHeading
 						title={supportCase.subject}
 						description={
 							<span className="flex flex-wrap items-center gap-2 text-xs">

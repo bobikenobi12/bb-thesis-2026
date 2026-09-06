@@ -113,7 +113,7 @@ metadata:
 spec:
   project: {{ .ProjectName }}
   source:
-    repoURL: {{ .AppsRepoURL }}
+    repoURL: "{{ .AppsRepoURL }}"
     targetRevision: HEAD
     path: '{{ .AppsPath }}'
   destination:

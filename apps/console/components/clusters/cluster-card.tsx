@@ -6,6 +6,7 @@ import type { ClusterData } from "@/app/server/actions/clusters";
 import { ClassificationControl } from "@/components/classification/classification-control";
 import type { AssignedValue } from "@/lib/queries/classification";
 import { getProvider } from "@/lib/cloud-providers";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { ProviderIcon } from "@repo/ui/provider-icon";
 import { Button } from "@repo/ui/button";
 import { StatusBadge, statusTier, type StatusTier } from "@repo/ui/status-badge";
@@ -148,13 +149,13 @@ function ComponentRow({
 	return (
 		<div className="flex items-center gap-2.5 py-2 first:pt-0 last:pb-0">
 			<Icon className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
-			<span className="text-[12.5px] text-text-primary">{name}</span>
+			<span className="text-ui-sm text-text-primary">{name}</span>
 			{engine && (
-				<span className="font-mono text-[10.5px] text-text-tertiary">{engine}</span>
+				<span className="font-mono text-ui-2xs text-text-tertiary">{engine}</span>
 			)}
 			{endpoint && (
 				<div className="ml-auto flex min-w-0 items-center gap-1">
-					<code className="max-w-[160px] truncate font-mono text-[10.5px] text-text-tertiary">
+					<code className="max-w-[160px] truncate font-mono text-ui-2xs text-text-tertiary">
 						{endpoint}
 					</code>
 					<CopyButton value={endpoint} label={`Copy ${name} endpoint`} />
@@ -212,12 +213,23 @@ export function ClusterCard({
 					<ProviderIcon provider={provider} size={20} />
 					<div className="min-w-0">
 						<div className="flex flex-wrap items-center gap-2">
-							<h3 className="text-sm font-semibold text-text-primary">
-								{data.project_name}
-							</h3>
+							{/* The card's own heading rung, through the shared component: the card
+							    used to hand-write an `<h3>` at `text-sm`, one of five sizes the
+							    same rung was typeset at across the console.
+							    `SectionHeading` fixes its heading at `text-ui-lg` whatever the
+							    `level` — deliberately, so type scale is not chosen from the outline
+							    — which inside an 18px-padded card over an 11px meta line would make
+							    the title the largest type on the card, and larger than the sibling
+							    environment card's name. The slot override keeps the card's rung and
+							    takes only the tag from the component. */}
+							<SectionHeading
+								level={3}
+								title={data.project_name}
+								className="min-w-0 [&_[data-slot=section-heading-title]]:text-sm [&_[data-slot=section-heading-title]]:font-semibold"
+							/>
 							<StatusBadge status={health.tier} tier={health.tier} label={health.name} />
 						</div>
-						<p className="mt-0.5 font-mono text-[11px] text-text-tertiary">
+						<p className="mt-0.5 font-mono text-ui-xs text-text-tertiary">
 							{meta.shortName} · {data.region} · {data.environment_stage}
 							{cluster?.cluster_version ? ` · K8s ${cluster.cluster_version}` : ""}
 						</p>
@@ -240,7 +252,7 @@ export function ClusterCard({
 						label={health.rollup}
 						className="justify-end"
 					/>
-					<div className="mt-1 font-mono text-[10px] tabular-nums text-text-tertiary">
+					<div className="mt-1 font-mono text-ui-2xs tabular-nums text-text-tertiary">
 						{health.detail}
 					</div>
 				</div>
@@ -290,19 +302,19 @@ export function ClusterCard({
 				<div className="flex flex-col gap-1.5 border-t pt-3">
 					<div className="flex items-center gap-1.5 text-text-tertiary">
 						<Terminal className="h-3.5 w-3.5" />
-						<span className="text-[11px] font-medium text-text-secondary">
+						<span className="text-ui-xs font-medium text-text-secondary">
 							Cluster access
 						</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-[11px] text-text-secondary">
+						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-ui-xs text-text-secondary">
 							{cluster.cluster_endpoint}
 						</code>
 						<CopyButton value={cluster.cluster_endpoint} label="Copy cluster endpoint" />
 					</div>
 					{kubeconfigCmd && (
 						<div className="flex items-center gap-2">
-							<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-[11px] text-text-secondary">
+							<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-ui-xs text-text-secondary">
 								{kubeconfigCmd}
 							</code>
 							<CopyButton value={kubeconfigCmd} label="Copy kubeconfig command" />
@@ -316,10 +328,10 @@ export function ClusterCard({
 				<div className="flex flex-col gap-1.5 border-t pt-3">
 					<div className="flex items-center gap-1.5 text-text-tertiary">
 						<Server className="h-3.5 w-3.5" />
-						<span className="text-[11px] font-medium text-text-secondary">ArgoCD</span>
+						<span className="text-ui-xs font-medium text-text-secondary">ArgoCD</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-[11px] text-text-secondary">
+						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-ui-xs text-text-secondary">
 							{cluster.argocd_url}
 						</code>
 						<a href={cluster.argocd_url} target="_blank" rel="noopener noreferrer">
@@ -333,11 +345,11 @@ export function ClusterCard({
 							</Button>
 						</a>
 					</div>
-					<p className="text-[10px] text-text-tertiary">
+					<p className="text-ui-2xs text-text-tertiary">
 						Admin password (retrieve from the cluster):
 					</p>
 					<div className="flex items-center gap-2">
-						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-[11px] text-text-secondary">
+						<code className="flex-1 truncate rounded-sm border bg-surface-sunken px-2 py-1 font-mono text-ui-xs text-text-secondary">
 							{argocdPasswordCmd}
 						</code>
 						<CopyButton value={argocdPasswordCmd} label="Copy ArgoCD admin password command" />

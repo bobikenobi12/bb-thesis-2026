@@ -67,13 +67,12 @@ export async function GET(
 	// Dispatch through auth.handler: the sso() plugin is loaded via the ee/ seam, so `auth.api`
 	// can't statically type its endpoints and the open-core guard forbids importing @alethia/ee.
 	try {
+		const forwardedHeaders = new Headers(req.headers);
+		forwardedHeaders.set("content-type", "application/json");
 		const res = await auth.handler(
 			new Request(`${req.nextUrl.origin}/api/auth/sign-in/sso`, {
 				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					cookie: req.headers.get("cookie") ?? "",
-				},
+				headers: forwardedHeaders,
 				body: JSON.stringify({
 					providerId: chosen.providerId,
 					callbackURL,

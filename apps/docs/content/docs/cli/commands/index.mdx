@@ -8,7 +8,8 @@ description: Complete reference for all alethia CLI commands organized by group.
 alethia organizes its commands into groups (`connector`, `project`, `runner`, `jobs`, `cluster`,
 `org`, `members`, `teams`, `channels`, `alerts`, `roles`, `grants`, `sso`, `fleet`,
 `classification`, `ops`), a set of read-only inspection groups (`repo`, `cloud`, `agent`, `addon`,
-`chart`, `iac`, `cost`, `drift`, `verify`, `probes`), plus top-level auth (`login`/`logout`/`init`), identity
+`chart`, `iac`, `cost`, `drift`, `staged`, `verify`, `probes`, `protection`, `promotion`), plus top-level
+auth (`login`/`logout`/`init`), identity
 (`whoami`/`config`/`open`), `billing`, `usage`, `activity`, and utility commands. All commands
 communicate with the Alethia [Console](/concepts/glossary) API — they never run
 [OpenTofu](/concepts/glossary) (the `tofu` binary) locally. Provisioning (`tofu plan`/`apply`/
@@ -25,38 +26,41 @@ alethia
 ├── logout
 ├── whoami                            # current user, active org, role, plan, default runner
 ├── config                            # show resolved config + file paths + web-origin source
-│   ├── set <key> <value>            # key: web-origin
+│   ├── set [key] [value]            # key: web-origin — asks when omitted
 │   ├── get [web-origin|active-org]
 │   ├── clear-context                 # clear the active org
 │   └── export [project] [--format <f>] [--out <file>]  # export a project's resolved config
 ├── version
+├── update                            # update through Homebrew, Scoop, or a verified standalone release
 ├── open [console|docs]               # aliases: docs, dashboard
 ├── completion [bash|zsh|fish|powershell]
 ├── org                               # aliases: orgs
 │   ├── list
-│   └── switch [org]
+│   ├── switch [org]                  # id, slug or name — asks when omitted
+│   └── settings                      # the active org's general settings
 ├── members                           # alias: member
 │   ├── list
-│   ├── add <email> [--role member]
-│   └── remove <member_id>
+│   ├── add [email] [--role <r>]      # asks for both when omitted
+│   └── remove [member_id] [--email <e>] [-y/--yes]
 ├── teams                             # alias: team
 │   ├── list
-│   ├── create <name>
-│   └── delete <team_id>
+│   ├── create [name]
+│   └── delete [team_id] [--name <n>] [-y/--yes]
 ├── connector                        # manage cloud identities (credential anchors)
-│   ├── gcp [--project <id>] [--manual]
-│   ├── aws [--region <r>] [--role-name <name>] [--manual]
-│   ├── azure [--subscription <id>] [--manual]
-│   ├── alibaba [--region <r>] [--dir <path>]
+│   ├── gcp [--project <id>] [--manual] [--wif-config <f>]
+│   ├── aws [--region <r>] [--role-name <n>] [--manual] [--script] [--role-arn <arn>]
+│   ├── azure [--subscription <id>] [--manual] [--tenant-id <id>] [--client-id <id>]
+│   ├── alibaba [--region <r>] [--dir <path>] [--manual] [--terraform] [--role-arn <arn>]
+│   ├── hetzner [--token <t>] [--token-stdin] [--s3-access-key <k>] [--s3-secret-key <k>]
 │   ├── list
 │   └── remove [provider] [-y/--yes]
 ├── project
 │   ├── list
-│   ├── get <project_name> [--open]
-│   ├── create <name> --region <r> [--cloud-identity-id <id>] [--stage <s>] [--iac-version <v>]
+│   ├── get [project_name] [--open]   # asks when omitted
+│   ├── create [name] [--region <r>] [--cloud-identity-id <id>] [--stage <s>] [--iac-version <v>]
 │   ├── env                           # manage a project's environments (--project <p>)
 │   │   ├── list
-│   │   └── add <name> [--stage <s>] [--region <r>]
+│   │   └── add [name] [--stage <s>] [--region <r>]
 │   ├── component                     # alias: components, comp (--project <p>)
 │   │   ├── kinds
 │   │   ├── list [--kind <k>] [--env <e>]
@@ -66,90 +70,111 @@ alethia
 │   ├── apply [--project-id <id>] [--runner-id <id>] [--plan-job-id <id>] [-w/--wait]
 │   └── destroy [--project-id <id>] [--runner-id <id>] [-w/--wait]
 ├── runner
-│   ├── deploy [--cloud-identity-id <id>] [--name <name>] [--region <r>] [--assigned-runner-id <id>] [-w/--wait]
+│   ├── deploy [--cloud-account <label>] [--name <name>] [--region <r>] [--assigned-runner <name>] [-w/--wait]
+│   ├── register [name] [--name <name>] [--cloud-account <label>]
 │   ├── list
-│   ├── destroy [--runner-id <id>] [--assigned-runner-id <id>] [-w/--wait]
-│   └── remove [runner_id]
+│   ├── destroy [--runner <name>] [--assigned-runner <name>] [-w/--wait] [-y/--yes]
+│   └── remove [runner-id] [--runner <name>] [-y/--yes]
 ├── jobs
 │   ├── list [--status <S>] [-n/--limit <N>]
-│   ├── get <job_id>
-│   ├── logs <job_id> [-f/--follow]
-│   └── cancel <job_id>
+│   ├── get [job_id]                  # asks when omitted, or --latest
+│   ├── logs [job_id] [-f/--follow]
+│   └── cancel [job_id] [-y/--yes]
 ├── verify                            # the signed evidence receipt behind a job
-│   ├── receipt -j <job_id> [--key-file <f>] [--allow-unsigned] [--allow-untrusted]
-│   └── show    -j <job_id>           # the per-control report, incl. not_evaluable + waivers
+│   ├── receipt [job_id] [--latest] [--key-file <f>] [--allow-unsigned] [--allow-untrusted]
+│   └── show    [job_id] [--latest]   # the per-control report, incl. not_evaluable + waivers
 ├── cluster                           # alias: clusters
-│   └── list
+│   ├── list
+│   └── get [selector]                # project name, cluster name or id — asks when omitted
 ├── repo                              # aliases: repos, repositories — browse connected git repos
 │   └── list [--provider github]      # provider: github, gitlab, bitbucket
 ├── cloud                             # inspect discovered cloud resources
-│   └── inventory <cloud_identity_id>
+│   └── inventory [provider|cloud_identity_id]
 ├── agent                             # alias: agents — inspect agent identities
 │   ├── list
-│   └── get <agent_id>
-├── addon                             # alias: addons — installed add-ons (-p/--project · -e/--env)
-│   └── list
+│   └── get [agent_id]                # asks when omitted
+├── addon                             # alias: addons — marketplace add-ons (-p/--project · -e/--env)
+│   ├── list
+│   ├── enable [addon_id] [--mode managed|gitops] [--set k=v] [--values-file f]
+│   └── disable [addon_id]            # asks when omitted; --yes to skip the confirmation
 ├── chart                             # alias: charts — BYO Helm charts (-p/--project · -e/--env)
-│   └── list
+│   ├── list
+│   ├── attach [id] [--repo <u>] [--chart-path <p>] [--ref <r>] [--namespace <n>] [--set k=v] [--values-file <f>]
+│   ├── scan [id]                     # asks which chart when omitted
+│   └── detach [id] [-y/--yes]        # asks which chart when omitted
 ├── iac                               # BYO Terraform/OpenTofu source (-p/--project · -e/--env)
-│   └── show
+│   ├── show
+│   ├── attach [--repo <u>] [--path <p>] [--ref <r>] [--var k=v]
+│   ├── scan
+│   └── detach [-y/--yes]
 ├── cost                              # infrastructure cost (-p/--project · -e/--env)
 │   └── show
 ├── drift                             # day-2 drift posture (-p/--project · -e/--env)
 │   └── show
+├── staged                            # pending canvas changes (-p/--project · -e/--env)
+│   └── list
 ├── probes                            # alias: probe — cluster-alive probes (-p/--project)
 │   └── list
+├── protection                        # alias: protect — promotion gates per env (-p/--project)
+│   └── list
+├── promotion                         # aliases: promotions, promo (-p/--project · -e/--env)
+│   ├── list
+│   └── get [promotion]               # id or id prefix — asks when omitted
 ├── channels                          # alias: channel
 │   ├── list
-│   ├── create <name> --type <t> [--recipient <e>] [--url <u>] [--signing-secret <s>] [--routing-key <k>]
-│   ├── verify <id>
-│   └── delete <id>
+│   ├── create [name] [--type <t>] [--recipient <e>] [--url <u>] [--signing-secret <s>] [--routing-key <k>]
+│   ├── verify [channel]              # name or id — asks when omitted
+│   └── delete [channel] [-y/--yes]
 ├── alerts                            # alias: alert
 │   ├── list
-│   ├── create <name> --event <pat> --channel <id> [--severity warning]
-│   └── delete <id>
+│   ├── create [name] [--event <pat>] [--channel <name|id>] [--severity warning]
+│   └── delete [rule] [-y/--yes]      # name or id — asks when omitted
 ├── roles                             # alias: role
 │   ├── list                          # built-in templates + custom roles
-│   ├── create <name> --permission <key>…
-│   └── delete <id>
+│   ├── create [name] [--permission <key>…]   # offers the server's catalog
+│   └── delete [role_id] [--name <n>] [-y/--yes]   # custom roles only
 ├── grants                            # aliases: grant, access
 │   ├── list
-│   ├── add --principal <id> (--role <id> | --permission <key>) [--effect allow] [--resource-type org] [--resource <id>]
-│   └── remove <id>
+│   ├── add [--principal <email|team|id>] (--role <name|id> | --permission <key>) [--effect allow] [--resource-type org] [--resource <id>]
+│   └── remove [grant_id] [-y/--yes]
 ├── sso
 │   ├── list
-│   └── get <id>
+│   └── get [id] [--domain <d>]
 ├── billing                           # active org plan, status, seats, period
 ├── usage                             # seats, runner-minutes, projects, AI credits
 ├── fleet                             # managed warm pools (self-managed only)
 │   ├── list
-│   └── set <provider> [--warm-min <n>] [--max <n>] [--slots <n>] [--enabled] [--channel <c>] [--version <v>]
+│   └── set [provider] [--warm-min <n>] [--max <n>] [--slots <n>] [--enabled] [--channel <c>] [--version <v>]
 ├── classification                   # alias: class — governed taxonomy on resources
 │   ├── dimensions                   # list the org's dimensions + their values
 │   ├── show <kind> <id>             # values assigned to a resource
-│   ├── assign <kind> <id> <dimension-key> <value-slug>
-│   └── unassign <kind> <id> <value-slug>
+│   ├── assign <kind> <id> [dimension-key] [value-slug]   # asks for the slugs when omitted
+│   └── unassign <kind> <id> [value-slug] [-y/--yes]
 ├── activity [-n/--limit <N>]         # org delivery/activity log
 └── ops                              # break-glass incident recovery (privileged · audited · gated)
     ├── session --reason <r>                                     # open a time-boxed session
-    ├── approve <action> <resource_id> --reason <r>              # 2nd operator mints a two-person token
-    ├── inspect-job <job_id> --reason <r>                        # blast: none (read-only, cross-tenant)
-    ├── retry-job <job_id> --reason <r>                          # blast: low
-    ├── cancel-job <job_id> --reason <r>                         # blast: low
-    ├── drain-runner <runner_id> --reason <r>                    # blast: low
-    ├── restart-runner <runner_id> --reason <r>                  # blast: medium
-    ├── unstick-env <env_id> --from <s,…> --to <s> --reason <r>  # blast: medium (status CAS)
-    ├── orphan-detect --project <id> --reason <r>                # blast: none (read-only, run-scoped)
-    ├── replay-webhook <stripe_event_id> [--send-emails] --reason <r>  # blast: low
-    ├── force-release-lock <state_key> --approval <id> --reason <r>    # blast: HIGH, two-person
-    ├── state-surgery <state_key> --approval <id> [--note <n>] --reason <r>  # HIGH, two-person, INERT
-    └── orphan-clean --project <id> --approval <id> --reason <r>       # HIGH, two-person, INERT
+    ├── approve [action] [resource_id] --reason <r>              # 2nd operator mints a two-person token
+    ├── inspect-job [job_id] --reason <r>                        # blast: none (read-only, cross-tenant)
+    ├── retry-job [job_id] --reason <r> [-y]                     # blast: low
+    ├── cancel-job [job_id] --reason <r> [-y]                    # blast: low
+    ├── drain-runner [runner_id] --reason <r> [-y]               # blast: low
+    ├── restart-runner [runner_id] --reason <r> [-y]             # blast: medium
+    ├── unstick-env [env_id] [--from <s,…>] [--to <s>] --reason <r> [-y]  # blast: medium (status CAS)
+    ├── orphan-detect [--project <id>] --reason <r>              # blast: none (read-only, run-scoped)
+    ├── replay-webhook [stripe_event_id] [--send-emails] --reason <r> [-y]  # blast: low
+    ├── force-release-lock [state_key] --approval <id> --reason <r> [-y]    # blast: HIGH, two-person
+    ├── state-surgery [state_key] --approval <id> [--note <n>] --reason <r> [-y]  # HIGH, two-person, INERT
+    └── orphan-clean [--project <id>] --approval <id> --reason <r> [-y]     # HIGH, two-person, INERT
 ```
 
 <Callout type="info">
-`members`, `teams`, and the org-scoped commands operate on the **active organization** (set via
-`alethia org switch`). Override per-invocation with `--org <id>`. The `cluster` command is singular
-with a `clusters` alias, so both `alethia cluster list` and `alethia clusters list` work.
+Every org-scoped command operates on the **active organization**, which you set with
+`alethia org switch`. `--org <id>` overrides that for a single invocation, and it is a GLOBAL flag —
+`alethia cluster list --org acme` works, and so does the same flag on every other group. It selects
+a scope rather than granting one: an organization you are not a member of is refused with `403`, and
+under a service token it must name the token's own organization — a different one is refused too,
+never quietly ignored. The `cluster` command is singular with a `clusters`
+alias, so both `alethia cluster list` and `alethia clusters list` work.
 </Callout>
 
 <Callout type="info">
@@ -167,7 +192,9 @@ typed-confirms the resource id server-side. The whole group is gated behind
 that hasn't armed it) is refused with `403`/`404`. High-blast verbs (`force-release-lock`,
 `state-surgery`, `orphan-clean`) additionally require a two-person `--approval` token minted by a
 **different** operator via `alethia ops approve`, and `state-surgery`/`orphan-clean` ship **INERT**
-(fail-closed — they refuse rather than perform an unscoped mutation).
+(fail-closed — they refuse rather than perform an unscoped mutation). Every mutating verb also
+confirms at the terminal, naming the resource and the consequence; `-y`/`--yes` is how a runbook
+opts in ahead of time. Every id is optional: omit it and the command offers a list.
 </Callout>
 
 ## Interactive Selection
@@ -194,27 +221,36 @@ See [Connector Commands](/cli/commands/connector) for AWS and Azure flows.
 
 ```bash
 # 1. Plan
-alethia project plan --project-id <id>
-# Note the job ID from output
+alethia project plan --project boutique
 
-# 2. Stream logs to review
-alethia jobs logs <plan-job-id> --follow
+# 2. Review what it decided — --latest resolves the job you just started
+alethia jobs logs --latest --follow
 
 # 3. Apply
-alethia project apply --project-id <id> --plan-job-id <plan-job-id>
+alethia project apply --project boutique
+```
+
+`--project` takes the project's NAME. Omit it on a terminal and you are asked; `--latest` picks
+the most recent job, so no id has to travel from one command's output into the next one's
+arguments.
+
+To pin the apply to one specific reviewed plan rather than re-planning, name that plan's job id:
+
+```bash
+alethia project apply --project boutique --plan-job-id 4f3c2b1a-9d6e-4a3b-8c17-5e2f1a9b7c04
 ```
 
 ### Scripting with --wait
 
 ```bash
 # Block until plan completes, then apply
-alethia project plan --project-id <id> --wait
-alethia project apply --project-id <id> --plan-job-id <id> --wait
+alethia project plan --project boutique --wait
+alethia project apply --project boutique --wait
 ```
 
 ### Log Tailing
 
 ```bash
 # Stream logs like tail -f
-alethia jobs logs <job-id> --follow
+alethia jobs logs --latest --follow
 ```

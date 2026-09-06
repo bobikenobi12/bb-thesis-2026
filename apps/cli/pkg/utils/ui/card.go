@@ -51,6 +51,10 @@ func RenderCard(out io.Writer, format, title string, rows [][]string, record any
 			b.WriteByte('\n')
 		}
 	}
-	fmt.Fprintln(out, cardBorderStyle.Render(b.String()))
-	return nil
+	// Returned rather than swallowed, matching renderStaticTable and the json and
+	// csv branches above. A card's whole job is to carry a value a reader is about
+	// to act on — `alethia token create` prints the token's id and prefix through
+	// here — so a failed write must not read as a successfully rendered empty card.
+	_, err := fmt.Fprintln(out, cardBorderStyle.Render(b.String()))
+	return err
 }

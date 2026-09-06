@@ -64,14 +64,14 @@ export function ActivePromotionPanel({
 			{/* header */}
 			<div className="flex items-center justify-between gap-3 border-b px-6 py-4">
 				<div className="flex items-center gap-2.5">
-					<span className="font-mono text-[13px] text-text-primary">
+					<span className="font-mono text-ui-md text-text-primary">
 						{detail.sourceName}
 					</span>
 					<ArrowRight className="size-3.5 text-text-tertiary" />
-					<span className="font-mono text-[13px] text-text-primary">
+					<span className="font-mono text-ui-md text-text-primary">
 						{detail.targetName}
 					</span>
-					<StatusDot tier={status.tier} label={status.label} className="ml-1.5 text-[11px]" size={9} />
+					<StatusDot tier={status.tier} label={status.label} className="ml-1.5 text-ui-xs" />
 				</div>
 				<div className="flex items-center gap-2">
 					{canCancel && (
@@ -94,13 +94,17 @@ export function ActivePromotionPanel({
 						className={cn("flex items-start", i < steps.length - 1 && "flex-1")}
 					>
 						<div className="flex w-[66px] shrink-0 flex-col items-center gap-1.5">
-							<StatusDot tier={s.tier} size={12} />
-							<span className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
+							<StatusDot tier={s.tier} />
+							<span className="font-mono text-ui-2xs uppercase tracking-wider text-text-tertiary">
 								{s.label}
 							</span>
 						</div>
+						{/* The rail is centred on the dot, not on the column: `items-start` pins it to
+						    the row's top edge, so the offset has to name the dot's own centre. The
+						    shared `.vx-status__dot` is 7px and this rail is 2px, so 3px lands it
+						    across the middle of the dot. It read `mt-2.5` while the dot was 12px. */}
 						{i < steps.length - 1 && (
-							<div className="mx-1 mt-2.5 h-0.5 flex-1 bg-border" />
+							<div className="mx-1 mt-[3px] h-0.5 flex-1 bg-border" />
 						)}
 					</div>
 				))}
@@ -112,8 +116,8 @@ export function ActivePromotionPanel({
 					<div className="flex items-start gap-2.5 rounded-md border border-destructive/40 bg-[var(--signal-critical-surface)] px-3.5 py-3">
 						<TriangleAlert className="mt-px size-4 shrink-0 text-destructive" />
 						<div>
-							<div className="text-[13px] font-medium text-text-primary">{b.title}</div>
-							<div className="mt-0.5 font-mono text-[12px] leading-relaxed text-text-secondary">
+							<div className="text-ui-md font-medium text-text-primary">{b.title}</div>
+							<div className="mt-0.5 font-mono text-ui-sm leading-relaxed text-text-secondary">
 								{b.body}
 							</div>
 						</div>
@@ -124,11 +128,11 @@ export function ActivePromotionPanel({
 			{/* gates + approvals */}
 			<div className="grid grid-cols-1 gap-0 p-2 sm:grid-cols-2">
 				<div className="border-border px-4 sm:border-r">
-					<div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+					<div className="mb-1.5 font-mono text-ui-2xs uppercase tracking-[0.16em] text-text-tertiary">
 						Gates
 					</div>
 					{gates.length === 0 ? (
-						<div className="py-3 font-mono text-[12px] text-text-tertiary">
+						<div className="py-3 font-mono text-ui-sm text-text-tertiary">
 							Evaluated once the plan completes.
 						</div>
 					) : (
@@ -138,8 +142,8 @@ export function ActivePromotionPanel({
 								className="flex items-center gap-2.5 border-t border-border-faint py-2"
 							>
 								<g.icon className="size-[15px] shrink-0 text-text-secondary" />
-								<span className="flex-1 text-[13px] text-text-primary">{g.label}</span>
-								<StatusDot tier={g.tier} label={g.word} className="text-[11px]" />
+								<span className="flex-1 text-ui-md text-text-primary">{g.label}</span>
+								<StatusDot tier={g.tier} label={g.word} className="text-ui-xs" />
 							</div>
 						))
 					)}
@@ -147,15 +151,15 @@ export function ActivePromotionPanel({
 
 				<div className="px-4">
 					<div className="mb-1.5 flex items-baseline justify-between">
-						<span className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
+						<span className="font-mono text-ui-2xs uppercase tracking-[0.16em] text-text-tertiary">
 							Approvals
 						</span>
-						<span className="font-mono text-[11px] text-text-secondary">
+						<span className="font-mono text-ui-xs text-text-secondary">
 							{detail.approved} / {detail.required}
 						</span>
 					</div>
 					{detail.approvals.length === 0 ? (
-						<div className="py-3 font-mono text-[12px] text-text-tertiary">
+						<div className="py-3 font-mono text-ui-sm text-text-tertiary">
 							No approval required.
 						</div>
 					) : (
@@ -168,23 +172,23 @@ export function ActivePromotionPanel({
 								)}
 								<div className="min-w-0 flex-1">
 									<div className="flex items-center gap-2">
-										<span className="text-[13px] font-medium text-text-primary">
+										<span className="text-ui-md font-medium text-text-primary">
 											{slot.name ?? "Awaiting a reviewer"}
 										</span>
 										{slot.status === "approved" && (
-											<StatusDot tier="active" label="Approved" className="text-[11px]" />
+											<StatusDot tier="active" label="Approved" className="text-ui-xs" />
 										)}
 										{slot.status === "rejected" && (
-											<StatusDot tier="failed" label="Rejected" className="text-[11px]" />
+											<StatusDot tier="failed" label="Rejected" className="text-ui-xs" />
 										)}
 									</div>
-									<div className="mt-px text-[11px] text-text-tertiary">
+									<div className="mt-px text-ui-xs text-text-tertiary">
 										{slot.requiredRole
 											? `Any ${slot.requiredRole}`
 											: "Any listed approver"}
 									</div>
 									{slot.comment && (
-										<div className="mt-1.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-[12px] leading-relaxed text-text-secondary">
+										<div className="mt-1.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-ui-sm leading-relaxed text-text-secondary">
 											{slot.comment}
 										</div>
 									)}

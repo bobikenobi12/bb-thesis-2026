@@ -202,7 +202,7 @@ export function CanvasControls() {
           }
         />
         <PopoverContent align="start" side="top" className="w-56 p-1">
-          <p className="px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="px-2 py-1.5 text-ui-xs font-medium uppercase tracking-wide text-muted-foreground">
             Layers
           </p>
           {addableKindsFor(coreProvider).map((kind) => {

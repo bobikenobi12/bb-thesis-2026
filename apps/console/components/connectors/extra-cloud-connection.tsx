@@ -291,7 +291,7 @@ export function AlibabaConnection({
 							Paste this command in the Cloud Shell. It creates the RAM OIDC provider + role and
 							prints the role ARN.
 						</p>
-						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-[11px] text-foreground">
+						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-ui-xs text-foreground">
 							<span className="min-w-0 break-all">{cloudShellCmd}</span>
 							<CopyButton
 								text={cloudShellCmd}

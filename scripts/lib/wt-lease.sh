@@ -44,11 +44,36 @@ wt_self_pid() {
 	if [ -n "${CLAUDE_PID:-}" ]; then
 		printf '%s' "$CLAUDE_PID"
 	elif [ -n "${CODEX_SESSION_ID:-${CODEX_THREAD_ID:-}}" ]; then
-		printf '%s' "${CODEX_PID:-${PPID:-}}"
+		if [ -n "${CODEX_PID:-}" ]; then
+			printf '%s' "$CODEX_PID"
+		else
+			local agent_pid
+			agent_pid="$(wt_find_agent_pid)"
+			printf '%s' "${agent_pid:-${PPID:-}}"
+		fi
 	fi
 }
 
 wt_host() { hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown; }
+
+# Find the owning Claude/Codex process when a Git hook has stripped the adapter's explicit PID.
+# Git launches hooks below an intermediate git process, so using PPID directly identifies git (or
+# the shell that launched it) and makes the current instance look like a foreign lease.
+wt_find_agent_pid() {
+	local pid="${PPID:-}" command
+	local depth=0
+	while [ -n "$pid" ] && [ "$depth" -lt 16 ]; do
+		command="$(ps -o comm= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+		case "$command" in
+			codex | claude | claude-code)
+				printf '%s' "$pid"
+				return 0
+				;;
+		esac
+		pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+		depth=$((depth + 1))
+	done
+}
 
 # A process's start time, whitespace-normalised. Identifies the INCARNATION, so a recycled pid can
 # never inherit a dead instance's lease. Empty when the pid is gone. Works on BSD and GNU ps.
@@ -306,6 +331,12 @@ wt_self_test() {
 	# self-test itself is launched from a Codex session.
 	(CLAUDE_PID="" CODEX_PID="" CODEX_SESSION_ID="" CODEX_THREAD_ID="" wt_lease_acquire "$tmp/wt" >/dev/null 2>&1)
 	_a "0" "$?" "outside Claude: no lease taken, never blocks"
+
+	# Git hooks lose CODEX_PID but retain the session marker; recover the Codex ancestor rather than
+	# treating the hook's immediate parent as a different instance.
+	if [ -n "${CODEX_SESSION_ID:-${CODEX_THREAD_ID:-}}" ] && [ -z "${CODEX_PID:-}" ]; then
+		_a "$(wt_find_agent_pid)" "$(wt_self_pid)" "Codex ancestry supplies the lease identity"
+	fi
 
 	# Fresh acquire, then re-acquire is idempotent.
 	me="$$"

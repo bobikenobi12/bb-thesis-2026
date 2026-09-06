@@ -7,8 +7,10 @@ import { useCallback, useEffect, useState } from "react";
 import { listSharedArtifacts } from "@/app/server/actions/artifact-shares";
 import { deleteArtifact, listArtifacts } from "@/app/server/actions/artifacts";
 import { AgentArtifactViewer } from "@/components/agent/agent-artifact-viewer";
+import { GALLERY_EMPTY } from "@/components/agent/gallery-empty";
 import type { AgentArtifact } from "@/lib/db/schema";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { cn } from "@repo/ui/utils";
 import { ScrollArea } from "@repo/ui/scroll-area";
 
@@ -83,7 +85,7 @@ export function AgentArtifactGallery({
 			{/* Gallery top bar — mirrors the conversation top bar's height/rhythm. */}
 			<div className="flex flex-none items-center gap-2 border-b border-border px-3 py-2.5">
 				<div className="text-sm font-medium text-foreground">Artifacts</div>
-				<span className="font-mono text-[11px] text-muted-foreground">
+				<span className="font-mono text-ui-xs text-muted-foreground">
 					{items ? items.length : ""}
 				</span>
 				<div className="ml-3 flex items-center border border-border">
@@ -93,7 +95,7 @@ export function AgentArtifactGallery({
 							type="button"
 							onClick={() => setTab(t)}
 							className={cn(
-								"px-2.5 py-1 text-[12px] transition-colors",
+								"px-2.5 py-1 text-ui-sm transition-colors",
 								tab === t
 									? "bg-muted text-foreground"
 									: "text-muted-foreground hover:text-foreground",
@@ -127,40 +129,32 @@ export function AgentArtifactGallery({
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="p-5">
 				{items === null ? (
-					<div className="py-16 text-center text-sm text-muted-foreground">
-						Loading artifacts…
-					</div>
+					<EmptyState className={GALLERY_EMPTY} title="Loading artifacts…" />
 				) : items.length === 0 ? (
 					tab === "shared" ? (
-						<div className="mx-auto flex max-w-[420px] flex-col items-center gap-3 border border-dashed border-border py-16 text-center">
-							<LayoutDashboard className="h-5 w-5 text-muted-foreground" />
-							<div className="text-[15px] font-semibold text-foreground">
-								Nothing shared with you yet
-							</div>
-							<p className="text-[13px] text-muted-foreground">
-								When a teammate shares an artifact with your org, a team you belong
-								to, or a role you hold, it shows up here.
-							</p>
-						</div>
+						<EmptyState
+							className={GALLERY_EMPTY}
+							icon={<LayoutDashboard />}
+							title="Nothing shared with you yet"
+							description="When a teammate shares an artifact with your org, a team you belong to, or a role you hold, it shows up here."
+						/>
 					) : (
-						<div className="mx-auto flex max-w-[420px] flex-col items-center gap-3 border border-dashed border-border py-16 text-center">
-							<LayoutDashboard className="h-5 w-5 text-muted-foreground" />
-							<div className="text-[15px] font-semibold text-foreground">
-								No artifacts yet
-							</div>
-							<p className="text-[13px] text-muted-foreground">
-								Start a chat, ask Elench to build a dashboard, then save it — it lands
-								here for any conversation to reopen.
-							</p>
-							<Button
-								size="sm"
-								className="mt-1 gap-1.5 rounded-none"
-								onClick={onNewArtifact}
-							>
-								<Plus className="h-3.5 w-3.5" />
-								New artifact
-							</Button>
-						</div>
+						<EmptyState
+							className={GALLERY_EMPTY}
+							icon={<LayoutDashboard />}
+							title="No artifacts yet"
+							description="Start a chat, ask Elench to build a dashboard, then save it — it lands here for any conversation to reopen."
+							action={
+								<Button
+									size="sm"
+									className="gap-1.5 rounded-none"
+									onClick={onNewArtifact}
+								>
+									<Plus className="h-3.5 w-3.5" />
+									New artifact
+								</Button>
+							}
+						/>
 					)
 				) : (
 					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -185,13 +179,13 @@ export function AgentArtifactGallery({
 									</span>
 									<span
 										title={a.name}
-										className="line-clamp-2 min-w-0 break-words text-[14px] font-medium text-foreground"
+										className="line-clamp-2 min-w-0 break-words text-ui-lg font-medium text-foreground"
 									>
 										{a.name}
 									</span>
 								</button>
 								<div className="mt-4 flex items-center justify-between">
-									<span className="font-mono text-[10px] uppercase text-muted-foreground">
+									<span className="font-mono text-ui-2xs uppercase text-muted-foreground">
 										{a.kind} · {a.spec.widgets.length}{" "}
 										{a.spec.widgets.length === 1 ? "widget" : "widgets"}
 									</span>

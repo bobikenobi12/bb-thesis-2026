@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/authz/guard", () => ({
 	currentActor: vi.fn(),
 	authorize: vi.fn(),
+	authorizeInOrg: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({ getServiceDb: vi.fn() }));
 vi.mock("@/lib/billing/invoices", () => ({
@@ -95,7 +96,7 @@ import {
 	startProTrial,
 	updateBillingAddress,
 } from "@/app/server/actions/billing";
-import { authorize, currentActor } from "@/lib/authz/guard";
+import { authorize, authorizeInOrg, currentActor } from "@/lib/authz/guard";
 import { getServiceDb } from "@/lib/db";
 import { getOrgBilling, upsertOrgBilling } from "@/lib/billing/queries";
 import { getOrgInvoice, listOrgInvoices } from "@/lib/billing/invoices";
@@ -110,6 +111,7 @@ import {
 } from "@/lib/billing/config";
 
 const authz = vi.mocked(authorize);
+const authzInOrg = vi.mocked(authorizeInOrg);
 const actor = vi.mocked(currentActor);
 const orgBilling = vi.mocked(getOrgBilling);
 const orgInvoicesList = vi.mocked(listOrgInvoices);
@@ -187,6 +189,7 @@ beforeEach(() => {
 	stripe.subscriptions.list.mockResolvedValue({ data: [] } as never);
 	// Default: a real org with the manage_billing permission.
 	authz.mockResolvedValue({ orgId: "org-1", userId: "user-1" } as never);
+	authzInOrg.mockResolvedValue({ orgId: "org-1", userId: "user-1" } as never);
 	actor.mockResolvedValue({ orgId: "org-1", userId: "user-1" } as never);
 	vi.mocked(isStripeConfigured).mockReturnValue(true);
 	vi.mocked(isStripeTaxEnabled).mockReturnValue(false);
@@ -657,12 +660,25 @@ describe("linkSubscriptionToNewOrg", () => {
 			metadata: { created_by: "user-1", organization_id: "org-1" },
 		});
 		expect(syncSubscriptionToBilling).toHaveBeenCalledWith(linked);
+		// #4133: the permission is asked about the org this call NAMED, never about whichever one
+		// the session happens to be on. The sheet runs on the current org's page, so those differ by
+		// construction for the whole life of this flow.
+		expect(authzInOrg).toHaveBeenCalledWith(
+			"manage_billing",
+			{ type: "billing" },
+			input.orgId,
+		);
 	});
 
-	it("refuses when the new org isn't the active org", async () => {
-		authz.mockResolvedValue({ orgId: "other", userId: "user-1" } as never);
+	// #4133 CHANGED WHAT THIS ASKS, and the change is the point. It used to be "the new org must be
+	// the ACTIVE one" — a check against the session, which passed only because
+	// `setActiveOrganization` had already run. The sheet that calls this is open on the CURRENT
+	// org's page, so under a URL-derived tenant that equality is now FALSE for a correct flow. The
+	// question is asked of the named org instead: may this caller manage billing in THAT org.
+	it("refuses when the caller is not scoped to the org it named", async () => {
+		authzInOrg.mockRejectedValue(new Error("not scoped to organization org-1"));
 		await expect(linkSubscriptionToNewOrg(input)).rejects.toThrow(
-			/must be the active organization/,
+			/not scoped to organization/,
 		);
 	});
 
@@ -1240,6 +1256,20 @@ describe("listInvoices", () => {
 		expect(row.hasPdf).toBe(false);
 		expect(row.periodStart).toBeNull();
 	});
+
+	// #3731. Every assertion above ran with `isStripeConfigured` mocked TRUE, so none of them could
+	// see the defect: both invoice reads also called `requireHostedBilling()`, which throws when
+	// STRIPE_SECRET_KEY is unset — every self-managed install and every sandbox env. The UI
+	// conformance audit hit it as `500 POST …/~/settings/billing/invoices`. Nothing here touches
+	// Stripe: the rows come from the mirrored `invoice` table this deployment already owns.
+	it("still reads the mirrored table when Stripe is NOT configured", async () => {
+		vi.mocked(isStripeConfigured).mockReturnValue(false);
+		orgInvoicesList.mockResolvedValue([]);
+
+		await expect(listInvoices({})).resolves.toEqual([]);
+		expect(orgInvoicesList).toHaveBeenCalledWith("org-1", {});
+		expect(stripe.invoices.list).not.toHaveBeenCalled();
+	});
 });
 
 describe("getInvoice", () => {
@@ -1247,6 +1277,15 @@ describe("getInvoice", () => {
 		orgInvoiceGet.mockResolvedValue(null);
 		expect(await getInvoice("nope")).toBeNull();
 		expect(orgInvoiceGet).toHaveBeenCalledWith("org-1", "nope");
+	});
+
+	// The single-invoice sibling read, same defect (#3731). It has no production caller, so it was
+	// not one of the two 500s — but it carried the same guard over the same table.
+	it("still reads the mirrored table when Stripe is NOT configured", async () => {
+		vi.mocked(isStripeConfigured).mockReturnValue(false);
+		orgInvoiceGet.mockResolvedValue(null);
+		await expect(getInvoice("uuid-1")).resolves.toBeNull();
+		expect(orgInvoiceGet).toHaveBeenCalledWith("org-1", "uuid-1");
 	});
 });
 

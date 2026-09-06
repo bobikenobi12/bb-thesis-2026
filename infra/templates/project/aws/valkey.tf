@@ -8,8 +8,8 @@ module "valey" {
   environment  = var.environment
   product_name = var.project_name
 
-  vpc_id     = var.provision_vpc ? module.common_vpc[0].vpc_id : var.vpc_id
-  subnet_ids = var.provision_vpc ? slice(module.common_vpc[0].database_subnets, 0, 2) : var.vpc_private_subnet_ids
+  vpc_id     = try(module.common_vpc[0].vpc_id, null) != null ? module.common_vpc[0].vpc_id : var.vpc_id
+  subnet_ids = try(module.common_vpc[0].database_subnets, null) != null ? slice(module.common_vpc[0].database_subnets, 0, 2) : var.vpc_private_subnet_ids
 
   redis_allowed_security_group_ids = var.redis_allowed_security_group_ids
 

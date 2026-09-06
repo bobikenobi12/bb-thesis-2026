@@ -169,7 +169,7 @@ describeIfDb("multi-replica hardening — cross-replica double-fire guards", () 
 		seededProjects.push(p.id);
 		const [e] = await getServiceDb()
 			.insert(projectEnvironments)
-			.values({ project_id: p.id, user_id: userId, name: "prod" })
+			.values({ project_id: p.id, user_id: userId, name: "prod", is_default: true })
 			.returning({ id: projectEnvironments.id });
 		return { projectId: p.id, envId: e.id, userId };
 	}

@@ -12,7 +12,8 @@ moving a source environment's proven design into a target environment, gated by 
 <Callout type="info">
 The CLI is a client of the same Console API. These subcommands call
 `/cli/projects/<project>/promotions[/…]` with your [CLI token](/cli/authentication) and operate on
-the **active organization**. Approving, rejecting, or cancelling a promotion stays in the console.
+the **active organization**, which you change with `alethia org switch`. Approving, rejecting, or
+cancelling a promotion stays in the console.
 </Callout>
 
 ## `alethia promotion list`
@@ -20,15 +21,18 @@ the **active organization**. Approving, rejecting, or cancelling a promotion sta
 List a project's promotions, newest first.
 
 ```bash
+alethia promotion list
 alethia promotion list --project my-project
-alethia promotion list -p my-project -e production   # filter by target environment
+alethia promotion list -p my-project -e production
 alethia promotion list -p my-project -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
-| `--env`, `-e` | No | Filter to promotions targeting this environment (name, stage, or id). |
+{/* fieldspec: alethia promotion list */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Project | Whose promotions to list | `--project` |
+| Target environment | Show only promotions INTO this environment, by name, stage, or id | `--env` |
 
 Columns: **ID**, **Source**, **Target**, **Status**, **Created**. Backing call:
 `GET /cli/projects/<project>/promotions`.
@@ -38,18 +42,38 @@ Columns: **ID**, **Source**, **Target**, **Status**, **Created**. Backing call:
 Show one promotion's status, approval tally, and approval slots.
 
 ```bash
-alethia promotion get <promotion-id> --project my-project
+alethia promotion get
+alethia promotion get --project my-project
+alethia promotion get 8f3c1a2b -p my-project
 ```
 
-| Argument / Flag | Required | Description |
-|-----------------|----------|-------------|
-| `<promotion-id>` | Yes | The promotion id (from `promotion list`). |
-| `--project`, `-p` | Yes | Project name or id. |
+A promotion has no name, so there is nothing to type but its id — which is why **you do not have
+to**. Run `promotion get` with no argument at a terminal and you are shown the project's
+promotions and pick one; `--env` narrows that list exactly as it narrows `promotion list`. Given an
+argument, an unambiguous **id prefix** is enough: `8f3c1a2b` resolves as readily as the full UUID.
+
+{/* fieldspec: alethia promotion get */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Project | Which project the promotion belongs to | `--project` |
+| Promotion | The promotion to open, by id or id prefix; omit it to choose from the list | `[promotion]` |
 
 Renders a summary card (source → target, status, **approvals** `N/M`, initiator, created, any
 error) followed by the approval slots (status, approver, required role, decided-at). The per-gate
 evaluation detail and full config diff stay in the console. Add `-o json` for the full object.
+
+The card is written for a person, and `-o csv` gives a script the values: the status loses its
+glyph, an absent initiator, approver or required role is an empty cell rather than `—`, and the
+`source → target` row — two fields joined by an arrow that nothing can split on reliably — becomes
+two rows, `source` and `target`.
 Backing call: `GET /cli/projects/<project>/promotions/<promotion-id>`.
+
+<Callout type="info">
+A prefix that matches two promotions is refused, and the refusal lists both — the CLI never guesses
+between two records you might have meant. An id that matches none is refused before any request,
+naming `alethia promotion list`.
+</Callout>
 
 ## See also
 

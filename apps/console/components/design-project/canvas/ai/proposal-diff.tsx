@@ -90,12 +90,12 @@ function ActionLine({
 		);
 		return (
 			<>
-				<div className="font-mono text-[11px]">
+				<div className="font-mono text-ui-xs">
 					<span className="text-muted-foreground">Add {def.eyebrow.toLowerCase()} </span>
 					<span className="text-foreground">{name}</span>
 				</div>
 				{settings.length > 0 && (
-					<div className="font-mono text-[10px] text-muted-foreground">
+					<div className="font-mono text-ui-2xs text-muted-foreground">
 						{settings.map(([k, v]) => `${k} ${fmt(v)}`).join(" · ")}
 					</div>
 				)}
@@ -105,7 +105,7 @@ function ActionLine({
 
 	if (action.kind === "remove_node") {
 		return (
-			<div className="font-mono text-[11px]">
+			<div className="font-mono text-ui-xs">
 				<span className="text-muted-foreground">Remove </span>
 				<span className="text-foreground">{nameOf(action.nodeId)}</span>
 			</div>
@@ -115,7 +115,7 @@ function ActionLine({
 	if (action.kind === "set_identity") {
 		const node = nodes.find((n) => n.id === action.nodeId);
 		return (
-			<div className="font-mono text-[11px]">
+			<div className="font-mono text-ui-xs">
 				<span className="text-foreground">{nameOf(action.nodeId)}</span>
 				<span className="text-muted-foreground"> cloud </span>
 				<span className="text-muted-foreground line-through">
@@ -133,12 +133,12 @@ function ActionLine({
 	const before = asRecord(node?.data.config);
 	return (
 		<>
-			<div className="font-mono text-[11px] text-foreground">
+			<div className="font-mono text-ui-xs text-foreground">
 				{nameOf(action.nodeId)}
 			</div>
 			<dl className="space-y-0.5">
 				{Object.entries(action.patch).map(([key, next]) => (
-					<div key={key} className="font-mono text-[10px]">
+					<div key={key} className="font-mono text-ui-2xs">
 						<span className="text-muted-foreground">{key} </span>
 						<span className="text-muted-foreground line-through">
 							{fmt(before[key])}

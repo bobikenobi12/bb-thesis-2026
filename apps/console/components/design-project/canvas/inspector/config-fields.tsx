@@ -64,11 +64,14 @@ function resolve<T>(
  */
 function RegionSelect({
 	ctx,
+	id,
 	provider,
 	value,
 	onChange,
 }: {
 	ctx: FieldCtx;
+	/** Ties the trigger to its `<Label htmlFor>` — see `OptionSelect`. */
+	id?: string;
 	provider: CloudProviderSlug;
 	value: string;
 	onChange: (v: string) => void;
@@ -76,7 +79,7 @@ function RegionSelect({
 	const groups = groupRegions(regionCodes(ctx), provider);
 	return (
 		<Select value={value || ""} onValueChange={onChange}>
-			<SelectTrigger className="h-9 text-sm">
+			<SelectTrigger id={id} className="h-9 text-sm">
 				<SelectValue placeholder="Region" />
 			</SelectTrigger>
 			<SelectContent>
@@ -136,7 +139,7 @@ export function OptionSelect({
 							</span>
 							{o.advisory ? (
 								<span
-									className="vx-eyebrow shrink-0 text-[9px] text-muted-foreground"
+									className="vx-eyebrow shrink-0 text-ui-3xs text-muted-foreground"
 									title={o.advisory.note}
 								>
 									{o.advisory.level === "unavailable" ? "unavailable" : "unverified"}
@@ -195,6 +198,26 @@ export function OptionCombobox({
 
 	return (
 		<div className="relative">
+			{/* The `role="combobox"` STAYS, against #3756's third bullet, and the two claims that
+			    bullet rests on were both measured false against the pinned versions:
+
+			    1. "The role is untrue: no text input." There IS one — this control is an `<input>` the
+			       user types into, and `<input role="combobox">` is the ARIA 1.2 combobox pattern
+			       itself. The other two sites the issue names are `<button>`s inside a base-ui
+			       Popover, where the role is untrue and comes off; this one is the opposite shape,
+			       which is why it is the one the issue asked to check before changing.
+			    2. "axe covers it under `aria-input-field-name`." It does not. That rule's `matches` is
+			       `noNamingMethodMatches`, which excludes any element whose host language already
+			       gives it a naming method — and `<input>` has one. Driven against axe-core 4.13.0 in
+			       jsdom, `<input role="combobox">` with no name at all comes back INAPPLICABLE to all
+			       three name rules, not violating. The rule fires on `<div role="combobox">`, where
+			       there is no native label to fall back on.
+
+			    What names this input is the same thing that names it without the role: it is a
+			    labelable element, `FieldRow` renders a real `<Label htmlFor>`, and the accessible name
+			    is the field's label. Removing a true role to satisfy a rule that never applied would
+			    have traded a working typeahead announcement for nothing. The sweep asserts the NAME,
+			    so the claim survives either way. */}
 			<Input
 				id={id}
 				value={value}
@@ -210,8 +233,12 @@ export function OptionCombobox({
 				onFocus={() => setOpen(true)}
 				onBlur={() => setOpen(false)}
 			/>
+			{/* The list below is a typeahead popover, so it takes the overlay rung by NAME. `z-50`
+			    sat in the gap the scale leaves empty (its in-flow lifts stop at 30, its chrome
+			    starts at 100), so it painted under the site header and under the sheet this
+			    inspector opens inside — the one place a combobox must never be. */}
 			{open && options.length > 0 ? (
-				<div className="absolute top-full left-0 z-50 mt-1 w-full rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+				<div className="absolute top-full left-0 z-[var(--z-overlay)] mt-1 w-full rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
 					<div className="max-h-56 overflow-y-auto">
 						{filtered.length === 0 ? (
 							// Not an error: an unlisted value is a legitimate pin, so the input keeps it.
@@ -241,7 +268,7 @@ export function OptionCombobox({
 									</span>
 									{o.advisory ? (
 										<span
-											className="vx-eyebrow shrink-0 text-[9px] text-muted-foreground"
+											className="vx-eyebrow shrink-0 text-ui-3xs text-muted-foreground"
 											title={o.advisory.note}
 										>
 											{o.advisory.level === "unavailable" ? "unavailable" : "unverified"}
@@ -383,6 +410,7 @@ function FieldControl({
 			return provider ? (
 				<RegionSelect
 					ctx={ctx}
+					id={id}
 					provider={provider}
 					value={toStr(raw)}
 					onChange={patch}
@@ -505,7 +533,7 @@ function FieldRow({
 						{/* Same typography as the option advisory above, a DIFFERENT mechanism: that one
 						    is ink-only and must never disable (#918), this one marks a real gate. */}
 						{unavailable && (
-							<span className="vx-eyebrow shrink-0 text-[9px] text-muted-foreground">
+							<span className="vx-eyebrow shrink-0 text-ui-3xs text-muted-foreground">
 								unavailable
 							</span>
 						)}
@@ -542,13 +570,20 @@ function FieldRow({
 		field.type === "subresource" ||
 		field.type === "bindings";
 
-	// Composite controls (list / subresource / bindings / radio-card) label their own inner rows, so
-	// the section label stays decorative for those; everything else gets a real label→control binding.
+	// Composite controls (list / subresource / bindings / radio-card / repository) label their own
+	// inner rows, so the section label stays decorative for those; everything else gets a real
+	// label→control binding.
+	//
+	// `repository` joined that list in #3756. `RepositorySelector` is a SHELL of three controls — a
+	// provider select, the repository trigger, and a refresh/relink button — and `htmlFor` binds
+	// exactly one element, so the id it was being handed matched nothing at all and the `<Label>`
+	// was decorative in fact while claiming otherwise. Each of those controls now names itself.
 	const composite =
 		field.type === "list" ||
 		field.type === "subresource" ||
 		field.type === "bindings" ||
-		field.type === "radio-card";
+		field.type === "radio-card" ||
+		field.type === "repository";
 
 	return (
 		<div className={cn("space-y-1.5", full && "col-span-full")}>
@@ -575,7 +610,7 @@ function FieldRow({
 			    whole catalog? The fail-open is invisible in the options by design, so without this the
 			    two read identically. Informational only — it gates nothing. */}
 			{provenance && (
-				<p className="vx-eyebrow text-[10px] text-muted-foreground">{provenance}</p>
+				<p className="vx-eyebrow text-ui-2xs text-muted-foreground">{provenance}</p>
 			)}
 		</div>
 	);
@@ -672,7 +707,7 @@ function Section({
 					</span>
 					{/* Badge the cloud whose knobs these are, so it's obvious the field is not portable. */}
 					{advanced && ctx.provider && (
-						<span className="ml-1 inline-flex shrink-0 items-center gap-1 border border-border-strong px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
+						<span className="ml-1 inline-flex shrink-0 items-center gap-1 border border-border-strong px-1.5 py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
 							<ProviderIcon provider={ctx.provider} size={10} />
 							only
 						</span>

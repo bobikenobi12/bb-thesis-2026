@@ -86,7 +86,7 @@ data "google_service_account" "app_db_adopted" {
 # exist otherwise).
 resource "google_service_account_iam_member" "app_db_wi" {
   count              = local.enable_app_db_iam ? 1 : 0
-  service_account_id = data.google_service_account.app_db_adopted[0].name
+  service_account_id = one(data.google_service_account.app_db_adopted[*].name)
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${local.app_ksa_namespace}/${local.app_ksa_name}]"
 

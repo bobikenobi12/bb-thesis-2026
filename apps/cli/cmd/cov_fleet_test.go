@@ -300,13 +300,17 @@ func fleetEnv(t *testing.T, opts fleetOpts) (*fleetServer, func(args ...string) 
 	t.Setenv("ALETHIA_WEB_ORIGIN", srv.URL)
 	t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 
-	oldIn, oldOut := stdinIsTTY, stdoutIsTTY
+	oldIn, oldOut, oldMode := stdinIsTTY, stdoutIsTTY, noInputMode
 	stdinIsTTY = func() bool { return true }
 	stdoutIsTTY = func() bool { return true }
+	// noInputMode is derived from stdinIsTTY at PersistentPreRun, not bound to it, so a --no-input
+	// left set by an earlier file survives the seam stub. Setting it makes this env independent of
+	// the order `go test` reached the files in.
+	noInputMode = false
 	oldExit := exitFunc
 	exitFunc = func(code int) { panic(fleetExit{code: code}) }
 	t.Cleanup(func() {
-		stdinIsTTY, stdoutIsTTY = oldIn, oldOut
+		stdinIsTTY, stdoutIsTTY, noInputMode = oldIn, oldOut, oldMode
 		exitFunc = oldExit
 		fleetResetState()
 	})
@@ -322,7 +326,7 @@ func fleetEnv(t *testing.T, opts fleetOpts) (*fleetServer, func(args ...string) 
 				code = e.code
 			}
 		}()
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		if err := rootCmd.Execute(); err != nil {
 			return 1
 		}
@@ -382,7 +386,7 @@ var fleetAdminCommands = [][]string{
 	{"runner", "destroy"},
 	{"runner", "remove", "r1"},
 	{"jobs", "logs", "j1"},
-	{"jobs", "cancel", "j1"},
+	{"jobs", "cancel", "j1", "--yes"},
 }
 
 // TestFleet_UnauthenticatedCommandExitsOne pins that every command in this scope
@@ -520,13 +524,18 @@ func TestFleet_GrantsAddNeedsExactlyOneBinding(t *testing.T) {
 
 // TestFleet_GrantsAddAssignsARoleOrAPermission pins that a well-formed grant is posted
 // for either binding, scoped to the resource flags.
+//
+// The ids are real uuids because `--principal` and `--role` are now LOOKUP KEYS: anything that is
+// not already a uuid is resolved against the org's members/teams/roles, since `principal_id` and
+// `role_id` are `z.uuid()` on the wire and a non-uuid was always a 400. "u1" now names nothing and
+// is refused by the CLI instead of by the server.
 func TestFleet_GrantsAddAssignsARoleOrAPermission(t *testing.T) {
 	s, run := fleetEnv(t, fleetOpts{})
 	cases := [][]string{
-		{"grants", "add", "--principal", "u1", "--role", "ro1"},
-		{"grants", "add", "--principal", "t1", "--principal-type", "team",
+		{"grants", "add", "--principal", "11111111-1111-4111-8111-111111111111", "--role", "33333333-3333-4333-8333-333333333333"},
+		{"grants", "add", "--principal", "22222222-2222-4222-8222-222222222222", "--principal-type", "team",
 			"--permission", "project:deploy", "--effect", "deny",
-			"--resource-type", "project", "--resource", "p1"},
+			"--resource-type", "project", "--resource", "44444444-4444-4444-8444-444444444444"},
 	}
 	for _, args := range cases {
 		s.forget()
@@ -1022,7 +1031,7 @@ func TestFleet_JobsLogsFollowStopsAtATerminalStatus(t *testing.T) {
 // that a refusal is fatal.
 func TestFleet_JobsCancelStopsAJob(t *testing.T) {
 	s, run := fleetEnv(t, fleetOpts{})
-	if got := run("jobs", "cancel", "j1"); got != 0 {
+	if got := run("jobs", "cancel", "j1", "--yes"); got != 0 {
 		t.Fatalf("exit code = %d, want 0", got)
 	}
 	if !s.saw("POST", "/api/cli/jobs/j1/cancel") {
@@ -1030,7 +1039,7 @@ func TestFleet_JobsCancelStopsAJob(t *testing.T) {
 	}
 
 	_, broken := fleetEnv(t, fleetOpts{broken: true})
-	if got := broken("jobs", "cancel", "j1"); got != 1 {
+	if got := broken("jobs", "cancel", "j1", "--yes"); got != 1 {
 		t.Errorf("broken: exit code = %d, want 1", got)
 	}
 }

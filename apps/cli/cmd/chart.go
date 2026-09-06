@@ -30,15 +30,19 @@ var chartListCmd = &cobra.Command{
 		if err != nil {
 			fail(err)
 		}
-		project, err := currentProject(cmd)
+		// Format first, then the picker: interactiveTable is both the "may I draw a rich table"
+		// question and the "may I open a form on stdout" one, and they have the same answer.
+		outFmt := outputFormat(cmd)
+		rich := interactiveTable(cmd)
+		project, err := byoProject(cmd, token, rich)
 		if err != nil {
 			fail(err)
 		}
 		env, _ := cmd.Flags().GetString("env")
 		client := api.NewClient(token)
-		if interactiveTable(cmd) {
+		if rich {
 			var view *api.ProjectByoCharts
-			ui.RunSpinner("Fetching charts...", func() {
+			runSpinner("Fetching charts...", func() {
 				view, err = client.GetProjectByoCharts(project, env)
 			})
 			if err != nil {
@@ -48,10 +52,10 @@ var chartListCmd = &cobra.Command{
 				ui.Muted("No BYO charts attached.")
 				return
 			}
-			_ = ui.ShowTable(chartColumns, chartRows(view.Charts), "charts")
+			_ = ui.ShowTable(chartColumns, chartRows(view.Charts, ui.FormatTable), "charts")
 			return
 		}
-		if err := runChartList(client, os.Stdout, outputFormat(cmd), project, env); err != nil {
+		if err := runChartList(client, os.Stdout, outFmt, project, env); err != nil {
 			failf("Failed to list charts: %v", err)
 		}
 	},
@@ -60,10 +64,23 @@ var chartListCmd = &cobra.Command{
 var chartColumns = []string{"Chart", "Repo", "Path", "Ref", "Status", "Scan"}
 
 // chartRows projects BYO charts into plain table cells.
-func chartRows(charts []api.ByoChart) [][]string {
+//
+// OrDash on the two OPTIONAL cells, for a person. An OCI chart carries no path and a chart
+// tracking its repository's default branch carries no ref, and both rendered as an empty cell —
+// which reads as missing data rather than as "this chart does not have one".
+//
+// outFmt is taken for the reason ui.Render's doc states: its CSV branch writes these rows
+// VERBATIM, so the dash would reach a script as `—` (U+2014). That is exactly the ambiguity the
+// glyph resolves for a person and exactly the one it CREATES for a parser, which already reads an
+// empty cell as absent and would now have to know one product's sentinel.
+func chartRows(charts []api.ByoChart, outFmt string) [][]string {
 	rows := make([][]string, len(charts))
 	for i, c := range charts {
-		rows[i] = []string{c.ID, c.RepoURL, c.ChartPath, c.Ref, c.Status, c.ScanStatus}
+		path, ref := c.ChartPath, c.Ref
+		if ui.HumanReadable(outFmt) {
+			path, ref = ui.OrDash(path), ui.OrDash(ref)
+		}
+		rows[i] = []string{c.ID, c.RepoURL, path, ref, c.Status, c.ScanStatus}
 	}
 	return rows
 }
@@ -88,13 +105,13 @@ func runChartList(c apiClient, out io.Writer, format, project, env string) error
 	}
 	return ui.Render(out, format, ui.TableSpec{
 		Columns: chartColumns,
-		Rows:    chartRows(charts),
+		Rows:    chartRows(charts, format),
 	}, charts)
 }
 
 func init() {
-	chartCmd.PersistentFlags().StringP("project", "p", "", "Project name or id")
-	chartCmd.PersistentFlags().StringP("env", "e", "", "Environment name, stage, or id (default: the project's default environment)")
+	chartCmd.PersistentFlags().StringP("project", "p", "", byoFlagUsage("alethia chart", byoKeyProject))
+	chartCmd.PersistentFlags().StringP("env", "e", "", byoFlagUsage("alethia chart", byoKeyEnv))
 	chartCmd.AddCommand(chartListCmd)
 	rootCmd.AddCommand(chartCmd)
 }

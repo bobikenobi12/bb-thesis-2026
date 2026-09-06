@@ -1379,11 +1379,19 @@ classify_arn() {
 #    EXCLUDES this run (SELF_ENV), and the same specificity + prod/shared denylist as the
 #    top-of-file ENV guards. This narrows what is REPORTED; it never widens what is SWEPT. ──
 classify_orphan_envs() {
-	local arn v oenv cls
-	aws resourcegroupstaggingapi get-resources --region "$REGION" \
+	local arn v oenv cls rows
+	# ⚠️ THROUGH probe_run, NOT a raw call with `2>/dev/null` — this is the ONLY discovery the
+	# preflight has, and it is the exact laundering this file's header names: the redirect ate the
+	# reason and the pipe replaced the tagging API's status with `read`'s, so an expired session or
+	# a throttled `get-resources` produced empty output and exit 0. That is byte-identical to "this
+	# region holds no orphans", and it is what let the reaper publish a clean BILLING account it had
+	# never looked at. probe_run retries, keeps the call's REAL status, and records UNVERIFIABLE
+	# when it never answered — which probe_report_discovery then reports at the preflight's exits.
+	rows="$(probe_run orphan-scan aws resourcegroupstaggingapi get-resources --region "$REGION" \
 		--tag-filters "Key=alethia:project-id" \
 		--query 'ResourceTagMappingList[].[ResourceARN,Tags[?Key==`alethia:project-id`].Value|[0]]' \
-		--output text 2>/dev/null | while IFS=$'\t' read -r arn v; do
+		--output text || true)"
+	printf '%s\n' "$rows" | while IFS=$'\t' read -r arn v; do
 		[ -n "$arn" ] && [ -n "$v" ] || continue
 		case "$v" in e2e-*) ;; *) continue ;; esac # e2e-prefixed values only — never prod project-ids
 		oenv="${v#e2e-}"
@@ -1428,6 +1436,19 @@ if [ "$PREFLIGHT" = "1" ]; then
 	fi
 
 	if [ -z "$orphans" ]; then
+		# ── REPORT BEFORE THE EARLY RETURN. ────────────────────────────────────────────────────
+		#
+		# This branch is reached BOTH when discovery answered "nothing" and when discovery never
+		# answered at all — an expired session or a throttled API yields an empty orphan list, and
+		# the ✓ line below then prints over an account nobody looked at, exit 0, with the
+		# `probe_warn_unverifiable` call at the bottom of this block never reached. That log is
+		# byte-identical to a genuinely empty account, and scripts/e2e/reaper-result.mjs recorded it
+		# as `clean` — evidence about resources that BILL.
+		#
+		# hcloud-cleanup.sh has always reported here; the other four did not. See
+		# scripts/e2e/lib/sweep-probe.sh's probe_report_discovery header for why the marker is
+		# positive rather than another warning.
+		probe_report_discovery aws "the preflight orphan scan in ${REGION}"
 		echo "✓ preflight: no BILLING prior-run e2e orphans in ${REGION} — nothing to sweep"
 		exit 0
 	fi
@@ -1475,7 +1496,7 @@ if [ "$PREFLIGHT" = "1" ]; then
 		# ⚠️ Not "the account is clean" — "every orphan this preflight could SEE is swept".
 		# The discovery listings can fail too, and preflight is explicitly non-blocking, so
 		# the honest report here is a warning; the always() teardown is what gates.
-		probe_warn_unverifiable aws "the preflight orphan scan in ${REGION}"
+		probe_report_discovery aws "the preflight orphan scan in ${REGION}"
 		echo "✓ preflight complete — all prior-run e2e orphans in ${REGION} swept"
 	fi
 	exit 0 # preflight never blocks the provisioning run

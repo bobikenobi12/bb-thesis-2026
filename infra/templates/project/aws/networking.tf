@@ -160,9 +160,9 @@ module "common_vpc" {
 resource "aws_vpc_endpoint" "s3_gateway" {
   count = var.provision_vpc ? 1 : 0
 
-  vpc_id            = try(var.provision_vpc ? module.common_vpc[0].vpc_id : var.vpc_id, "")
+  vpc_id            = try(module.common_vpc[0].vpc_id, null) != null ? module.common_vpc[0].vpc_id : var.vpc_id
   service_name      = "com.amazonaws.${var.region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = var.provision_vpc ? module.common_vpc[0].private_route_table_ids : var.vpc_private_route_table_ids
+  route_table_ids   = try(module.common_vpc[0].private_route_table_ids, null) != null ? module.common_vpc[0].private_route_table_ids : var.vpc_private_route_table_ids
   tags              = merge(local.aws_default_tags, { Name = "${local.vpc_s3_endpoint_name}" })
 }

@@ -19,7 +19,8 @@ import (
 // comment and the ordering were wrong:
 //
 //  1. The stated 40m base is HETZNER's — 25m waitTimeout + 8m ArgoCD + 7m headroom, the numbers as
-//     they stood then (hetzner's waitTimeout is 40m now, so that base is 55m; the arithmetic below
+//     they stood then (hetzner's waitTimeout is 40m now and the lean argo budget is 12m30s since
+//     #3580, so that base is 59m30s; the arithmetic below
 //     is derived and needed no edit for it). Every managed
 //     cloud has a 50m waitTimeout (t2ProviderTable), and the soak is on by default from the workflow
 //     (`vars.E2E_SOAK || '10m'` ⇒ 10m + 15m headroom). So a managed floor leg's real ctx is
@@ -126,6 +127,17 @@ func ResolveT2Budget(provider, env string) (T2Budget, error) {
 
 	add("deploy-wait", resolveT2WaitTimeout(p))
 	add("argocd-converge", ArgoAssertTimeout())
+	// The max-config cluster probes (#2652). `argocd-converge` above pays for AssertArgoAppsHealthy
+	// and nothing else; the probes are a SECOND, independent wait that used to spend against a ctx
+	// reserving nothing for them. Until #2652 that only touched hetzner, where the store is Ready in
+	// seconds — from there it fires on all four managed clouds, i.e. exactly the clouds where the
+	// store is the thing hypothesised to be missing and the poll therefore runs long.
+	//
+	// Sized from the grid itself, so adding a probed cell moves the ladder without anyone
+	// remembering to.
+	if MaxConfigEnabled() {
+		add("max-config-probe", MaxConfigProbeBudget(provider))
+	}
 
 	soakDur, soakOn, err := parseSoakDuration(os.Getenv("ALETHIA_E2E_SOAK"))
 	if err != nil {

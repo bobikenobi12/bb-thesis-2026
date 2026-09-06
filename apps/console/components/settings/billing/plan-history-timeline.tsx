@@ -29,7 +29,7 @@ export function PlanHistoryTimeline() {
 				{!entries ? (
 					<Skeleton className="h-20 w-full" />
 				) : entries.length === 0 ? (
-					<div className="text-[13px] text-text-tertiary">No plan history yet.</div>
+					<div className="text-ui-md text-text-tertiary">No plan history yet.</div>
 				) : (
 					<div className="relative pl-[26px] before:absolute before:bottom-[18px] before:left-1 before:top-1 before:w-px before:bg-border-strong before:content-['']">
 						{entries.map((e) => (
@@ -42,11 +42,11 @@ export function PlanHistoryTimeline() {
 											: "border-text-tertiary bg-surface",
 									)}
 								/>
-								<div className="mb-1 font-mono text-[10.5px] text-text-tertiary">
+								<div className="mb-1 font-mono text-ui-2xs text-text-tertiary">
 									{formatDate(e.when)}
 								</div>
-								<div className="text-[13px] text-text-primary">{e.title}</div>
-								<div className="mt-0.5 text-[12px] text-text-tertiary">{e.detail}</div>
+								<div className="text-ui-md text-text-primary">{e.title}</div>
+								<div className="mt-0.5 text-ui-sm text-text-tertiary">{e.detail}</div>
 							</div>
 						))}
 					</div>

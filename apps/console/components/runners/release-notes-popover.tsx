@@ -13,7 +13,7 @@ import {
   useUpdateRunner,
   type RunnerReleaseInfo,
 } from "@/lib/query/use-runners-query";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelative } from "@repo/format";
 import { ArrowUpCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -86,7 +86,7 @@ export function ReleaseNotesPopover({
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-medium">v{version}</span>
             {release?.is_breaking && (
-              <Badge variant="destructive" className="py-0 text-[10px]">
+              <Badge variant="destructive" className="py-0 text-ui-2xs">
                 Breaking
               </Badge>
             )}
@@ -96,12 +96,10 @@ export function ReleaseNotesPopover({
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>
                 Released{" "}
-                {formatDistanceToNow(new Date(release.released_at), {
-                  addSuffix: true,
-                })}
+                {formatRelative(release.released_at)}
               </span>
               {release.commit_sha && (
-                <span className="font-mono text-[10px] text-muted-foreground/60">
+                <span className="font-mono text-ui-2xs text-muted-foreground/60">
                   {release.commit_sha.slice(0, 7)}
                 </span>
               )}

@@ -85,24 +85,20 @@ func TestResolveAddOnCloudIdentitySubstitutesPerCloud(t *testing.T) {
 // THE FAIL-SAFE. A missing output must not leave the sentinel standing: on AWS the SDK would try
 // to assume a role literally named `alethia-infra:…`, and on every cloud an annotation holding a
 // placeholder makes a broken install look configured.
-func TestResolveAddOnCloudIdentityDropsTheBlockWhenTheFactIsMissing(t *testing.T) {
+func TestResolveAddOnCloudIdentityFailsClosedWhenTheFactIsMissing(t *testing.T) {
 	t.Parallel()
 	addons := externalDNSWithPlaceholder("eks.amazonaws.com/role-arn")
 	addons[1].Values["podLabels"] = map[string]interface{}{"azure.workload.identity/use": "true"}
 	var warn strings.Builder
 
 	// aws, but the output never came back.
-	ResolveAddOnCloudIdentity(addons, &InfraFacts{Provider: "aws"}, io.Discard, &warn)
+	err := ResolveAddOnCloudIdentity(addons, &InfraFacts{Provider: "aws"}, io.Discard, &warn)
 
-	if _, still := addons[1].Values["serviceAccount"]; still {
-		t.Error("the serviceAccount block survived with no identity to put in it — the annotation " +
-			"would hold the literal placeholder, which is worse than no annotation")
+	if err == nil || !strings.Contains(err.Error(), "exports no external-dns workload identity") {
+		t.Fatalf("expected missing identity to fail closed, got %v", err)
 	}
-	if _, still := addons[1].Values["podLabels"]; still {
-		t.Error("podLabels survived; it exists only to make Azure's webhook inject an identity there is none of")
-	}
-	if !strings.Contains(warn.String(), "write no DNS records") {
-		t.Errorf("the operator was not told what the degraded install will do:\n%s", warn.String())
+	if _, still := addons[1].Values["serviceAccount"]; !still {
+		t.Error("failed resolution must not partially remove the serviceAccount block")
 	}
 }
 

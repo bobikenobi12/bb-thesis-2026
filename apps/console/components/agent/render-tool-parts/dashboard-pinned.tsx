@@ -33,7 +33,7 @@ export function DashboardPinnedCard({
 				<Button
 					variant="outline"
 					size="sm"
-					className="h-6 gap-1.5 rounded-none px-2 text-[11px]"
+					className="h-6 gap-1.5 rounded-none px-2 text-ui-xs"
 					onClick={openGrid}
 				>
 					<LayoutDashboard className="h-3 w-3" />

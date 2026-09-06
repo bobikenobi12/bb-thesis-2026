@@ -175,11 +175,19 @@ type ProvisionJob struct {
 	RunnerName  string `json:"runner_name,omitempty"`
 }
 
+// JobsPage is one page of GET /api/jobs.
+//
+// Page is the cursor vocabulary and the field to build on: it carries the next position, the
+// served page size and whether Total is exact or a floor. Total/Limit/Offset are the pre-cursor
+// wire the interactive pager still uses; Total and Limit are the same numbers as Page.Total and
+// Page.Limit, echoed rather than counted twice, and Total is therefore CAPPED — read Page.Mode
+// before rendering it as a precise count.
 type JobsPage struct {
 	Jobs   []ProvisionJob `json:"jobs"`
 	Total  int            `json:"total"`
 	Limit  int            `json:"limit"`
 	Offset int            `json:"offset"`
+	Page   PageInfo       `json:"page"`
 }
 
 type JobLog struct {
@@ -201,6 +209,15 @@ type Runner struct {
 	Version            string    `json:"version"`
 	IsDefault          bool      `json:"is_default"`
 	CreatedAt          time.Time `json:"created_at"`
+}
+
+// ClustersPage is one page of GET /api/cli/clusters. Mirrors cliClustersPageResponse.
+//
+// There are no Total/Limit/Offset twins beside Page, unlike JobsPage: that endpoint carries them
+// because a shipped CLI walks it by offset, and this one never had them to keep.
+type ClustersPage struct {
+	Clusters []ClusterSummary `json:"clusters"`
+	Page     PageInfo         `json:"page"`
 }
 
 type ClusterSummary struct {
@@ -278,12 +295,13 @@ type QueueJobParams struct {
 
 // --- Helpers ---
 
-// setAuthHeaders applies the bearer token and, when an active organization is
-// selected in the CLI config, the X-Alethia-Org header. Routing every request
-// through this keeps org context (the tenancy boundary) uniform across the API.
+// setAuthHeaders applies the bearer token and, when an organization is in scope, the
+// X-Alethia-Org header. Routing every request through this keeps org context (the tenancy
+// boundary) uniform across the API. The scope is the `--org` override when one was named,
+// otherwise the CLI config's active organization — see resolveOrgScope in org_scope.go.
 func (c *Client) setAuthHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.authToken)
-	if org := types.LoadCliConfig().ActiveOrgID; org != "" {
+	if org := resolveOrgScope(); org != "" {
 		req.Header.Set("X-Alethia-Org", org)
 	}
 }
@@ -737,15 +755,59 @@ func (c *Client) DeployRunner(name, cloudIdentityID, region, assignedRunnerID st
 
 // --- Clusters (Project Clusters) ---
 
-func (c *Client) GetClusters() ([]ClusterSummary, error) {
+// GetClustersPage fetches ONE page of the org's clusters.
+//
+// Prefer GetClusters unless you are rendering a pager: a page is a window, and a caller that
+// reads Clusters and stops has silently truncated the collection at the server's default page
+// size. That is the failure this method's existence makes explicit rather than accidental.
+func (c *Client) GetClustersPage(opts PageOpts) (*ClustersPage, error) {
 	endpoint := fmt.Sprintf("%s/cli/clusters", c.baseURL)
-	var successResp struct {
-		Clusters []ClusterSummary `json:"clusters"`
+	params := url.Values{}
+	opts.Apply(params)
+	if len(params) > 0 {
+		endpoint = fmt.Sprintf("%s?%s", endpoint, params.Encode())
 	}
-	if err := c.doGet(endpoint, &successResp); err != nil {
+	var page ClustersPage
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to get clusters: %w", err)
 	}
-	return successResp.Clusters, nil
+	// A server older than #3672 answers with no `page` object at all, which decodes to the ZERO
+	// PageInfo — Mode "", Limit 0, Total 0. That is a third mode the vocabulary does not define,
+	// and it is not merely undefined but WRONG for a caller rendering a pager: Total 0 beside a
+	// non-empty Clusters slice, and IsCapped() false for a reason it never established. The old
+	// response is a complete, exact, single page of everything, so it is described as one.
+	// GetClusters is unaffected either way — NextCursor stays empty, so the walk still terminates
+	// in one request.
+	if page.Page.Mode == "" {
+		page.Page = PageInfo{
+			Mode:  PageModeExact,
+			Limit: len(page.Clusters),
+			Total: len(page.Clusters),
+		}
+	}
+	return &page, nil
+}
+
+// GetClusters returns EVERY cluster the org has, walking the cursor to exhaustion.
+//
+// The endpoint used to return the whole collection in one response and now returns a page
+// (#3672). Every caller here — `cluster list`, and `cluster get`'s selector match — means "all of
+// them", so the walk lives at this seam rather than in each command: a command that walked for
+// itself would be a second implementation of the three termination bugs AllPages documents, and a
+// command that did not walk would print a plausible, short list with no error.
+//
+// A page whose response carries no `page` object at all has an empty NextCursor either way — so
+// this also does the right thing against a server older than the conversion, in one request.
+// GetClustersPage additionally rewrites that absent page into an exact single page, so the pager
+// case is not left holding a mode the vocabulary does not define.
+func (c *Client) GetClusters() ([]ClusterSummary, error) {
+	return AllPages(func(cursor string) ([]ClusterSummary, PageInfo, error) {
+		page, err := c.GetClustersPage(PageOpts{Cursor: cursor})
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		return page.Clusters, page.Page, nil
+	})
 }
 
 // GetCluster fetches a single cluster by its id, plus its compact ArgoCD/GitOps posture.
@@ -1769,14 +1831,33 @@ func (c *Client) CreateProject(params CreateProjectParams) (*Project, error) {
 
 // ListEnvironments returns a project's environments (default first).
 func (c *Client) ListEnvironments(project string) ([]Environment, error) {
+	return AllPages(func(cursor string) ([]Environment, PageInfo, error) {
+		page, err := c.getProjectEnvironmentsPage(project, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		return page.Environments, page.Page, nil
+	})
+}
+
+func (c *Client) getProjectEnvironmentsPage(project, cursor string) (*struct {
+	Environments []Environment `json:"environments"`
+	Page         PageInfo      `json:"page"`
+}, error) {
 	endpoint := fmt.Sprintf("%s/cli/projects/%s/environments", c.baseURL, url.PathEscape(project))
-	var successResp struct {
-		Environments []Environment `json:"environments"`
+	params := url.Values{}
+	PageOpts{Cursor: cursor}.Apply(params)
+	if len(params) > 0 {
+		endpoint = fmt.Sprintf("%s?%s", endpoint, params.Encode())
 	}
-	if err := c.doGet(endpoint, &successResp); err != nil {
+	var page struct {
+		Environments []Environment `json:"environments"`
+		Page         PageInfo      `json:"page"`
+	}
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
-	return successResp.Environments, nil
+	return &page, nil
 }
 
 // AddEnvironmentParams is the payload for AddEnvironment. A struct rather than positional arguments
@@ -2088,18 +2169,52 @@ type ProjectAddons struct {
 	Addons      []Addon `json:"addons"`
 }
 
+type ProjectAddonsPage struct {
+	Environment string   `json:"environment"`
+	Addons      []Addon  `json:"addons"`
+	Page        PageInfo `json:"page"`
+}
+
 // GetProjectAddons returns the catalog add-ons installed in a project environment (the default
 // environment when env is empty; otherwise the environment addressed by name, stage, or id).
 func (c *Client) GetProjectAddons(project, env string) (*ProjectAddons, error) {
-	endpoint := fmt.Sprintf("%s/cli/projects/%s/addons", c.baseURL, url.PathEscape(project))
-	if env != "" {
-		endpoint = fmt.Sprintf("%s?env=%s", endpoint, url.QueryEscape(env))
+	var out *ProjectAddons
+	_, err := AllPages(func(cursor string) ([]Addon, PageInfo, error) {
+		page, err := c.getProjectAddonsPage(project, env, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		if out == nil {
+			out = &ProjectAddons{Environment: page.Environment}
+		}
+		out.Addons = append(out.Addons, page.Addons...)
+		return page.Addons, page.Page, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	var resp ProjectAddons
-	if err := c.doGet(endpoint, &resp); err != nil {
+	return out, nil
+}
+
+func (c *Client) getProjectAddonsPage(project, env, cursor string) (*ProjectAddonsPage, error) {
+	endpoint := withEnvParam(
+		fmt.Sprintf("%s/cli/projects/%s/addons", c.baseURL, url.PathEscape(project)),
+		env,
+	)
+	params := url.Values{}
+	PageOpts{Cursor: cursor}.Apply(params)
+	if len(params) > 0 {
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		endpoint = fmt.Sprintf("%s%s%s", endpoint, sep, params.Encode())
+	}
+	var page ProjectAddonsPage
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to get add-ons: %w", err)
 	}
-	return &resp, nil
+	return &page, nil
 }
 
 // EnableAddonParams is the payload for EnableAddon. Values is the add-on's own knob map, validated
@@ -2299,17 +2414,51 @@ type ProjectByoCharts struct {
 	Charts      []ByoChart `json:"charts"`
 }
 
+type ProjectByoChartsPage struct {
+	Environment string     `json:"environment"`
+	Charts      []ByoChart `json:"charts"`
+	Page        PageInfo   `json:"page"`
+}
+
 // GetProjectByoCharts returns the BYO Helm charts attached to a project environment.
 func (c *Client) GetProjectByoCharts(project, env string) (*ProjectByoCharts, error) {
-	endpoint := fmt.Sprintf("%s/cli/projects/%s/byo-charts", c.baseURL, url.PathEscape(project))
-	if env != "" {
-		endpoint = fmt.Sprintf("%s?env=%s", endpoint, url.QueryEscape(env))
+	var out *ProjectByoCharts
+	_, err := AllPages(func(cursor string) ([]ByoChart, PageInfo, error) {
+		page, err := c.getProjectByoChartsPage(project, env, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		if out == nil {
+			out = &ProjectByoCharts{Environment: page.Environment}
+		}
+		out.Charts = append(out.Charts, page.Charts...)
+		return page.Charts, page.Page, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	var resp ProjectByoCharts
-	if err := c.doGet(endpoint, &resp); err != nil {
+	return out, nil
+}
+
+func (c *Client) getProjectByoChartsPage(project, env, cursor string) (*ProjectByoChartsPage, error) {
+	endpoint := withEnvParam(
+		fmt.Sprintf("%s/cli/projects/%s/byo-charts", c.baseURL, url.PathEscape(project)),
+		env,
+	)
+	params := url.Values{}
+	PageOpts{Cursor: cursor}.Apply(params)
+	if len(params) > 0 {
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		endpoint = fmt.Sprintf("%s%s%s", endpoint, sep, params.Encode())
+	}
+	var page ProjectByoChartsPage
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to get BYO charts: %w", err)
 	}
-	return &resp, nil
+	return &page, nil
 }
 
 // --- BYO IaC ---
@@ -2364,17 +2513,40 @@ type Promotion struct {
 // GetProjectPromotions returns a project's promotions, optionally scoped to one target
 // environment (by name, stage, or id).
 func (c *Client) GetProjectPromotions(project, env string) ([]Promotion, error) {
-	endpoint := fmt.Sprintf("%s/cli/projects/%s/promotions", c.baseURL, url.PathEscape(project))
-	if env != "" {
-		endpoint = fmt.Sprintf("%s?env=%s", endpoint, url.QueryEscape(env))
+	return AllPages(func(cursor string) ([]Promotion, PageInfo, error) {
+		page, err := c.getProjectPromotionsPage(project, env, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		return page.Promotions, page.Page, nil
+	})
+}
+
+func (c *Client) getProjectPromotionsPage(project, env, cursor string) (*struct {
+	Promotions []Promotion `json:"promotions"`
+	Page       PageInfo    `json:"page"`
+}, error) {
+	endpoint := withEnvParam(
+		fmt.Sprintf("%s/cli/projects/%s/promotions", c.baseURL, url.PathEscape(project)),
+		env,
+	)
+	params := url.Values{}
+	PageOpts{Cursor: cursor}.Apply(params)
+	if len(params) > 0 {
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		endpoint = fmt.Sprintf("%s%s%s", endpoint, sep, params.Encode())
 	}
-	var resp struct {
+	var page struct {
 		Promotions []Promotion `json:"promotions"`
+		Page       PageInfo    `json:"page"`
 	}
-	if err := c.doGet(endpoint, &resp); err != nil {
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to get promotions: %w", err)
 	}
-	return resp.Promotions, nil
+	return &page, nil
 }
 
 // PromotionApproval is one approval slot on a promotion.
@@ -2434,18 +2606,52 @@ type StagedChanges struct {
 	Changes     []StagedChange `json:"changes"`
 }
 
+type StagedChangesPage struct {
+	Environment string         `json:"environment"`
+	Changes     []StagedChange `json:"changes"`
+	Page        PageInfo       `json:"page"`
+}
+
 // GetProjectStagedChanges returns an environment's staged changes (the default environment when
 // env is empty; otherwise the environment addressed by name, stage, or id).
 func (c *Client) GetProjectStagedChanges(project, env string) (*StagedChanges, error) {
-	endpoint := fmt.Sprintf("%s/cli/projects/%s/staged", c.baseURL, url.PathEscape(project))
-	if env != "" {
-		endpoint = fmt.Sprintf("%s?env=%s", endpoint, url.QueryEscape(env))
+	var out *StagedChanges
+	_, err := AllPages(func(cursor string) ([]StagedChange, PageInfo, error) {
+		page, err := c.getProjectStagedChangesPage(project, env, cursor)
+		if err != nil {
+			return nil, PageInfo{}, err
+		}
+		if out == nil {
+			out = &StagedChanges{Environment: page.Environment}
+		}
+		out.Changes = append(out.Changes, page.Changes...)
+		return page.Changes, page.Page, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	var resp StagedChanges
-	if err := c.doGet(endpoint, &resp); err != nil {
+	return out, nil
+}
+
+func (c *Client) getProjectStagedChangesPage(project, env, cursor string) (*StagedChangesPage, error) {
+	endpoint := withEnvParam(
+		fmt.Sprintf("%s/cli/projects/%s/staged", c.baseURL, url.PathEscape(project)),
+		env,
+	)
+	params := url.Values{}
+	PageOpts{Cursor: cursor}.Apply(params)
+	if len(params) > 0 {
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+		endpoint = fmt.Sprintf("%s%s%s", endpoint, sep, params.Encode())
+	}
+	var page StagedChangesPage
+	if err := c.doGet(endpoint, &page); err != nil {
 		return nil, fmt.Errorf("failed to get staged changes: %w", err)
 	}
-	return &resp, nil
+	return &page, nil
 }
 
 // --- Cloud inventory ---

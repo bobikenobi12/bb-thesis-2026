@@ -12,6 +12,7 @@ import { Check } from "lucide-react";
 import { Badge } from "@repo/ui/badge";
 import { Button } from "@repo/ui/button";
 import { Card } from "@repo/ui/card";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { PAID_PLANS, type PlanId, PLAN_CATALOG } from "@repo/plan-catalog";
 import type { BillingPlan } from "@/lib/db/schema/enums";
 import { useLivePlanPrice } from "@/lib/billing/use-live-plan-price";
@@ -54,16 +55,20 @@ export function PlanPicker({
 				return (
 					<Card key={plan.id} className="flex flex-col gap-4 p-5">
 						<div className="space-y-1">
-							<div className="flex items-center justify-between gap-2">
-								<h3 className="text-sm font-semibold text-foreground">
-									{plan.name}
-								</h3>
-								{isCurrent && (
-									<Badge variant="outline" className="text-[10px] uppercase">
-										Current
-									</Badge>
-								)}
-							</div>
+							{/* The card's name and its "Current" marker are the heading and its
+							    actions — the same shape `SectionHeading` already lays out, so the
+							    card no longer owns a second answer to how a heading is typeset. */}
+							<SectionHeading
+								level={3}
+								title={plan.name}
+								actions={
+									isCurrent ? (
+										<Badge variant="outline" className="text-ui-2xs uppercase">
+											Current
+										</Badge>
+									) : undefined
+								}
+							/>
 							<PlanPriceLabel plan={plan.id} />
 							<p className="text-xs text-muted-foreground">{plan.tagline}</p>
 						</div>

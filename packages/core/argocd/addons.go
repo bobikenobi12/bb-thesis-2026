@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/names"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
 	"gopkg.in/yaml.v3"
@@ -198,7 +199,16 @@ type addonAutomated struct {
 // so re-deploys converge on the same Application rather than creating duplicates. Exported so
 // the health read-back can address the same names.
 func AddOnAppName(id string) string {
-	return "addon-" + id
+	// UNBOUNDED, deliberately. An Application is a CRD instance, so Kubernetes validates its name as
+	// a DNS-1123 SUBDOMAIN (≤253) — not the ≤63 of a label — and `addon-<70 chars>` applies today.
+	// A BYO chart attached before #3665 has exactly such an id, because chartSlug had no cap.
+	//
+	// Bounding here would therefore not prevent an impossible name; it would CHANGE the identity of
+	// objects that already exist. This name is also the Helm release name and the string
+	// ManagedAddOnNames feeds to PruneManagedAddOns, which deletes every managed Application NOT in
+	// that list — so a truncated name would prune the live one and cascade its workloads. The cap
+	// belongs where the id is WRITTEN (lib/validations/names.ts), applying to new ids only.
+	return names.AddOnAppNamePrefix + id
 }
 
 // RenderManagedAddOns writes one ArgoCD Application manifest per managed add-on into a fresh

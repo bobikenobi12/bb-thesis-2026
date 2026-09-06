@@ -6,7 +6,8 @@ import { z } from "zod";
 import { toRecord } from "@/lib/coerce";
 import { HELM_REGISTRY_HOST_RULES } from "@/lib/connectors/helm-registry-hosts";
 import { getConnectorProviderBySlug } from "@/lib/connectors/registry.generated";
-import { slugify } from "@/lib/slug";
+import { canSlugify } from "@/lib/utils/slugify";
+import { environmentNameSchema, namespaceSchema } from "@/lib/validations/names";
 import { appsPathSchema } from "@/lib/validations/apps-path";
 import {
 	environmentLifecycle,
@@ -42,6 +43,11 @@ import type {
 	StorageProviderConfig,
 	TopicSubscription,
 } from "@/types/jsonb.types";
+
+
+/** Longest a project display name may be. One value, because create and rename used to disagree
+ * (50 vs 100) and a name in between was reachable by only one of them. */
+export const PROJECT_NAME_MAX_LENGTH = 100;
 
 // Insert schemas derived from the Drizzle tables (drizzle-zod) — the replacement
 // for the retired supazod `public*InsertSchema` schemas. JSONB columns get their
@@ -317,6 +323,33 @@ const servicesInsert = createInsertSchema(projectServices, {
 	probe: serviceProbeSchema.nullable().optional(),
 });
 
+/**
+ * A component node's name.
+ *
+ * IT IS NOT VALIDATED AS A DNS LABEL HERE, AND THAT IS THE FIX FOR #3588, NOT AN OVERSIGHT.
+ *
+ * The rule is real, but it is a HETZNER rule. Only `hetznerDataServicesToAddOns` turns a node name
+ * into a Kubernetes object name (`db-` / `cache-` / `queue-` / `topic-` / `nosql-` / `registry-`),
+ * and it is reached only under `identity.provider === "hetzner"` (projects.ts). On AWS the same
+ * field goes raw into tofu: a table's name IS `table_name_suffix`, which
+ * `infra/templates/project/aws/modules/dynamodb/dynamodb.tf` uses as its `for_each` KEY. DynamoDB
+ * accepts `[A-Za-z0-9_.-]`, so `Orders.v2` is legal there and deploys today.
+ *
+ * Enforcing the label rule in this schema did two things, both bad, and neither visible from here:
+ *
+ *  1. Every write path re-parses the whole document, so an existing AWS project holding such a name
+ *     became UNSAVABLE — not blocked from deploying, unable to be edited at all.
+ *  2. The rename the error demanded re-keys that `for_each`, so tofu REPLACES the table. The
+ *     remedy the message named would have destroyed the data it was protecting.
+ *
+ * So the check moved to `buildConfigSnapshot`, next to the DNS and WAF gates, where the provider is
+ * known and where it can be scoped to the paths that CREATE — the same two constraints those gates
+ * already document: mirror the emitter exactly, and never wedge a project that already exists.
+ */
+function nodeNameSchema(kind: string) {
+	return z.string().min(1, `${kind} name is required`);
+}
+
 const autoFields = { id: true, created_at: true, updated_at: true } as const;
 const componentAutoFields = {
 	...autoFields,
@@ -341,25 +374,19 @@ const componentAutoFields = {
 export const environmentMatrixSchema = z
 	.array(
 		z.object({
-			// Slug-safe (DNS-1123 label): the env name feeds the tofu state-path segment and the
-			// Fabric name, so it must never carry path separators or other unsafe characters.
-			name: z
-				.string()
-				.min(1)
-				.max(40)
-				.regex(
-					/^[a-z][a-z0-9-]*$/,
-					"Environment name must be lower-case alphanumeric or hyphen.",
-				),
+			// One environment-name rule, shared with `project env add` and the two server actions
+			// (lib/validations/names.ts). It NORMALIZES rather than refuses: this path used to 400
+			// on `Prod` against a raw-name regex while `project env add Prod` accepted it and stored
+			// `prod`, which is one product answering the same question two ways. What it still
+			// refuses is what normalising cannot fix — a name that slugs to nothing, and a name a
+			// console route would permanently shadow.
+			name: environmentNameSchema,
 			stage: z.enum(environmentStage.enumValues),
 			placement_mode: z.enum(placementMode.enumValues),
 			lifecycle: z.enum(environmentLifecycle.enumValues).optional(),
-			// The k8s destination namespace — DNS-1123 label when present.
-			namespace: z
-				.string()
-				.max(63)
-				.regex(/^[a-z][a-z0-9-]*$/)
-				.nullish(),
+			// The k8s destination namespace. Kubernetes' own grammar, exactly: the old pattern
+			// refused `1dev`, which Kubernetes accepts.
+			namespace: namespaceSchema.nullish(),
 			is_default: z.boolean().optional(),
 		}),
 	)
@@ -375,11 +402,19 @@ const projectSchema = projectsInsert
 	.extend({
 		// Free-text display name (Vercel-style): the URL slug is derived from it via
 		// `slugify` in createProject. We only require it slugifies to something non-empty.
+		//
+		// The cap is PROJECT_NAME_MAX_LENGTH rather than a literal, because this schema and
+		// `updateProjectName` disagreed: create refused anything over 50, rename refused only
+		// over 100. So a name between 51 and 100 characters was reachable by renaming and
+		// un-reachable by creating, and the create form could not reproduce a project the rename
+		// path had already made. Unified on the PERMISSIVE bound: narrowing to 50 would refuse
+		// existing names on their next edit, and nothing downstream needs the shorter one — the
+		// slug is capped independently at 63 by `slugify`.
 		project_name: z
 			.string()
 			.min(1, "Project name is required")
-			.max(50)
-			.refine((v) => slugify(v).length > 0, "Enter at least one letter or number"),
+			.max(PROJECT_NAME_MAX_LENGTH)
+			.refine((v) => canSlugify(v), "Enter at least one letter or number"),
 		region: z.string().min(1, "Region is required"),
 		cloud_identity_id: z.string().min(1, "Cloud account is required"),
 		container_platform: z.string().optional(),
@@ -509,26 +544,26 @@ const databaseItemSchema = databasesInsert.omit({
 	...componentAutoFields,
 	endpoint: true,
 	reader_endpoint: true,
-}).extend({ name: z.string().min(1, "Database name is required") });
+}).extend({ name: nodeNameSchema("Database") });
 
 const cacheItemSchema = cachesInsert.omit({
 	...componentAutoFields,
 	endpoint: true,
 	reader_endpoint: true,
-}).extend({ name: z.string().min(1, "Cache name is required") });
+}).extend({ name: nodeNameSchema("Cache") });
 
 const queueItemSchema = queuesInsert
 	.omit(componentAutoFields)
-	.extend({ name: z.string().min(1, "Queue name is required") });
+	.extend({ name: nodeNameSchema("Queue") });
 
 const topicItemSchema = topicsInsert
 	.omit(componentAutoFields)
-	.extend({ name: z.string().min(1, "Topic name is required") });
+	.extend({ name: nodeNameSchema("Topic") });
 
 const nosqlItemSchema = nosqlInsert
 	.omit(componentAutoFields)
 	.extend({
-		name: z.string().min(1, "Table name is required"),
+		name: nodeNameSchema("Table"),
 		partition_key: z.string().min(1, "Hash key is required"),
 	});
 
@@ -553,7 +588,7 @@ const secretItemSchema = secretsInsert
 		status: true,
 		status_message: true,
 	})
-	.extend({ name: z.string().min(1, "Secret name is required") })
+	.extend({ name: nodeNameSchema("Secret") })
 	.superRefine((value, ctx) => {
 		// Native is the default and needs no connector.
 		if (!value.provider || value.provider === "native") return;
@@ -617,7 +652,7 @@ const registryItemSchema = registriesInsert
 		// Output column (set after the first deploy), never designed by the user.
 		repository_url: true,
 	})
-	.extend({ name: z.string().min(1, "Registry name is required") })
+	.extend({ name: nodeNameSchema("Registry") })
 	.superRefine((value, ctx) => {
 		// Native is the default and needs no connector.
 		if (!value.provider || value.provider === "native") return;
@@ -674,7 +709,7 @@ const helmRegistryItemSchema = helmRegistriesInsert
 		status: true,
 		status_message: true,
 	})
-	.extend({ name: z.string().min(1, "Chart repo name is required") })
+	.extend({ name: nodeNameSchema("Chart repo") })
 	.superRefine((value, ctx) => {
 		const rule = value.provider ? HELM_REGISTRY_HOST_RULES[value.provider] : undefined;
 		if (!value.provider || !rule) {
@@ -715,7 +750,7 @@ const serviceItemSchema = servicesInsert
 		resolved_image: true,
 	})
 	.extend({
-		name: z.string().min(1, "Service name is required"),
+		name: nodeNameSchema("Service"),
 		type: z
 			.enum(["deployment", "job", "cronjob", "statefulset"])
 			.default("deployment"),
@@ -769,3 +804,32 @@ export {
 	dnsSchema,
 	repositoriesSchema,
 };
+
+/**
+ * A project name the org does not already hold, for a clone the user did not get to name.
+ *
+ * `duplicateProjectForProvider` rebuilds a project through `createProject`, and
+ * `convertProjectConfig` never touches `project_name` — the same-provider branch is a bare
+ * `structuredClone`. Without a derived name the clone carries the SOURCE project's name in the
+ * source project's own org, which #3145's uniqueness check matches against the source row itself:
+ * the cross-cloud duplicate dialog has no name field, so it failed 100% of the time.
+ *
+ * Mirrors `pickFreeSlug`'s shape but compares CASE-INSENSITIVELY, because that is what
+ * `projects_org_id_project_name_key` enforces — UNIQUE on `(org_id, lower(project_name))`. Checking
+ * with a different predicate than the index enforces is how a friendly message gets skipped and a
+ * raw 23505 reaches the user instead.
+ *
+ * A suggestion, not a guarantee: two concurrent duplicates can derive the same name, and the index
+ * is what refuses the loser — mapped onto `ProjectNameTakenError` like any other collision.
+ *
+ * It lives here rather than beside its caller because that caller is a `"use server"` module, where
+ * every export must be an async function — so a pure helper there can be neither exported nor
+ * unit-tested.
+ */
+export function pickFreeProjectName(base: string, taken: string[]): string {
+	const used = new Set(taken.map((n) => n.toLowerCase()));
+	if (!used.has(base.toLowerCase())) return base;
+	let n = 2;
+	while (used.has(`${base} ${n}`.toLowerCase())) n++;
+	return `${base} ${n}`;
+}

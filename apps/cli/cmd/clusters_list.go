@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
@@ -21,26 +20,33 @@ var clusterListColumns = []string{"Project", "Cluster", "Version", "Status", "Ar
 var clusterListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all project clusters",
+	Long: `List every cluster across your projects, one row per project environment.
+
+The command takes no input of its own: at a terminal it opens the navigable table, and in a pipe
+or with --no-input it prints the static one. Use ` + "`alethia cluster get`" + ` for a single cluster.`,
+	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
+			return
 		}
 
 		apiClient := api.NewClient(token)
 		var clusters []api.ClusterSummary
 
-		ui.RunSpinner("Fetching clusters...", func() {
+		runSpinner("Fetching clusters...", func() {
 			clusters, err = apiClient.GetClusters()
 		})
 
 		if err != nil {
 			failf("Failed to fetch clusters: %v", err)
+			return
 		}
 
 		if interactiveTable(cmd) {
 			if len(clusters) == 0 {
-				ui.Muted("No clusters found. Create a project with a cluster through Alethia.")
+				ui.Muted(clusterEmptyState)
 				return
 			}
 			columns := make([]table.Column, len(clusterListColumns))
@@ -48,7 +54,7 @@ var clusterListCmd = &cobra.Command{
 			for i, title := range clusterListColumns {
 				columns[i] = table.Column{Title: title, Width: widths[i]}
 			}
-			plain := clusterRows(clusters)
+			plain := clusterRows(clusters, ui.FormatTable)
 			rows := make([]table.Row, len(plain))
 			for i, r := range plain {
 				rows[i] = table.Row(r)
@@ -67,35 +73,29 @@ var clusterListCmd = &cobra.Command{
 }
 
 // clusterRows projects each cluster summary into a plain table row.
-func clusterRows(clusters []api.ClusterSummary) [][]string {
+func clusterRows(clusters []api.ClusterSummary, outFmt string) [][]string {
 	rows := make([][]string, len(clusters))
 	for i, c := range clusters {
-		clusterName := c.ClusterName
-		if clusterName == "" {
-			clusterName = ui.SymbolDash
-		}
-		version := c.ClusterVersion
-		if version == "" {
-			version = ui.SymbolDash
-		}
+		clusterName := ui.Cell(outFmt, c.ClusterName, ui.OrDash(c.ClusterName))
+		version := ui.Cell(outFmt, c.ClusterVersion, ui.OrDash(c.ClusterVersion))
 		nodes := fmt.Sprintf("%d/%d/%d", c.NodeMinSize, c.NodeDesiredSize, c.NodeMaxSize)
-		projectLabel := c.ProjectName
-		if c.Environment != "" {
-			projectLabel += " (" + c.Environment + ")"
-		}
 		// Surface the status message inline — it's the actionable detail when a
 		// cluster is FAILED/degraded (the raw field is also in -o json).
-		status := fmt.Sprintf("%s %s", ui.PlainStatusDot(c.Status), strings.ToLower(c.Status))
+		status := ui.Cell(outFmt, c.Status, ui.StatusCell(c.Status))
 		if c.StatusMessage != "" {
-			status += " — " + c.StatusMessage
+			status = ui.Cell(outFmt, c.Status, ui.StatusCell(c.Status)+" — "+c.StatusMessage)
 		}
-		cost := ui.SymbolDash
+		// The dash is rendered inline rather than through a helper on purpose: a `clusterCostCell`
+		// returning ui.SymbolDash would be a second DEFINITION of the empty-value sentinel living
+		// in a command file, which is what hoisting the render helpers (#3694) ended. The costed
+		// arm goes through the one money rule — see clusterCost.
+		cost := ui.Cell(outFmt, "", ui.SymbolDash)
 		if c.EstimatedMonthlyCost != nil {
-			cost = fmt.Sprintf("$%.0f/mo", *c.EstimatedMonthlyCost)
+			cost = ui.Cell(outFmt, fmt.Sprintf("%.2f", *c.EstimatedMonthlyCost), clusterCost(*c.EstimatedMonthlyCost))
 		}
 		// ArgoCD (cluster-side GitOps CD) is installed on every provisioned cluster;
 		// "exposed" = a managed-ingress URL exists (see `cluster get`), else port-forward.
-		argocd := ui.SymbolDash
+		argocd := ui.Cell(outFmt, "", ui.SymbolDash)
 		if c.ClusterName != "" {
 			if c.ArgocdURL != "" {
 				argocd = "exposed"
@@ -104,7 +104,7 @@ func clusterRows(clusters []api.ClusterSummary) [][]string {
 			}
 		}
 		rows[i] = []string{
-			projectLabel,
+			clusterLabel(c),
 			clusterName,
 			version,
 			status,
@@ -118,14 +118,14 @@ func clusterRows(clusters []api.ClusterSummary) [][]string {
 }
 
 // renderClusters writes the cluster list to out in the requested format.
-func renderClusters(out io.Writer, format string, clusters []api.ClusterSummary) error {
-	if len(clusters) == 0 && format == ui.FormatTable {
-		fmt.Fprintln(out, ui.MutedStyle.Render("No clusters found. Create a project with a cluster through Alethia."))
+func renderClusters(out io.Writer, outFormat string, clusters []api.ClusterSummary) error {
+	if len(clusters) == 0 && outFormat == ui.FormatTable {
+		fmt.Fprintln(out, ui.MutedStyle.Render(clusterEmptyState))
 		return nil
 	}
-	return ui.Render(out, format, ui.TableSpec{
+	return ui.Render(out, outFormat, ui.TableSpec{
 		Columns: clusterListColumns,
-		Rows:    clusterRows(clusters),
+		Rows:    clusterRows(clusters, outFormat),
 	}, clusters)
 }
 

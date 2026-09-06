@@ -13,6 +13,13 @@ import { disableAddon, enableAddon } from "@/app/server/actions/addons";
 import { runWithActor } from "@/lib/authz/actor-context";
 import { authorizeCli } from "@/lib/authz/guard";
 import {
+	type CursorScope,
+	MAX_PAGE_SIZE,
+	cursorKey,
+	paginate,
+	parsePageOpts,
+} from "@/lib/cli/paging";
+import {
 	resolveCliEnvironment,
 	resolveCliProject,
 	resolveCliWriteEnvironment,
@@ -24,6 +31,8 @@ import { projectAddons, projects } from "@/lib/db/schema";
 import { addonMode } from "@/lib/db/schema/enums";
 import { cliAddonsResponse, cliOkResponse } from "@/lib/validations/cli-contract";
 
+const ADDONS_LIST = "project-addons";
+
 export async function GET(
 	req: Request,
 	{ params }: { params: Promise<{ id: string }> },
@@ -32,7 +41,19 @@ export async function GET(
 	if ("error" in auth) return auth.error;
 	const { actor } = auth;
 	const { id } = await params;
-	const envParam = new URL(req.url).searchParams.get("env");
+	const { searchParams } = new URL(req.url);
+	const envParam = searchParams.get("env");
+	const cursorScope: CursorScope = { orgId: actor.orgId, list: ADDONS_LIST };
+	const parsed = parsePageOpts(searchParams, cursorScope);
+	if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+	const asked = (key: string) => {
+		const raw = searchParams.get(key);
+		return raw !== null && raw !== "";
+	};
+	const opts =
+		!asked("limit") && !asked("cursor")
+			? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+			: parsed.opts;
 
 	try {
 		const project = await resolveCliProject(actor.orgId, id);
@@ -60,32 +81,44 @@ export async function GET(
 		}
 
 		const db = getServiceDb();
-		const rows = await db
-			.select({
-				addon_id: projectAddons.addon_id,
-				enabled: projectAddons.enabled,
-				mode: projectAddons.mode,
-				version: projectAddons.version,
-				namespace: projectAddons.namespace,
-				status: projectAddons.status,
-				health: projectAddons.health,
-				sync_status: projectAddons.sync_status,
-				last_synced_at: projectAddons.last_synced_at,
-			})
-			.from(projectAddons)
-			.innerJoin(projects, eq(projectAddons.project_id, projects.id))
-			.where(
-				and(
-					eq(projectAddons.project_id, project.id),
-					eq(projectAddons.environment_id, environmentId),
-					eq(projectAddons.source, "catalog"),
-					eq(projects.org_id, actor.orgId),
-				),
-			);
+		const { items, page } = await paginate({
+			db,
+			table: projectAddons,
+			createdAt: projectAddons.created_at,
+			id: projectAddons.id,
+			scope: [
+				eq(projectAddons.project_id, project.id),
+				eq(projectAddons.environment_id, environmentId),
+				eq(projectAddons.source, "catalog"),
+			],
+			cursor: cursorScope,
+			opts,
+			rows: (query) =>
+				db
+					.select({
+						id: projectAddons.id,
+						addon_id: projectAddons.addon_id,
+						enabled: projectAddons.enabled,
+						mode: projectAddons.mode,
+						version: projectAddons.version,
+						namespace: projectAddons.namespace,
+						status: projectAddons.status,
+						health: projectAddons.health,
+						sync_status: projectAddons.sync_status,
+						last_synced_at: projectAddons.last_synced_at,
+						cursor_key: cursorKey(projectAddons.created_at),
+					})
+					.from(projectAddons)
+					.innerJoin(projects, eq(projectAddons.project_id, projects.id))
+					.where(and(query.where, eq(projects.org_id, actor.orgId)))
+					.orderBy(...query.orderBy)
+					.limit(query.limit),
+			positionOf: (row) => ({ createdAt: row.cursor_key, id: row.id }),
+		});
 
 		return cliJson(cliAddonsResponse, {
 			environment: environmentName,
-			addons: rows.map((r) => ({
+			addons: items.map(({ id: _id, cursor_key: _cursor, ...r }) => ({
 				addon_id: r.addon_id,
 				enabled: r.enabled,
 				mode: r.mode,
@@ -96,6 +129,7 @@ export async function GET(
 				sync: r.sync_status,
 				last_synced_at: r.last_synced_at?.toISOString() ?? null,
 			})),
+			page,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";

@@ -9,7 +9,7 @@
 //
 // The keystone is TestT2HetznerPathUnchanged: it asserts the hetzner row, resolved from
 // EXACTLY the env the current nightly sets, produces the effective config the nightly is
-// expected to run with (region nbg1, cluster-ready "8m", wait 40m, overall ctx 55m) — so
+// expected to run with (region nbg1, cluster-ready "8m", wait 40m, overall ctx 56m30s) — so
 // the row cannot drift by accident. The wait was 25m until the `imager_image` snapshot
 // deadline blew twice; see that test for why it moved.
 package e2e
@@ -518,7 +518,18 @@ func TestT2HetznerPathUnchanged(t *testing.T) {
 		wantRegion       = "nbg1"
 		wantClusterReady = "8m"
 		wantWait         = 40 * time.Minute
-		wantOverallCtx   = 55 * time.Minute // deploy wait 40m + argo 8m + 7m headroom
+		// deploy wait 40m + argo 12m30s + 7m headroom. The argo term was 8m until #3580: the lean
+		// tier derived its budget from ZERO add-on charts while converging three — the ungated
+		// external-secrets-operator, the reloader every tier seeds, and metrics-server where it
+		// renders — so it bought argoBudgetBase's time for argoBudgetBase's work plus three real
+		// upstream charts. Written out rather than recomputed from argoBudgetFor here on purpose:
+		// a literal is the only version of this number that can disagree with the derivation and
+		// say so.
+		//
+		// Containment is unaffected: the failing gcp leg of run 33487970328 reported
+		// "ctx 1h18m0s < go 2h8m0s < step 2h13m0s < job 2h28m0s", so 4m30s more sits far inside
+		// every rung, and TestArgoBudgetCeilingFitsTheWorkflowCaps still proves the ceiling itself.
+		wantOverallCtx = 59*time.Minute + 30*time.Second
 	)
 
 	t.Run("current workflow env (legacy region name)", func(t *testing.T) {

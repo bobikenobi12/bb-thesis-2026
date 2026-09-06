@@ -10,6 +10,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -281,8 +282,12 @@ var testWindow = compat.SupportedWindow{AppVersionMin: "v3.3.0"}
 
 func TestDecideArgoVersionPreflight(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		obs         LiveArgoObservation
+		name string
+		obs  LiveArgoObservation
+		// rel is the Helm observation. The ZERO value means "helm could not be asked", so the
+		// runner substitutes noArgoHelmRelease() — helm answered, no release — for every row that
+		// does not name one. Only the downgrade rows care, and they say so explicitly.
+		rel         LiveArgoHelmRelease
 		win         compat.SupportedWindow
 		declared    bool
 		pinned      string
@@ -290,6 +295,12 @@ func TestDecideArgoVersionPreflight(t *testing.T) {
 		wantProceed bool
 		wantSaid    []string
 		wantNotSaid []string
+		// wantChart is the chart version the decision must tell the caller to install INSTEAD of
+		// the pin; "" means "no override, use the pin". Asserted as a FIELD rather than by reading
+		// it out of the message, because the message is prose and the field is what installArgoCD
+		// actually passes to `helm --version`.
+		wantChart string
+		wantSkip  bool
 	}{
 		{
 			name: "fresh cluster proceeds and names what it will install",
@@ -307,11 +318,56 @@ func TestDecideArgoVersionPreflight(t *testing.T) {
 			wantNotSaid: []string{"DOWNGRADE"},
 		},
 		{
-			name: "a pin below what is running says so LOUDLY",
+			// THE #3521 CASE. It used to be IN_RANGE with a "⚠ WARNING — THIS IS A DOWNGRADE"
+			// paragraph, and then it downgraded the cluster anyway. The matrix declares no ceiling,
+			// so this is the NORMAL state for a customer who keeps their own ArgoCD current.
+			name: "a pin below what is running installs the RUNNING chart, not the pin",
 			obs:  LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.5.0"}},
+			rel:  LiveArgoHelmRelease{Answered: true, Found: true, Chart: "argo-cd-9.9.1", ChartVersion: "9.9.1"},
 			win:  testWindow, declared: true, pinned: "v3.3.9",
-			wantVerdict: ArgoPreflightInRange, wantProceed: true,
-			wantSaid: []string{"DOWNGRADE", "v3.5.0", "v3.3.9"},
+			wantVerdict: ArgoPreflightDowngradeAvoided, wantProceed: true,
+			wantChart: "9.9.1",
+			wantSaid:  []string{"NOT DOWNGRADING", "argo-cd-9.9.1", "v3.5.0"},
+		},
+		{
+			// The same situation with nothing to install against. Skipping is the only option left
+			// that does not move the version — `helm upgrade --install` would adopt objects it does
+			// not own at the LOWER pin — so what matters is that the message names what went
+			// unapplied instead of letting a green deploy read as a configured ArgoCD.
+			name: "a newer ArgoCD that Helm did not install skips the chart and says what went unapplied",
+			obs:  LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.5.0"}},
+			rel:  LiveArgoHelmRelease{Answered: true},
+			win:  testWindow, declared: true, pinned: "v3.3.9",
+			wantVerdict: ArgoPreflightDowngradeUnmanaged, wantProceed: true,
+			wantSkip: true,
+			wantSaid: []string{"SKIPPING", "NOT APPLIED", "health probes", "no \"argo-cd\" release"},
+			// It must not claim a version it is not installing.
+			wantNotSaid: []string{"NOT DOWNGRADING"},
+		},
+		{
+			// A release whose chart version cannot be parsed is NOT a release we can install
+			// against: the only thing left to pass to --version is the pin, which is the downgrade.
+			// It takes the skip arm, and the message quotes the chart it could not read.
+			name: "a release with an unreadable chart version skips rather than falling back to the pin",
+			obs:  LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.5.0"}},
+			rel:  LiveArgoHelmRelease{Answered: true, Found: true, Chart: "argocd"},
+			win:  testWindow, declared: true, pinned: "v3.3.9",
+			wantVerdict: ArgoPreflightDowngradeUnmanaged, wantProceed: true,
+			wantSkip: true,
+			wantSaid: []string{"SKIPPING", "could not be read", "argocd"},
+		},
+		{
+			// An UNREACHABLE helm must not be reported as a fact about the cluster. Same verdict —
+			// there is still nothing to install against — but the sentence has to send the reader to
+			// the environment, not to how ArgoCD was installed.
+			name: "an unreachable helm says it could not ask, not that there is no release",
+			obs:  LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.5.0"}},
+			rel:  LiveArgoHelmRelease{Reason: "exec: \"helm\": executable file not found in $PATH"},
+			win:  testWindow, declared: true, pinned: "v3.3.9",
+			wantVerdict: ArgoPreflightDowngradeUnmanaged, wantProceed: true,
+			wantSkip:    true,
+			wantSaid:    []string{"helm could not be asked", "executable file not found"},
+			wantNotSaid: []string{"no \"argo-cd\" release"},
 		},
 		{
 			name: "an equal pin is not a downgrade",
@@ -321,11 +377,18 @@ func TestDecideArgoVersionPreflight(t *testing.T) {
 			wantNotSaid: []string{"DOWNGRADE"},
 		},
 		{
-			name: "a mid-upgrade cluster names the whole set",
+			// A mid-upgrade cluster still names the whole set — that is what this row is for — but
+			// its VERDICT moved with #3521, and correctly: one of the two running versions is above
+			// the pin, so installing the pin would move those workloads DOWN. `argoDowngradedBy`
+			// answers per running version, not on the highest, which is the conservative direction:
+			// a partial downgrade is still a downgrade.
+			name: "a mid-upgrade cluster names the whole set, and its newer half is still a downgrade",
 			obs:  LiveArgoObservation{Answered: true, Workloads: []string{"a", "b"}, Versions: []string{"v3.3.9", "v3.4.0"}},
+			rel:  LiveArgoHelmRelease{Answered: true, Found: true, Chart: "argo-cd-9.7.0", ChartVersion: "9.7.0"},
 			win:  testWindow, declared: true, pinned: "v3.3.9",
-			wantVerdict: ArgoPreflightInRange, wantProceed: true,
-			wantSaid: []string{"v3.3.9", "v3.4.0", "mid-upgrade"},
+			wantVerdict: ArgoPreflightDowngradeAvoided, wantProceed: true,
+			wantChart: "9.7.0",
+			wantSaid:  []string{"v3.3.9", "v3.4.0", "mid-upgrade", "NOT DOWNGRADING"},
 		},
 		{
 			// THE CASE THAT WAS TESTED TO THE WRONG SPECIFICATION (#3495). Every environment
@@ -491,12 +554,29 @@ func TestDecideArgoVersionPreflight(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := decideArgoVersionPreflight(tc.obs, tc.win, tc.declared, tc.pinned)
+			rel := tc.rel
+			if rel == (LiveArgoHelmRelease{}) {
+				rel = noArgoHelmRelease()
+			}
+			got := decideArgoVersionPreflight(tc.obs, rel, tc.win, tc.declared, tc.pinned)
 			if got.Verdict != tc.wantVerdict {
 				t.Fatalf("verdict = %s, want %s (message: %s)", got.Verdict, tc.wantVerdict, got.Message)
 			}
 			if got.Proceed != tc.wantProceed {
 				t.Fatalf("proceed = %v, want %v (message: %s)", got.Proceed, tc.wantProceed, got.Message)
+			}
+			// The two fields installArgoCD ACTS on. Asserted separately from the message, because a
+			// decision that says the right sentence and carries the wrong version installs the
+			// wrong chart — and the message is exactly what would make that look correct.
+			if got.InstallChartVersion != tc.wantChart {
+				t.Errorf("InstallChartVersion = %q, want %q", got.InstallChartVersion, tc.wantChart)
+			}
+			if got.SkipChartInstall != tc.wantSkip {
+				t.Errorf("SkipChartInstall = %v, want %v", got.SkipChartInstall, tc.wantSkip)
+			}
+			// A decision cannot both name a chart and decline to install one.
+			if got.SkipChartInstall && got.InstallChartVersion != "" {
+				t.Errorf("skips the install yet names chart %q to install", got.InstallChartVersion)
 			}
 			if strings.TrimSpace(got.Message) == "" {
 				t.Fatal("every verdict must carry a sentence the operator can act on")
@@ -529,10 +609,10 @@ func TestArgoPreflightRefusalsNameBothVersionAndWindow(t *testing.T) {
 	// is the one that remains: the same broken cluster with a pin we cannot read, where nothing is
 	// known about what would be installed and nothing licenses proceeding.
 	obs := classifyLiveArgoWorkloads([]byte(ourInstall("v3.1.8")), nil, nil)
-	if remedy := decideArgoVersionPreflight(obs, win, declared, pinnedArgoAppVersion()); !remedy.Proceed {
+	if remedy := decideArgoVersionPreflight(obs, noArgoHelmRelease(), win, declared, pinnedArgoAppVersion()); !remedy.Proceed {
 		t.Fatalf("the shipped pin must remediate our own older install, got %s: %s", remedy.Verdict, remedy.Message)
 	}
-	got := decideArgoVersionPreflight(obs, win, declared, "")
+	got := decideArgoVersionPreflight(obs, noArgoHelmRelease(), win, declared, "")
 	if got.Verdict != ArgoPreflightOutOfRange || got.Proceed {
 		t.Fatalf("the shipped window must refuse the version #2717 measured as broken, got %s/%v", got.Verdict, got.Proceed)
 	}
@@ -544,7 +624,8 @@ func TestArgoPreflightRefusalsNameBothVersionAndWindow(t *testing.T) {
 	// And the shipped pin itself must pass the shipped window — a check that refused our own
 	// install would be discovered by a customer, not by us.
 	inRange := decideArgoVersionPreflight(
-		classifyLiveArgoWorkloads([]byte(ourInstall(pinnedArgoAppVersion())), nil, nil), win, declared, pinnedArgoAppVersion())
+		classifyLiveArgoWorkloads([]byte(ourInstall(pinnedArgoAppVersion())), nil, nil), noArgoHelmRelease(),
+		win, declared, pinnedArgoAppVersion())
 	if inRange.Verdict != ArgoPreflightInRange || !inRange.Proceed {
 		t.Fatalf("the shipped pin must be inside the shipped window, got %s/%v: %s", inRange.Verdict, inRange.Proceed, inRange.Message)
 	}
@@ -598,7 +679,7 @@ func TestArgoPreflightAntiCollapse(t *testing.T) {
 		for _, w := range windows {
 			for _, pin := range pins {
 				checked++
-				got := decideArgoVersionPreflight(obs, w.win, w.declared, pin)
+				got := decideArgoVersionPreflight(obs, noArgoHelmRelease(), w.win, w.declared, pin)
 				if got.Verdict != ArgoPreflightUnreadable {
 					t.Errorf("an unanswered probe must be UNREADABLE, got %s for obs %+v / window %+v",
 						got.Verdict, obs, w.win)
@@ -616,7 +697,7 @@ func TestArgoPreflightAntiCollapse(t *testing.T) {
 		for _, w := range windows {
 			for _, pin := range pins {
 				checked++
-				got := decideArgoVersionPreflight(obs, w.win, w.declared, pin)
+				got := decideArgoVersionPreflight(obs, noArgoHelmRelease(), w.win, w.declared, pin)
 				if got.Verdict == ArgoPreflightInRange {
 					t.Errorf("nothing was compared, so nothing may be reported IN_RANGE: %+v → %s", obs, got.Message)
 				}
@@ -634,42 +715,105 @@ func TestArgoPreflightAntiCollapse(t *testing.T) {
 }
 
 // TestArgoPreflightVerdictsAreExhaustive fails if a state is added without a decision path, so the
-// six-state table in the brief cannot quietly become a five-state implementation.
+// state table in the brief cannot quietly become a shorter implementation.
+//
+// IT NEARLY STOPPED COVERING. It carried a hand-written list of eight verdicts and a `len == 8`
+// assertion, so #3521's two new states — DOWNGRADE_AVOIDED and DOWNGRADE_UNMANAGED — were added,
+// reached by nothing here, and the guard stayed GREEN. A guard whose subject list is written once
+// and never grown decays into a guard for whatever was true the day it was written.
+//
+// So the list is DERIVED from the declared constants (allArgoPreflightVerdicts, which its own test
+// below holds against the source file) rather than retyped, and the count is derived with it.
 func TestArgoPreflightVerdictsAreExhaustive(t *testing.T) {
 	win := compat.SupportedWindow{AppVersionMin: "v3.3.0"}
+	// A newer-than-pin cluster, which every downgrade row needs.
+	newer := LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.5.0"}}
 	reached := map[ArgoPreflightVerdict]bool{}
 	for _, c := range []struct {
 		obs      LiveArgoObservation
+		rel      LiveArgoHelmRelease
 		declared bool
 		pinned   string
 	}{
-		{LiveArgoObservation{Answered: true}, true, "v3.3.9"},
-		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.3.9"}}, true, "v3.3.9"},
+		{LiveArgoObservation{Answered: true}, noArgoHelmRelease(), true, "v3.3.9"},
+		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.3.9"}}, noArgoHelmRelease(), true, "v3.3.9"},
 		// below the floor with a pin that fixes it → the remedy; with no readable pin → refusal.
-		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.1.8"}}, true, "v3.3.9"},
-		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.1.8"}}, true, ""},
+		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.1.8"}}, noArgoHelmRelease(), true, "v3.3.9"},
+		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.1.8"}}, noArgoHelmRelease(), true, ""},
 		// a pin outside the window refuses whatever the cluster runs.
-		{LiveArgoObservation{Answered: true}, true, "v2.11.0"},
-		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Unversioned: []string{"a"}}, true, "v3.3.9"},
-		{LiveArgoObservation{Reason: "nope"}, true, "v3.3.9"},
-		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.3.9"}}, false, "v3.3.9"},
+		{LiveArgoObservation{Answered: true}, noArgoHelmRelease(), true, "v2.11.0"},
+		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Unversioned: []string{"a"}}, noArgoHelmRelease(), true, "v3.3.9"},
+		{LiveArgoObservation{Reason: "nope"}, noArgoHelmRelease(), true, "v3.3.9"},
+		{LiveArgoObservation{Answered: true, Workloads: []string{"a"}, Versions: []string{"v3.3.9"}}, noArgoHelmRelease(), false, "v3.3.9"},
+		// #3521: newer than the pin, with and without a release to install against.
+		{newer, LiveArgoHelmRelease{Answered: true, Found: true, Chart: "argo-cd-9.9.1", ChartVersion: "9.9.1"}, true, "v3.3.9"},
+		{newer, noArgoHelmRelease(), true, "v3.3.9"},
 	} {
 		w := win
 		if !c.declared {
 			w = compat.SupportedWindow{}
 		}
-		reached[decideArgoVersionPreflight(c.obs, w, c.declared, c.pinned).Verdict] = true
+		reached[decideArgoVersionPreflight(c.obs, c.rel, w, c.declared, c.pinned).Verdict] = true
 	}
-	for _, v := range []ArgoPreflightVerdict{
-		ArgoPreflightAbsent, ArgoPreflightInRange, ArgoPreflightOutOfRange, ArgoPreflightRemediates,
-		ArgoPreflightPinOutOfRange, ArgoPreflightUnversioned, ArgoPreflightUnreadable, ArgoPreflightNoWindow,
-	} {
+	for _, v := range allArgoPreflightVerdicts {
+		// SKIPPED is not a decider state — PreflightLiveArgoVersion returns it before it probes
+		// anything, and TestPreflightLiveArgoVersionSkipHatch* cover it. Named as an exception here
+		// rather than silently omitted, so the exemption is a line somebody can argue with.
+		if v == ArgoPreflightSkipped {
+			continue
+		}
 		if !reached[v] {
 			t.Errorf("no input reaches the %s verdict — the state is dead code", v)
 		}
 	}
-	if len(reached) != 8 {
-		t.Fatalf("reached %d verdicts, want 8: %v", len(reached), reached)
+	if want := len(allArgoPreflightVerdicts) - 1; len(reached) != want {
+		t.Fatalf("reached %d verdicts, want %d (every declared verdict but SKIPPED): %v", len(reached), want, reached)
+	}
+}
+
+// allArgoPreflightVerdicts is the list the exhaustiveness test derives from. It is held against the
+// SOURCE FILE by the test below, so adding a constant without adding it here fails rather than
+// silently shrinking what "exhaustive" means.
+var allArgoPreflightVerdicts = []ArgoPreflightVerdict{
+	ArgoPreflightAbsent, ArgoPreflightInRange, ArgoPreflightOutOfRange, ArgoPreflightRemediates,
+	ArgoPreflightPinOutOfRange, ArgoPreflightUnversioned, ArgoPreflightUnreadable, ArgoPreflightNoWindow,
+	ArgoPreflightSkipped, ArgoPreflightDowngradeAvoided, ArgoPreflightDowngradeUnmanaged,
+}
+
+// TestAllArgoPreflightVerdictsMatchesTheSource is what makes the list above load-bearing rather than
+// a second copy that can drift. It parses the declarations out of version_preflight.go, so a new
+// verdict is unreachable-by-the-guard for exactly as long as it takes this test to run.
+//
+// Reading the SOURCE and not reflecting over values: Go has no enumeration of a named string type's
+// constants at runtime, and a test that could not see a constant it was never told about is the
+// blind spot this exists to remove.
+func TestAllArgoPreflightVerdictsMatchesTheSource(t *testing.T) {
+	src, err := os.ReadFile("version_preflight.go")
+	if err != nil {
+		t.Fatalf("cannot read the source this guard is about: %v", err)
+	}
+	declared := regexp.MustCompile(`(?m)^\t(ArgoPreflight\w+)\s+ArgoPreflightVerdict\s*=`).FindAllStringSubmatch(string(src), -1)
+	if len(declared) == 0 {
+		t.Fatal("found NO verdict declarations — the pattern has stopped matching, so this guard is checking nothing")
+	}
+	have := map[string]bool{}
+	for _, v := range allArgoPreflightVerdicts {
+		// The constant NAME, recovered from its value, is not available; index by value instead and
+		// map the declaration names to values through the same source scan.
+		have[string(v)] = true
+	}
+	values := regexp.MustCompile(`(?m)^\tArgoPreflight\w+\s+ArgoPreflightVerdict\s*=\s*"([^"]+)"`).FindAllStringSubmatch(string(src), -1)
+	if len(values) != len(declared) {
+		t.Fatalf("scanned %d declarations but %d values — the two patterns disagree", len(declared), len(values))
+	}
+	for _, m := range values {
+		if !have[m[1]] {
+			t.Errorf("version_preflight.go declares verdict %q, which allArgoPreflightVerdicts does not list — "+
+				"TestArgoPreflightVerdictsAreExhaustive would not have covered it", m[1])
+		}
+	}
+	if len(values) != len(allArgoPreflightVerdicts) {
+		t.Errorf("the source declares %d verdicts, the list has %d", len(values), len(allArgoPreflightVerdicts))
 	}
 }
 
@@ -720,7 +864,7 @@ func TestProbeLiveArgoWorkloadsOnAFailingKubectl(t *testing.T) {
 func TestPreflightLiveArgoVersionOnAFreshCluster(t *testing.T) {
 	newKubectlStub(t, 0, stubRule{Match: "get statefulsets.apps,deployments.apps", Stdout: list()})
 	var out bytes.Buffer
-	if err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
+	if _, err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
 		t.Fatalf("a fresh cluster must proceed, got: %v", err)
 	}
 	if !strings.Contains(out.String(), "no existing ArgoCD found") {
@@ -734,7 +878,7 @@ func TestPreflightLiveArgoVersionOnAFreshCluster(t *testing.T) {
 func TestPreflightLiveArgoVersionRemediatesOurOwnOlderInstall(t *testing.T) {
 	newKubectlStub(t, 0, stubRule{Match: "get statefulsets.apps,deployments.apps", Stdout: ourInstall("v3.1.8")})
 	var out bytes.Buffer
-	if err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
+	if _, err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
 		t.Fatalf("the upgrade that moves a below-floor cluster INTO the window must not be refused: %v", err)
 	}
 	got := out.String()
@@ -751,7 +895,7 @@ func TestPreflightLiveArgoVersionRefusesAPinOutsideTheWindow(t *testing.T) {
 	newKubectlStub(t, 0, stubRule{Match: "get statefulsets.apps,deployments.apps", Stdout: ourInstall("v3.1.8")})
 	t.Setenv(ArgoChartVersionEnv, "8.6.4")
 	var out bytes.Buffer
-	err := PreflightLiveArgoVersion(t.Context(), &out)
+	_, err := PreflightLiveArgoVersion(t.Context(), &out)
 	if err == nil {
 		t.Fatal("a below-floor cluster with a below-floor pin must be refused")
 	}
@@ -789,7 +933,7 @@ func TestPreflightLiveArgoVersionSkipHatchIsNotAnyNonEmptyValue(t *testing.T) {
 			stub := newKubectlStub(t, 0, stubRule{Match: "get statefulsets.apps,deployments.apps", Stdout: ourInstall("v3.3.9")})
 			t.Setenv(SkipVersionPreflightEnv, tc.value)
 			var out bytes.Buffer
-			if err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
+			if _, err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
 				t.Fatalf("unexpected refusal: %v", err)
 			}
 			probed := len(stub.calls()) > 0
@@ -807,7 +951,7 @@ func TestPreflightLiveArgoVersionSkipHatchSaysWhatWentUnverified(t *testing.T) {
 	stub := newKubectlStub(t, 1) // any probe would FAIL, proving none was issued
 	t.Setenv(SkipVersionPreflightEnv, "1")
 	var out bytes.Buffer
-	if err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
+	if _, err := PreflightLiveArgoVersion(t.Context(), &out); err != nil {
 		t.Fatalf("the escape hatch must never refuse, got: %v", err)
 	}
 	if len(stub.calls()) != 0 {
@@ -962,7 +1106,7 @@ func TestDescribeArgoVersionsWithNothingRead(t *testing.T) {
 	// refused, so the sentence must not read as if a version were known.
 	got := decideArgoVersionPreflight(
 		LiveArgoObservation{Answered: true, Workloads: []string{"argocd-server"}, Unversioned: []string{"argocd-server"}},
-		compat.SupportedWindow{}, false, "v3.3.9")
+		noArgoHelmRelease(), compat.SupportedWindow{}, false, "v3.3.9")
 	if got.Verdict != ArgoPreflightNoWindow || !got.Proceed {
 		t.Fatalf("verdict = %s/%v", got.Verdict, got.Proceed)
 	}
@@ -1017,3 +1161,13 @@ func TestArgoWorkloadVersionIgnoresACompanionImageTag(t *testing.T) {
 		t.Fatalf("argoTagFromImage(image-updater) = %q, want \"\" — v0.15.0 is the updater's version, not ArgoCD's", got)
 	}
 }
+
+// noArgoHelmRelease is the neutral Helm observation for the arms that are not about the downgrade:
+// helm ANSWERED and reports no `argo-cd` release.
+//
+// Deliberately not a zero LiveArgoHelmRelease. A zero value has Answered=false, which means "helm
+// could not be asked" — and that reads, in describeArgoHelmRelease, as an environment problem
+// rather than as a fact about the cluster. Every arm below is indifferent to it either way, and a
+// fixture whose meaning depends on nobody looking at it is how the next reader copies the wrong one
+// into the arm where it does matter.
+func noArgoHelmRelease() LiveArgoHelmRelease { return LiveArgoHelmRelease{Answered: true} }

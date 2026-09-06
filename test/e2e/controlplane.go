@@ -202,8 +202,14 @@ func (cp *ControlPlane) SeedRunner(ctx context.Context, ownerUserID, ownerOrgID 
 // this literal emitting `Values: map[string]interface{}{}` — contradicting the promise three lines
 // up that this is "the exact camelCase shape the console's resolveAddOnInstall emits". Deriving both
 // tiers from the same SSOT makes that unrepresentable instead of merely detectable (#1965).
+// leanSeedAddOnIDs are the catalog add-ons every tier seeds, full surface or not. ONE list, read by
+// seedAddOns below AND by argoAddOnCount (argocd_assert.go), because the wait budget has to be
+// sized against the charts the run actually converges: a second hand-written copy is how the budget
+// and the surface come to disagree, which is #3580 in miniature.
+var leanSeedAddOnIDs = []string{"reloader"}
+
 func seedAddOns() []types.AddOnInstall {
-	reloader, err := CatalogAddOn("reloader")
+	reloader, err := CatalogAddOn(leanSeedAddOnIDs[0])
 	if err != nil {
 		// Fail loudly, exactly as the full surface does. A zero-valued lean seed would strip the
 		// ArgoCD health assertion of its teeth and let the tier report green having installed nothing.

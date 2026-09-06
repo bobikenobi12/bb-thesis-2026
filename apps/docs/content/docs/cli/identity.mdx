@@ -89,13 +89,26 @@ org argument, …) or the command fails with a clear error. See [TUI Components]
 
 ### `alethia version`
 
-Print the CLI version. If a newer release is known (from the daily background check), it also prints
-the latest available version.
+Print the CLI version and check the control plane for the latest available release. If the network
+is unavailable, the command falls back to the last successful daily check.
 
 ```bash
 alethia version
 # alethia v1.4.0
 ```
+
+### `alethia update`
+
+Update the CLI through its detected installation channel. Homebrew and Scoop remain responsible for
+their installations; writable standalone binaries are downloaded and checksum-verified directly.
+Linux packages, Docker images, and non-writable installations receive an exact manual command.
+
+```bash
+alethia update
+```
+
+The command does not elevate privileges. See [Installation](/cli/installation#alethia-update) for
+the behavior of each install channel.
 
 ### `alethia open`
 
@@ -107,7 +120,13 @@ alethia open docs       # opens the documentation
 alethia open console    # explicit
 ```
 
-`alethia docs` (the alias) defaults to the docs target.
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `[console\|docs]` | `console` | Which surface to open. Defaults to the console; the `docs` alias defaults to the documentation. |
+
+`alethia docs` (the alias) defaults to the docs target. The argument is optional and has a default,
+so `alethia open --no-input` opens the console rather than asking — this is the one shell value a
+person supplies, and it is answered rather than prompted for.
 
 ### `alethia completion`
 

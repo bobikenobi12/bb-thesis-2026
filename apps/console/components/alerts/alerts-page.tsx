@@ -6,7 +6,7 @@
 // vertically — Policies, Channels, Activity. No KPIs or tabs; navigation is the secondary
 // "Alerts" sidebar (components/shell/sidebar-drill.tsx), whose items anchor-scroll to these
 // sections and highlight via the shared use-alerts-section store. Each section opens with
-// the shared `PageHeader` (icon + title + description + a Docs link), carrying the filtered
+// the shared `SectionHeading` (icon + title + description + a Docs link), carrying the filtered
 // result count in its count pill — where the console filter standard requires counts to be.
 // The whole surface is gated behind the `alerting` entitlement (Pro+); below that we show
 // the upsell.
@@ -39,7 +39,7 @@ import {
 	type AlertsSection,
 	useAlertsSection,
 } from "@/lib/stores/use-alerts-section";
-import { PageHeader } from "@repo/ui/page-header";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 const SECTIONS: AlertsSection[] = ["policies", "channels", "activity"];
 
@@ -115,19 +115,17 @@ export function AlertsPage({ bootstrap }: { bootstrap: AlertsBootstrap }) {
 	return (
 		<div className="mx-auto w-full max-w-[1200px] space-y-12">
 			{/*
-			 * The hub has no visible page title — it identifies its three surfaces by icon and
-			 * section heading, which is the design and is not being changed here. But a route
-			 * still needs exactly one `h1`, and three sections stacked on one page are `h2`s
-			 * underneath it. Without this the outline is three competing page titles; with a
-			 * bare `level={2}` and nothing above it, it is three orphans. So the page title
-			 * exists for the outline and is not painted.
+			 * No console page paints a page title any more — the sidebar entry and the breadcrumb
+			 * both say "Alerts". A route still needs exactly one `h1` for its outline, though, and
+			 * three sections stacked on one page are `h2`s underneath it: without this they are
+			 * three orphans. So the landmark exists for a screen reader and is never painted, which
+			 * is why it stays a recorded decision in the shared-surface allowlist.
 			 */}
 			<h1 className="sr-only">Alerts</h1>
 
 			<section id="policies" className="scroll-mt-4">
-				<PageHeader
+				<SectionHeading
 					className="mb-4"
-					level={2}
 					title={sectionTitle(ShieldAlert, "Policies")}
 					description="A policy watches a set of events and routes them to channels."
 					count={policiesView.rows.length}
@@ -142,9 +140,8 @@ export function AlertsPage({ bootstrap }: { bootstrap: AlertsBootstrap }) {
 			</section>
 
 			<section id="channels" className="scroll-mt-4">
-				<PageHeader
+				<SectionHeading
 					className="mb-4"
-					level={2}
 					title={sectionTitle(Webhook, "Channels")}
 					description="Channels are where alerts go — webhooks, Slack, Rocket.Chat or email."
 					count={channelsView.rows.length}
@@ -159,9 +156,8 @@ export function AlertsPage({ bootstrap }: { bootstrap: AlertsBootstrap }) {
 			</section>
 
 			<section id="activity" className="scroll-mt-4">
-				<PageHeader
+				<SectionHeading
 					className="mb-4"
-					level={2}
 					title={sectionTitle(Activity, "Activity")}
 					description="The delivery ledger — every notification routed, with retry status."
 					count={activityView.rows.length}
@@ -174,7 +170,7 @@ export function AlertsPage({ bootstrap }: { bootstrap: AlertsBootstrap }) {
 }
 
 /**
- * The section's icon tile, inline in the PageHeader title. The hub identifies its three
+ * The section's icon tile, inline in the SectionHeading title. The hub identifies its three
  * surfaces by icon (the connectors-style group header), and `title` is the only slot that
  * sits on the heading line — so the tile rides there rather than reviving a local header.
  */
@@ -189,7 +185,7 @@ function sectionTitle(Icon: LucideIcon, text: string) {
 	);
 }
 
-/** The per-section "Docs" link, rendered in the PageHeader's actions slot. */
+/** The per-section "Docs" link, rendered in the SectionHeading's actions slot. */
 function DocsLink({ href }: { href: string }) {
 	return (
 		<a

@@ -185,7 +185,7 @@ func designEnv(t *testing.T, status int, body map[string]any) (func(args ...stri
 	t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 	resetDesignFlags(t)
 	return func(args ...string) error {
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		return rootCmd.Execute()
 	}, rec
 }
@@ -311,7 +311,7 @@ func TestProjectDesignApplyCmd(t *testing.T) {
 		resetDesignFlags(t)
 		path := writeDesignDoc(t)
 		run := func(a ...string) error {
-			rootCmd.SetArgs(a)
+			execRootArgs(a)
 			return rootCmd.Execute()
 		}
 		exited, code, err := connInvoke(t, run, "project", "design", "apply", "-p", "shop", "-f", path)

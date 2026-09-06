@@ -98,6 +98,22 @@ be the same machine. Browsers and their OS libraries install on first run, then 
   `pnpm env:reap --now` when you finish for the day, and if the box is up and idle it is
   costing money right now. `pnpm env:timer` installs a launchd job that reaps it after
   90 idle minutes; the session banner warns once the box has been up 12h.
+- **REAPING DELETES THE BOX FOR EVERYONE — check `pnpm env:status` first.** Every
+  environment on it goes: the slot, the database, the OpenFGA store, the tunnel. `env:box`
+  restores the *box*, not the envs. `env:reap` prints what it is about to destroy, and
+  then refuses in two cases:
+  - **someone else's env was touched in the last 60 minutes** — refused, and `--now` is
+    not a way around it. Ask them to `pnpm env:down`, or wait for it to go idle.
+  - **your own env is still live** — also refused, because it dies too. Release it with
+    `pnpm env:down` and reap, or say you meant both: `pnpm env:reap --now --include-mine`.
+
+  `pnpm env:reap --dry-run` decides and prints without touching anything, and works from a
+  worktree. Until 2026-09-02 that first refusal could not fire between two instances on one
+  Mac: ownership was recorded as `user@host`, which every agent, worktree and shell here
+  shares. It is now the same instance identity `pnpm wt:who` uses, so `env:status` marks
+  which env is **← you**, and an environment written before the fix carries a bare
+  `user@host` owner that is deliberately counted as **someone else's** — `pnpm env:up`
+  rewrites it, `pnpm env:down` releases it (#3841).
 - **Never `docker compose down -v` or `pnpm db:reset`.** `docker-compose.yml` pins
   `name: alethia`, so those delete the volumes *every* window is using. Blocked.
 - **Never run `docker compose` from an env's tree on the box.** Each env is a different

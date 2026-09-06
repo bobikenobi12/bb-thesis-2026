@@ -164,10 +164,10 @@ export function PromoteDialog({
 						) : (
 							<div>
 								<div className="mb-2 flex items-baseline justify-between">
-									<span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
+									<span className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-text-tertiary">
 										Plan preview
 									</span>
-									<span className="font-mono text-[11px] text-text-secondary">
+									<span className="font-mono text-ui-xs text-text-secondary">
 										{diff.summary.join(" · ")}
 									</span>
 								</div>
@@ -180,7 +180,7 @@ export function PromoteDialog({
 											<li key={`${c.component_type}-${c.key}-${i}`} className="flex items-start gap-2.5 p-2.5">
 												<Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 												<div className="min-w-0 text-xs">
-													<span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+													<span className="font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 														{meta.label}
 													</span>{" "}
 													<span className="text-foreground">{c.component_type}</span>{" "}
@@ -212,7 +212,7 @@ export function PromoteDialog({
 					<label className="flex items-center justify-between rounded-md border border-border p-2.5">
 						<span className="text-xs">
 							Apply removals
-							<span className="block text-[11px] text-muted-foreground">
+							<span className="block text-ui-xs text-muted-foreground">
 								Delete target components the source no longer has (destructive).
 							</span>
 						</span>

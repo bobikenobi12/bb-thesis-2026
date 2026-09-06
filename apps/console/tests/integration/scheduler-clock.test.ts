@@ -25,7 +25,7 @@ import { sweepDriftSchedule } from "@/lib/drift/dispatch";
 import { DRIFT_CADENCE_MS } from "@/lib/drift/schedule";
 import { sweepProbeSchedule } from "@/lib/probes/dispatch";
 import { PROBE_CADENCE_MS } from "@/lib/probes/schedule";
-import { describeIfDb } from "./db";
+import { defaultIfFirst, describeIfDb } from "./db";
 
 const USER = randomUUID();
 const ORG = randomUUID();
@@ -45,6 +45,7 @@ async function seedEnv(
 			name,
 			status: "ACTIVE",
 			stage,
+			is_default: defaultIfFirst(projectId),
 		})
 		.returning({ id: projectEnvironments.id });
 	return e.id;

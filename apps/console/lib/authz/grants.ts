@@ -10,7 +10,7 @@
 // see lib/authz/org-access-control.ts.
 
 import { sql } from "drizzle-orm";
-import { toOrgRole } from "@/lib/authz/org-access-control";
+import { toPdpRole } from "@/lib/authz/org-access-control";
 import { BUILTIN_ROLE_IDS } from "@/lib/authz/registry";
 import { getTupleSync } from "@/lib/authz/tuple-sync";
 import { getServiceDb } from "@/lib/db";
@@ -23,16 +23,30 @@ function mirror(run: Promise<void>): void {
 /**
  * Sets a member's org-wide PDP grant to `role` (so the PDP authorizes them within
  * the org). Idempotent SET semantics — replaces any existing org-scope grant for the
- * user — so it's safe whether it fires on add, role-change, or a double event. A role
- * outside the built-in set is ignored (no grant written).
+ * user — so it's safe whether it fires on add, role-change, or a double event.
+ *
+ * A role outside the recognised set writes NO grant — and SAYS SO. It used to return in
+ * silence, and that silence is the whole of #3730: Better Auth's built-in `member` role (the
+ * `member.role` column default, the SSO plugin's JIT default, and what an invitation carries)
+ * was unrecognised, so every accepted invitation produced a member row with zero permissions
+ * and an org overview that threw ForbiddenError into its error boundary. `toPdpRole` now maps
+ * it; a member left ungranted is a defect either way, so it is logged loudly rather than
+ * dropped — a member with no grant is invisible in the product until someone loads a page.
  */
 export async function ensureMemberGrant(
 	orgId: string,
 	userId: string,
 	role: string,
 ): Promise<void> {
-	const resolved = toOrgRole(role);
-	if (!resolved) return;
+	const resolved = toPdpRole(role);
+	if (!resolved) {
+		console.error(
+			`[authz] member ${userId} in org ${orgId} has role "${role}", which maps to no PDP ` +
+				`role — NO grant written, so they will be denied everything in this org. ` +
+				`Add it to MEMBERSHIP_ROLE_ALIASES in lib/authz/org-access-control.ts if it is real.`,
+		);
+		return;
+	}
 	const roleId = BUILTIN_ROLE_IDS[resolved];
 	const db = getServiceDb();
 	await db.execute(sql`

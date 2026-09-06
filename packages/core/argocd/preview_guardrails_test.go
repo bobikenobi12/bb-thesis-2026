@@ -54,19 +54,19 @@ func TestRenderPreviewGuardrails_GuardrailsAppSet(t *testing.T) {
 		"name: preview-guardrails-demo",
 		"- pullRequest:",
 		"github:",
-		"owner: acme",
-		"repo: shop",
-		"secretName: preview-scm-token",
+		"owner: 'acme'",
+		"repo: 'shop'",
+		"secretName: 'preview-scm-token'",
 		"name: 'preview-guardrails-demo-{{ .number }}'", // ArgoCD placeholder, NOT Alethia-resolved
 		"project: preview-guardrails-demo",
-		"repoURL: https://github.com/alethialabs-io/alethialabs",
+		`repoURL: "https://github.com/alethialabs-io/alethialabs"`,
 		"targetRevision: HEAD", // guardrails track Alethia's trusted ref, not the PR head_sha
 		"path: 'infra/templates/argocd/preview-guardrails'",
 		"namespace: 'preview-{{ .number }}'",
 		"managedNamespaceMetadata:",                    // labels the created namespace
 		"pod-security.kubernetes.io/enforce: baseline", // PSA blocks hostNetwork/privileged escape
 		"CreateNamespace=true",                         // the guardrails ApplicationSet OWNS the namespace
-		"alethia.io/project: \"demo\"",
+		`"alethia.io/project": "demo"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered guardrails missing %q\n---\n%s", want, out)
@@ -155,7 +155,7 @@ func TestRenderPreviewGuardrails_Vcluster(t *testing.T) {
 			t.Errorf("vcluster guardrails missing %q\n---\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "server: https://kubernetes.default.svc") {
+	if strings.Contains(out, "server: 'https://kubernetes.default.svc'") {
 		t.Errorf("vcluster placement should not emit a server destination:\n%s", out)
 	}
 }

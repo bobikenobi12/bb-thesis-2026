@@ -20,7 +20,7 @@
 // `resolveAddOnInstall`, so the shapes it implies — hetzner's webhook sidecar, the workload-identity
 // `saAnnotation`s — are the emitter's output and are never restated.
 //
-// Usage: pnpm -F console export:addon-catalog
+// Usage: pnpm -C apps/console run export:addon-catalog
 
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

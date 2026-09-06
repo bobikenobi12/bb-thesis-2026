@@ -8,6 +8,7 @@
 
 import { resolvePlanEntitlements } from "@/lib/billing/plan";
 import { getOrgBilling } from "@/lib/billing/queries";
+import { effectiveBillingPeriodStart } from "@/lib/billing/period";
 import { getServiceDb } from "@/lib/db";
 import { queryJobMinutesByOrg } from "@/lib/queries/runner-usage";
 
@@ -43,9 +44,11 @@ export async function assertUsageAllowed(orgId: string): Promise<void> {
 	if (!isCommunity && !hardCap) return;
 
 	const now = new Date();
-	const from =
-		billing?.currentPeriodStart ??
-		new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const from = effectiveBillingPeriodStart(
+		billing?.currentPeriodStart,
+		billing?.currentPeriodEnd,
+		now,
+	);
 	const rows = await queryJobMinutesByOrg(getServiceDb(), {
 		from,
 		to: now,

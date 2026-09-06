@@ -89,11 +89,11 @@ export function SidebarProfile({ isHosted = false }: { isHosted?: boolean }) {
       <div className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5 py-1.5">
         <Avatar className="h-7 w-7">
           <AvatarImage src={user?.image ?? undefined} alt="" />
-          <AvatarFallback className="bg-muted text-[10px] font-medium text-muted-foreground">
+          <AvatarFallback className="bg-muted text-ui-2xs font-medium text-muted-foreground">
             {userInitials(user)}
           </AvatarFallback>
         </Avatar>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-ui-md font-medium text-foreground">
           {displayName(user)}
         </span>
       </div>
@@ -265,10 +265,10 @@ export function SidebarProfile({ isHosted = false }: { isHosted?: boolean }) {
             className="flex items-center gap-2 px-2 py-1.5"
           >
             <span className="min-w-0 flex-1">
-              <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              <span className="block text-ui-2xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 Platform Status
               </span>
-              <span className="block text-[13px] text-foreground">
+              <span className="block text-ui-md text-foreground">
                 All systems normal.
               </span>
             </span>

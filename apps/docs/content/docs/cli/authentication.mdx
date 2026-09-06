@@ -20,15 +20,21 @@ alethia login
 
 <Steps>
 
-### CLI generates device code
-A UUID identifying this login attempt.
+### CLI generates two codes
+A UUID `device_code` identifying this login attempt, and a short `user_code` printed to your terminal.
+
+### CLI registers the request
+It sends both codes, its own name and version to `POST /api/auth/cli/start`. Console stores them with the
+IP and browser agent it saw, so the approval page can tell you who is asking.
 
 ### Browser opens
-Navigates to `{console_url}/cli/login?device_code={code}`.
+Navigates to `{console_url}/cli/login?device_code={code}&user_code={user_code}`.
 
 ### Approve in browser
-Sign in with any OAuth provider (GitHub, GitLab, Bitbucket, Google) or email OTP. Console binds the pending
-`device_code` to your account and approves it — nothing is typed back into the terminal.
+Sign in with any OAuth provider (GitHub, GitLab, Bitbucket, Google) or email OTP. The page names the
+account that is about to be bound, what approval hands over, who is asking and how long is left. Check
+that the code on screen is the one your terminal printed, then approve — nothing is typed back into the
+terminal.
 
 ### CLI polls for the token
 While you approve in the browser, the CLI shows a spinner and polls `POST /api/auth/cli/exchange` with the
@@ -38,6 +44,20 @@ While you approve in the browser, the CLI shows a spinner and polls `POST /api/a
 Saved to `~/.config/alethia/credentials.json`.
 
 </Steps>
+
+## Refusing a login you did not start
+
+If the code on screen is not the one your terminal printed, or you did not run `alethia login` at all,
+press **This isn't me**.
+
+That records the refusal in Console rather than only in the browser. Three things follow:
+
+- The device that is polling is told at once, with the standard `access_denied` error, instead of waiting
+  out its own timeout.
+- Nothing is handed over — no access token, no refresh token, and none of your linked git provider's
+  OAuth token.
+- The refusal is final for that link. Opening it again cannot approve it; a genuine sign-in needs a fresh
+  `alethia login`.
 
 ### Force Re-authentication
 
@@ -116,16 +136,60 @@ refused, not ignored, so a token issued for one organization can never act on an
 It also stops working the moment its creator leaves that organization — membership is re-checked on
 every request, not trusted from when the token was minted.
 
+### Minting a token
+
+Run `alethia token create` on a terminal with no flags and it asks for the two things it needs:
+
+{/* fieldspec: alethia token create */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Name | What this token is for, so a list of tokens is a list of purposes | `--name` |
+| Expires | A token that never expires is a credential nobody remembers to rotate | `--expires-in-days` |
+
+The flags are the complete contract: anything the form can ask, a flag can set, so
+`--no-input` never needs a prompt.
+
+```bash
+alethia token create                              # asks for the name and the lifetime
+alethia token create --name ci --expires-in-days 90   # the same, unattended
+```
+
+`--expires-in-days 0` — the default — never expires. That is a deliberate choice rather than an
+oversight, and it is why the form asks: a credential with no end date is one nobody remembers to
+rotate.
+
 ### Managing tokens
 
 ```bash
-alethia token list                       # name, prefix, when created, when last used, status
-alethia token revoke <id>                # takes effect on the token's next request
-alethia token create --name ci --expires-in-days 90
+alethia token list     # id, name, prefix, created, expires, last used, status
+alethia token revoke   # pick from the live tokens, or pass an id
 ```
 
 `alethia token list` shows `last used: never` for a token nothing has ever presented. That is usually
 the most interesting row on the list — a credential that was minted, put somewhere, and forgotten.
+
+`alethia token revoke` with no argument shows the tokens that are still live and revokes the one you
+pick, so you never have to copy an opaque id out of `token list` by eye. Already-revoked tokens are
+left out of the picker; revoking one again does nothing.
+
+{/* fieldspec: alethia token revoke */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Token | The token to revoke; it stops working on its very next request | `[id]` |
+
+```bash
+alethia token revoke                                           # pick from a list
+alethia token revoke 3f2b9c14-7a1e-4d68-9c05-2b8e6a1d40f7    # revoke a known id, no prompt
+```
+
+<Callout type="info">
+Revoke carries **no `--yes`**, unlike every other destructive command. Its asymmetry runs the other
+way: revoking a token you did not mean to costs one `alethia token create`, while failing to revoke a
+leaked one costs the organization. A confirmation here would fail an incident-response pipeline and
+leave the credential live.
+</Callout>
 
 <Callout type="warn">
 The token value is shown **once** and is never stored — the server keeps only a hash of it. If you

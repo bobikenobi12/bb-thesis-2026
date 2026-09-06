@@ -7,10 +7,9 @@
 // estimated cost, with the git repo as secondary context. Projects are the top-level unit under
 // the org.
 
-import { formatDistanceToNow } from "date-fns";
 import { Box, GitBranch } from "lucide-react";
 import Link from "next/link";
-import { formatMonthlyRate } from "@repo/format";
+import { formatMonthlyRate, formatRelative } from "@repo/format";
 import { ProviderIcon } from "@repo/ui/provider-icon";
 import type { ProjectListItem } from "@/app/server/actions/projects";
 import { ProjectActionsMenu } from "@/components/overview/project-actions-menu";
@@ -46,7 +45,7 @@ export function ProjectCard({
 		: false;
 	const repo = project.repositories[0];
 	const deployed = project.last_deployed_at
-		? `Deployed ${formatDistanceToNow(new Date(project.last_deployed_at), { addSuffix: true })}`
+		? `Deployed ${formatRelative(project.last_deployed_at)}`
 		: "Never deployed";
 
 	return (
@@ -71,10 +70,10 @@ export function ProjectCard({
 						<Box className="size-6 shrink-0 text-muted-foreground" />
 					)}
 					<div className="min-w-0 flex-1">
-						<div className="truncate font-display text-[13.5px] font-semibold text-foreground">
+						<div className="truncate font-display text-ui-md font-semibold text-foreground">
 							{project.project_name}
 						</div>
-						<div className="truncate font-mono text-[10px] text-muted-foreground">
+						<div className="truncate font-mono text-ui-2xs text-muted-foreground">
 							{project.region || "No region"}
 							{project.environment_stage ? ` · ${project.environment_stage}` : ""}
 						</div>
@@ -82,18 +81,18 @@ export function ProjectCard({
 				</div>
 
 				{/* Primary meta — the default env's configured services + add-ons. */}
-				<div className="mt-3 truncate font-mono text-[11px] text-muted-foreground">
+				<div className="mt-3 truncate font-mono text-ui-xs text-muted-foreground">
 					{countLabel(project.services_count, "service")}
 					<span className="text-muted-foreground/50"> · </span>
 					{countLabel(project.addons_count, "add-on")}
 				</div>
 
 				<div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-2.5">
-					<span className="truncate text-[11px] text-muted-foreground">
+					<span className="truncate text-ui-xs text-muted-foreground">
 						{deployed}
 					</span>
 					{project.estimated_monthly_cost ? (
-						<span className="shrink-0 font-mono text-[10.5px] text-foreground">
+						<span className="shrink-0 font-mono text-ui-2xs text-foreground">
 							{formatMonthlyRate(project.estimated_monthly_cost)}
 						</span>
 					) : null}
@@ -102,7 +101,7 @@ export function ProjectCard({
 				{repo && (
 					<div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
 						<GitBranch className="h-3 w-3 shrink-0" />
-						<span className="truncate font-mono text-[10px]">
+						<span className="truncate font-mono text-ui-2xs">
 							{repo.label}
 							{project.repositories.length > 1 && (
 								<span className="text-muted-foreground/60">

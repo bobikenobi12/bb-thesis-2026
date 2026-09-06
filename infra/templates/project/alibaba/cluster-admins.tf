@@ -35,7 +35,7 @@ resource "alicloud_cs_kubernetes_permissions" "cluster_admin" {
   uid = each.value.uid
 
   permissions {
-    cluster     = module.cluster[0].cluster_id
+    cluster     = try(module.cluster[0].cluster_id, null) != null ? module.cluster[0].cluster_id : ""
     role_type   = "cluster"
     role_name   = "admin"
     is_ram_role = each.value.is_ram_role

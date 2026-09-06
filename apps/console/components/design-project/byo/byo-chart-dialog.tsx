@@ -250,7 +250,7 @@ export function ByoChartDialog({
 							/>
 							<span
 								className={cn(
-									"font-mono text-[10px] uppercase tracking-wide",
+									"font-mono text-ui-2xs uppercase tracking-wide",
 									i === step ? "text-foreground" : "text-muted-foreground",
 								)}
 							>
@@ -397,7 +397,7 @@ export function ByoChartDialog({
 									className="h-24 font-mono text-xs"
 								/>
 							</div>
-							<div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-[11px] text-muted-foreground">
+							<div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-ui-xs text-muted-foreground">
 								<div className="text-foreground">{effectiveName}</div>
 								<div>
 									{effectiveUrl}

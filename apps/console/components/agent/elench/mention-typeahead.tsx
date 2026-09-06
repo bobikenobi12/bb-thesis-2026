@@ -141,7 +141,7 @@ export function MentionTypeaheadPlugin({
 						style={{ maxHeight }}
 						className="absolute bottom-full left-0 z-[var(--z-overlay)] mb-2 flex w-full flex-col border border-border bg-popover shadow-md"
 					>
-						<div className="vx-eyebrow flex flex-none items-center gap-1.5 border-b border-border px-2.5 py-1.5 text-[9px]">
+						<div className="vx-eyebrow flex flex-none items-center gap-1.5 border-b border-border px-2.5 py-1.5 text-ui-3xs">
 							Tag a resource
 							{loading && <Loader2 className="h-3 w-3 animate-spin" />}
 						</div>
@@ -178,10 +178,10 @@ export function MentionTypeaheadPlugin({
 										>
 											<Icon className="h-4 w-4 flex-none text-muted-foreground" />
 											<span className="min-w-0 flex-1">
-												<span className="block truncate text-[13px] text-foreground">
+												<span className="block truncate text-ui-md text-foreground">
 													{option.result.label}
 												</span>
-												<span className="block truncate font-mono text-[10px] text-muted-foreground">
+												<span className="block truncate font-mono text-ui-2xs text-muted-foreground">
 													{option.result.type} · {option.result.sublabel}
 												</span>
 											</span>

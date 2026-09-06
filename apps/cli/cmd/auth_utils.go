@@ -123,7 +123,13 @@ func getAuthTokenInternal(promptLogin bool) (string, error) {
 					if creds.RefreshToken == "" {
 						needsLogin = true
 					} else {
-						fmt.Println("Access token expired, refreshing...")
+						// STDERR, not stdout. This line is a diagnostic about the session, not
+						// part of the answer the command was asked for: on stdout it lands INSIDE
+						// `alethia jobs list -o json > jobs.json` whenever the stored token happens
+						// to be in its last minute, and the file no longer parses. Which stream a
+						// line goes to is the contract — the document on stdout, everything
+						// transient on stderr, where a pipe and a `-o json` parse never see it.
+						fmt.Fprintln(os.Stderr, "Access token expired, refreshing...")
 						newAccessToken, err := refreshAccessToken(creds.RefreshToken)
 						if err != nil {
 							needsLogin = true

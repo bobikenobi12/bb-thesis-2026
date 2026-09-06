@@ -57,7 +57,7 @@ function ThreadMessage({ message }: { message: PublicMessage }) {
 			>
 				{!isCustomer && (
 					<Avatar className="size-6 rounded-none">
-						<AvatarFallback className="rounded-none text-[10px]">
+						<AvatarFallback className="rounded-none text-ui-2xs">
 							{ROLE_INITIALS[message.author_type]}
 						</AvatarFallback>
 					</Avatar>

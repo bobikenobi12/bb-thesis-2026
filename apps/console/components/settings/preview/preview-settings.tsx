@@ -127,7 +127,7 @@ function applyRepositoryParts(
 
 function FieldError({ message }: { message?: string }) {
 	if (!message) return null;
-	return <span className="text-[11px] text-text-secondary">{message}</span>;
+	return <span className="text-ui-xs text-text-secondary">{message}</span>;
 }
 
 export function PreviewSettings({
@@ -221,7 +221,7 @@ export function PreviewSettings({
 												status={enabled ? "active" : "disabled"}
 												label={enabled ? "Enabled" : "Disabled"}
 											/>
-											<span className="truncate text-[12px] text-text-tertiary">
+											<span className="truncate text-ui-sm text-text-tertiary">
 												{enabled
 													? "Previews will be reconciled after deploy."
 													: "No preview ApplicationSet is rendered."}
@@ -257,7 +257,7 @@ export function PreviewSettings({
 								placeholder="Select repository..."
 								variant="settings"
 							/>
-							<div className="flex items-center gap-2 text-[11.5px] text-text-tertiary">
+							<div className="flex items-center gap-2 text-ui-xs text-text-tertiary">
 								<GitProviderIcon provider={selectedProvider} size={14} />
 								<span className="font-mono">
 									{repoOwner || "owner"}/{repoName || "repo"}
@@ -272,12 +272,12 @@ export function PreviewSettings({
 							/>
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_160px]">
 								<input
-									className={cn(settingsControl, settingsControlSize, "font-mono text-[12px]")}
+									className={cn(settingsControl, settingsControlSize, "font-mono text-ui-sm")}
 									autoComplete="off"
 									placeholder="."
 									{...form.register("apps_path")}
 								/>
-								<div className="flex h-[38px] items-center rounded-sm border border-border-strong bg-surface-sunken px-3 font-mono text-[12px] text-text-tertiary">
+								<div className="flex h-[38px] items-center rounded-sm border border-border-strong bg-surface-sunken px-3 font-mono text-ui-sm text-text-tertiary">
 									apps path
 								</div>
 							</div>
@@ -296,7 +296,12 @@ export function PreviewSettings({
 										value={field.value ?? "namespace"}
 										onValueChange={field.onChange}
 									>
-										<SelectTrigger className="w-full">
+										{/* Three selects share two `SettingsField` rows here, so the row label
+										    cannot name them — "Placement" would be the accessible name of two
+										    different controls. Each carries its own, and each keeps the visible
+										    row label inside it (WCAG 2.5.3): a user who says "placement mode"
+										    must reach a control a user who reads "Placement" can find. */}
+										<SelectTrigger aria-label="Placement mode" className="w-full">
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent>
@@ -304,7 +309,7 @@ export function PreviewSettings({
 												<SelectItem key={mode} value={mode}>
 													<div className="flex flex-col gap-0.5">
 														<span>{PLACEMENT_MODE_LABELS[mode].label}</span>
-														<span className="text-[11px] text-text-tertiary">
+														<span className="text-ui-xs text-text-tertiary">
 															{PLACEMENT_MODE_LABELS[mode].hint}
 														</span>
 													</div>
@@ -316,7 +321,7 @@ export function PreviewSettings({
 							/>
 							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
 								<input
-									className={cn(settingsControl, settingsControlSize, "font-mono text-[12px]")}
+									className={cn(settingsControl, settingsControlSize, "font-mono text-ui-sm")}
 									autoComplete="off"
 									placeholder="preview"
 									{...form.register("namespace_prefix")}
@@ -331,7 +336,7 @@ export function PreviewSettings({
 												field.onChange(value === "default" ? null : value)
 											}
 										>
-											<SelectTrigger className="w-full">
+											<SelectTrigger aria-label="Placement fabric" className="w-full">
 												<SelectValue placeholder="Default fabric" />
 											</SelectTrigger>
 											<SelectContent>
@@ -340,7 +345,7 @@ export function PreviewSettings({
 													<SelectItem key={fabric.id} value={fabric.id}>
 														<div className="flex min-w-0 items-center gap-2">
 															<span className="truncate">{fabric.name}</span>
-															<span className="font-mono text-[11px] text-text-tertiary">
+															<span className="font-mono text-ui-xs text-text-tertiary">
 																{fabric.region ?? "inherit"}
 															</span>
 															<StatusBadge
@@ -357,7 +362,7 @@ export function PreviewSettings({
 								/>
 							</div>
 							{fabrics.length === 0 && (
-								<div className="rounded-sm border border-dashed border-border-strong bg-surface-sunken px-3 py-2 text-[12px] text-text-tertiary">
+								<div className="rounded-sm border border-dashed border-border-strong bg-surface-sunken px-3 py-2 text-ui-sm text-text-tertiary">
 									No project fabrics found. Default fabric will be used when one exists.
 								</div>
 							)}
@@ -384,7 +389,7 @@ export function PreviewSettings({
 											field.onChange(value === "none" ? null : value)
 										}
 									>
-										<SelectTrigger className="w-full">
+										<SelectTrigger aria-label="Credentials" className="w-full">
 											<SelectValue placeholder="None - public repos only" />
 										</SelectTrigger>
 										<SelectContent>
@@ -398,7 +403,7 @@ export function PreviewSettings({
 									</Select>
 								)}
 							/>
-							<div className="rounded-sm border border-dashed border-border-strong bg-surface-sunken px-3 py-2 text-[12px] text-text-tertiary">
+							<div className="rounded-sm border border-dashed border-border-strong bg-surface-sunken px-3 py-2 text-ui-sm text-text-tertiary">
 								{credentialId
 									? "Only ArgoCD-purpose credentials are listed here."
 									: "Without a credential, the generator can poll public repositories only."}

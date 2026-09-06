@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from "react";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { cn } from "@repo/ui/utils";
 
 interface SettingsCardProps {
@@ -30,11 +31,13 @@ export function SettingsCard({
 		>
 			{(title || description) && (
 				<div className="border-b border-border/40 px-5 py-4">
-					{title && (
-						<h2 className="text-sm font-semibold text-foreground">{title}</h2>
-					)}
-					{description && (
-						<p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+					{title ? (
+						// `level={2}` preserves the outline rung this card already occupied; the
+						// `text-sm font-semibold` it used to typeset it at was one of the five sizes
+						// the console rendered a second-level heading at.
+						<SectionHeading level={2} title={title} description={description} />
+					) : (
+						<p className="text-xs text-muted-foreground">{description}</p>
 					)}
 				</div>
 			)}

@@ -40,6 +40,14 @@ with `alethia connector gcp` immediately shows up in the console Connectors page
 versa.
 </Callout>
 
+<Callout type="info">
+Connections are **organization-scoped**. `alethia connector` acts on your active organization
+(`alethia org switch`) unless the global `--org <id>` flag names another one — and it is honoured
+only for an organization you are a member of, else the request is refused with `403`. A service
+token is pinned to the organization it was minted for, and a request carrying a different one is
+refused with `403` rather than quietly rescoped.
+</Callout>
+
 ## How It Works
 
 Each `connector` subcommand runs the same three-stage pipeline, verified server-side:
@@ -105,6 +113,40 @@ CLI. Alibaba additionally supports `--terraform`, which writes an OpenTofu modul
 Hetzner needs no such flow: there is no installer, only the token itself, and `--token-stdin` covers
 the non-interactive case.
 
+## Scripting: flags are a complete contract
+
+Everything the interactive flows can ask for, a flag can set — so every `connector` command
+works under `--no-input`, in CI, with no cloud CLI installed and no terminal to prompt on.
+That is what the `--role-arn`, `--wif-config`, `--tenant-id` and `--client-id` flags are for:
+they are the flag form of the `--manual` pastes, for a role or managed identity you have
+already created.
+
+```bash
+alethia connector aws --no-input \
+  --role-arn arn:aws:iam::123456789012:role/AlethiaProvisionerRole
+
+alethia connector gcp --no-input --project my-gcp-project --wif-config ./wif.json
+
+alethia connector azure --no-input \
+  --subscription 00000000-0000-0000-0000-000000000000 \
+  --tenant-id 11111111-1111-1111-1111-111111111111 \
+  --client-id 22222222-2222-2222-2222-222222222222
+
+alethia connector alibaba --no-input \
+  --role-arn acs:ram::123456789012:role/AlethiaProvisioner
+
+echo "$HCLOUD_TOKEN" | alethia connector hetzner --no-input --token-stdin
+```
+
+Leave a required field out under `--no-input` and the command exits non-zero **naming the
+flag** that would have supplied it, rather than failing at a prompt it cannot open.
+
+Each command takes **one** setup mode. Submitting something you already have and asking for the
+setup that creates it are two different answers to the same question, so combining them is
+refused by name rather than resolved by precedence — `--role-arn` with `--manual`, `--terraform`
+or `--script`, `--wif-config` with `--manual`, and `--tenant-id`/`--client-id` with `--manual`.
+An ignored flag is the same class of defect as a missing one.
+
 ## `alethia connector gcp`
 
 Connect a Google Cloud project using Workload Identity Federation.
@@ -116,6 +158,7 @@ alethia connector gcp --project my-gcp-project
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--project` | No | GCP project ID. Prompted interactively if omitted. |
+| `--wif-config` | No | Path to a WIF credential config JSON you already have, or `-` to read it from stdin. The flag form of the `--manual` paste. |
 | `--manual` | No | Run the installer in the browser Cloud Shell and paste the result instead of using local `gcloud`. |
 
 By default, the CLI runs an installer **inside your Google Cloud Shell**. Cloud Shell is
@@ -198,6 +241,7 @@ alethia connector aws
 |------|----------|-------------|
 | `--region` | No | AWS region for the CloudFormation stack. |
 | `--role-name` | No | Name for the IAM role. Defaults to `AlethiaProvisionerRole`. |
+| `--role-arn` | No | ARN of a role you already created. Submits it instead of prompting — the flag form of the `--manual` paste. |
 | `--manual` | No | Deploy from the AWS console and paste the role ARN instead of using local `aws`. |
 | `--script` | No | Use the `aws`-CLI setup script instead of the CloudFormation stack. |
 
@@ -257,6 +301,8 @@ alethia connector azure --subscription <subscription-id>
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--subscription` | No | Azure subscription ID. Prompted interactively if omitted. |
+| `--tenant-id` | No | Tenant ID of a managed identity you already created. Requires `--client-id`. |
+| `--client-id` | No | Client (application) ID of that managed identity. Requires `--tenant-id`. |
 | `--manual` | No | Run setup in Azure Cloud Shell and paste the result instead of using local `az`. |
 
 <Tabs items={["Local az CLI (default)", "Manual (Cloud Shell)"]}>
@@ -317,6 +363,7 @@ alethia connector alibaba
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--region` | No | Alibaba region for the RAM provider. Defaults to `cn-hangzhou`. |
+| `--role-arn` | No | ARN of a RAM role you already created. Submits it instead of prompting — the flag form of the `--manual` paste. |
 | `--manual` | No | Run the setup script in the Alibaba Cloud Shell and paste the role ARN. |
 | `--terraform` | No | Apply the OpenTofu module instead of running the setup script. |
 | `--dir` | No | Directory to write the OpenTofu module into (with `--terraform`). Defaults to `./alethia-alibaba-connector`. |
@@ -370,8 +417,13 @@ alethia connector hetzner --token-stdin \
 |------|----------|-------------|
 | `--token-stdin` | No | Read the API token from stdin. Preferred for scripts. |
 | `--token` | No | Pass the token inline. Convenient, but it lands in your shell history and the process list. |
-| `--s3-access-key` | No | Hetzner Object Storage access key. Only needed for storage buckets. |
-| `--s3-secret-key` | No | Hetzner Object Storage secret key. |
+| `--s3-access-key` | No | Hetzner Object Storage access key. Only needed for storage buckets, and only together with `--s3-secret-key`. |
+| `--s3-secret-key` | No | Hetzner Object Storage secret key. Only together with `--s3-access-key`. |
+
+The Object Storage keys are a **pair**: give both or neither. Half a pair is refused rather
+than stored, because an access key with no secret is a credential that cannot work and whose
+failure only shows up later, as a bucket that will not provision. On a terminal the command
+offers the pair after the token prompt, so you never have to know the flag names.
 
 Create the token in the Hetzner Cloud Console, under the **project** rather than the account:
 **Security → API tokens → Generate API token**, with **Read & Write**. Object Storage uses a
@@ -411,6 +463,16 @@ AZURE      Azure (3f9a1c2b-...)                 5 days ago
 
 The table is interactive — sort and navigate with the keyboard (see [TUI Components](/cli/tui)).
 
+**PROVIDER** is upper-cased and **CONNECTED** is an age for a person reading the column. Under
+`-o csv` a script gets the values instead: the provider is the lower-case wire value — the same
+string `alethia connector aws` takes and `-o json` marshals — and **CONNECTED** is the RFC3339
+stamp, which sorts and parses.
+Add `-o json` for the full records, including each connection's `id`.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| _(none)_ | — | `connector list` takes no input of its own. |
+
 ## `alethia connector remove`
 
 Disconnect a cloud account.
@@ -419,11 +481,16 @@ Disconnect a cloud account.
 alethia connector remove gcp
 ```
 
-If you omit the provider, the CLI shows a picker of connected accounts.
+If you omit the provider, the CLI shows a picker of connected accounts. Under `--no-input`
+there is no picker to show, so the provider argument is required and the refusal says so.
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `[provider]` | No | `aws`, `gcp`, `azure`, `alibaba`, or `hetzner`. Omit for a picker. |
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `-y`, `--yes` | No | Skip the confirmation prompt. |
+| `-y`, `--yes` | No | Skip the confirmation prompt. Required with `--no-input`. |
 
 <Callout type="warn">
 Disconnecting resets the identity to a pending state and **orphans any projects** that referenced it

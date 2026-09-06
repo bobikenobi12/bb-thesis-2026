@@ -81,8 +81,8 @@ data "aws_iam_policy_document" "firehose_s3_policy" {
     ]
     effect = "Allow"
     resources = [
-      data.aws_s3_bucket.engine_logs[0].arn,
-      format("%s/*", data.aws_s3_bucket.engine_logs[0].arn)
+      one(data.aws_s3_bucket.engine_logs[*].arn),
+      format("%s/*", one(data.aws_s3_bucket.engine_logs[*].arn))
     ]
   }
 }
@@ -92,7 +92,7 @@ resource "aws_iam_policy" "s3_firehose_policy" {
   count       = var.s3_logs_enabled ? 1 : 0
   name        = local.firehose_s3_policy_name
   description = format("Policy to allow kinesis firehose to write to destination s3 bucket for redis cluster %s", module.redis.id)
-  policy      = data.aws_iam_policy_document.firehose_s3_policy[0].json
+  policy      = one(data.aws_iam_policy_document.firehose_s3_policy[*].json)
 }
 
 resource "aws_iam_role" "firehose_role" {
@@ -117,7 +117,7 @@ resource "aws_iam_role" "firehose_role" {
 
 # Associate tenant IAM policy to relevant role
 resource "aws_iam_role_policy_attachment" "attach_s3_policy_to_firehose_role" {
-  count      = var.s3_logs_enabled ? 1 : 0
+  count      = var.s3_logs_enabled && var.firehose_logs_enabled ? 1 : 0
   role       = one(aws_iam_role.firehose_role[*].name)
   policy_arn = one(aws_iam_policy.s3_firehose_policy[*].arn)
 }
@@ -131,7 +131,7 @@ resource "aws_kinesis_firehose_delivery_stream" "redis" {
 
   extended_s3_configuration {
     role_arn   = one(aws_iam_role.firehose_role[*].arn)
-    bucket_arn = data.aws_s3_bucket.engine_logs[0].arn
+    bucket_arn = one(data.aws_s3_bucket.engine_logs[*].arn)
     prefix     = coalesce(var.s3_logs_prefix, local.s3_logs_prefix)
   }
 

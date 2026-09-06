@@ -6,9 +6,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/spf13/cobra"
 )
@@ -16,13 +18,30 @@ import (
 var projectGetCmd = &cobra.Command{
 	Use:   "get [project_name]",
 	Short: "Get a specific project by project name",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		projectName := args[0]
+	Long: `Print a project's full configuration.
 
+The project is named by its positional NAME. Omit it on a terminal and you are asked, so
+the name never has to be copied out of another command's output.`,
+	Args: cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
+		}
+
+		projectName := ""
+		if len(args) == 1 {
+			projectName = args[0]
+		}
+		if projectName == "" {
+			if !promptsEnabled() {
+				failf("a project name is required (pass it as the argument)")
+			}
+			// promptProjectNameRef, not promptProjectRef: GetConfiguration below resolves by
+			// project NAME only, so the id that one falls back to for a shared name would 404.
+			if projectName, err = promptProjectNameRef(token); err != nil {
+				fail(err)
+			}
 		}
 
 		format := outputFormat(cmd)
@@ -78,7 +97,10 @@ func projectSummaryRows(c types.Configuration) [][]string {
 		{"IaC Version", c.IacVersion},
 	}
 	if !c.UpdatedAt.IsZero() {
-		rows = append(rows, []string{"Last Updated", c.UpdatedAt.Format("2006-01-02 15:04:05")})
+		// `2006-01-02 15:04:05` was one of five copies of that layout in the CLI. One absolute
+		// date, the console's, in UTC — the host zone would make the same project print two
+		// different times on two machines.
+		rows = append(rows, []string{"Last Updated", format.Date(c.UpdatedAt, format.DateTime, time.UTC)})
 	}
 	return rows
 }

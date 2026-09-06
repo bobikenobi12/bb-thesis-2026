@@ -64,9 +64,9 @@ org/team model.
 
 alethia uses a **Device Authorization Grant** flow ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628))
 — the same browser-hands-off-to-terminal pattern as GitHub CLI, Azure CLI, and AWS SSO. Alethia's flow
-is a **simplified variant**: the CLI generates the `device_code` itself and binds it directly in the
-browser URL, so there is no separately-typed `user_code`. See [**Standards → Device Code**](/standards/device-code)
-for the full protocol mapping.
+is a **simplified variant**: the CLI generates both the `device_code` and the `user_code` and carries
+them in the browser URL, so the `user_code` is compared rather than typed. See
+[**Standards → Device Code**](/standards/device-code) for the full protocol mapping.
 
 ### Why Device Code?
 
@@ -78,16 +78,21 @@ for the full protocol mapping.
 
 <Steps>
 
-### CLI generates a device code
-`alethia login` generates a UUID `device_code` and opens the browser to `{console_url}/cli/login?device_code={code}`.
+### CLI registers the login
+`alethia login` generates a UUID `device_code` and a short `user_code`, registers both with
+`POST /api/auth/cli/start` along with its name, version and the IP Console sees, and opens the browser
+to `{console_url}/cli/login?device_code={code}&user_code={user_code}`.
 
 ### User approves in the browser
-The user is already signed into Console (or signs in via OAuth / email OTP). The Console page binds the
-pending `device_code` to the authenticated user and approves it — no code is typed back into the terminal.
+The user is already signed into Console (or signs in via OAuth / email OTP). The page names the account
+that would be bound, what approval hands over, who is asking and how long is left, then binds the pending
+`device_code` to the authenticated user — no code is typed back into the terminal. Refusing instead
+records a refusal that the same link cannot undo.
 
 ### CLI polls for the token
-While the user approves, the CLI polls `POST /api/auth/cli/exchange` with the `device_code`. Console
-returns **HTTP 404** while the request is still pending; once approved it returns a CLI-specific JWT pair.
+While the user decides, the CLI polls `POST /api/auth/cli/exchange` with the `device_code`. Console
+returns **HTTP 404** while the request is still pending and **HTTP 403** with `access_denied` if the user
+refused; once approved it returns a CLI-specific JWT pair.
 
 ### Token stored locally
 The tokens are saved to `~/.config/alethia/credentials.json` (`os.UserConfigDir()/alethia/credentials.json`).

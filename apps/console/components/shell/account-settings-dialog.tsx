@@ -22,6 +22,7 @@ import {
 } from "@repo/ui/dialog";
 import { Input } from "@repo/ui/input";
 import { Label } from "@repo/ui/label";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 /** Friendly labels for the auth providers surfaced as badges. */
 const PROVIDER_LABELS: Record<string, string> = {
@@ -110,7 +111,7 @@ export function AccountSettingsDialog({
 					</Avatar>
 					<div className="grid flex-1 gap-4 sm:grid-cols-2">
 						<div className="space-y-1">
-							<Label className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+							<Label className="flex items-center gap-1.5 text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
 								<User className="h-3 w-3" />
 								Full Name
 							</Label>
@@ -119,7 +120,7 @@ export function AccountSettingsDialog({
 							</p>
 						</div>
 						<div className="space-y-1">
-							<Label className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+							<Label className="flex items-center gap-1.5 text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
 								<Mail className="h-3 w-3" />
 								Email
 							</Label>
@@ -128,7 +129,7 @@ export function AccountSettingsDialog({
 							</p>
 						</div>
 						<div className="space-y-1">
-							<Label className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+							<Label className="flex items-center gap-1.5 text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
 								<Shield className="h-3 w-3" />
 								Authentication
 							</Label>
@@ -137,7 +138,7 @@ export function AccountSettingsDialog({
 									<Badge
 										key={providerId}
 										variant="secondary"
-										className="h-5 border-border/50 bg-muted/50 px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
+										className="h-5 border-border/50 bg-muted/50 px-2 py-0.5 text-ui-xs font-normal text-muted-foreground"
 									>
 										{PROVIDER_LABELS[providerId] ?? providerId}
 									</Badge>
@@ -145,7 +146,7 @@ export function AccountSettingsDialog({
 							</div>
 						</div>
 						<div className="space-y-1">
-							<Label className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+							<Label className="flex items-center gap-1.5 text-ui-xs font-medium uppercase tracking-wider text-muted-foreground">
 								<Calendar className="h-3 w-3" />
 								Member Since
 							</Label>
@@ -186,7 +187,7 @@ export function AccountSettingsDialog({
 								disabled
 								className="h-9 bg-muted/50 text-sm text-muted-foreground"
 							/>
-							<p className="text-[11px] text-muted-foreground">
+							<p className="text-ui-xs text-muted-foreground">
 								Email cannot be changed after registration.
 							</p>
 						</div>
@@ -205,24 +206,20 @@ export function AccountSettingsDialog({
 
 				{/* Danger zone */}
 				<div className="rounded-md border border-destructive/20 bg-destructive/5 p-4">
-					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-						<div className="space-y-1">
-							<h4 className="text-sm font-medium text-foreground">
+					<SectionHeading
+						title="Delete Account"
+						level={4}
+						description="Once you delete your account, there is no going back. All your configurations and data will be permanently deleted."
+						actions={
+							<Button
+								variant="destructive"
+								size="sm"
+								className="h-9 shrink-0 text-xs font-medium"
+							>
 								Delete Account
-							</h4>
-							<p className="max-w-md text-xs text-muted-foreground">
-								Once you delete your account, there is no going back. All your
-								configurations and data will be permanently deleted.
-							</p>
-						</div>
-						<Button
-							variant="destructive"
-							size="sm"
-							className="h-9 shrink-0 text-xs font-medium"
-						>
-							Delete Account
-						</Button>
-					</div>
+							</Button>
+						}
+					/>
 				</div>
 			</DialogContent>
 		</Dialog>

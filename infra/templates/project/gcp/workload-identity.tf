@@ -116,7 +116,7 @@ resource "google_service_account_iam_member" "external_dns_addon_wi" {
   count              = var.provision_gke ? 1 : 0
   service_account_id = local.external_dns_sa_name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[external-dns/addon-external-dns-sa]"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[external-dns/addon-external-dns]"
 
   # Same Identity-Pool race as external_dns_wi above — the edge must be explicit.
   depends_on = [module.gke]
@@ -178,7 +178,7 @@ resource "google_secret_manager_secret_iam_member" "external_secrets_sql_accesso
   count = var.provision_gke && var.create_cloud_sql ? 1 : 0
 
   project   = var.project_id
-  secret_id = module.cloud_sql[0].credentials_secret_id
+  secret_id = try(module.cloud_sql[0].credentials_secret_id, null) != null ? module.cloud_sql[0].credentials_secret_id : ""
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${local.external_secrets_sa_email}"
 }

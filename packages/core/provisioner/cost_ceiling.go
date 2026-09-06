@@ -6,8 +6,20 @@ package provisioner
 import (
 	"fmt"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 	"github.com/alethialabs-io/alethialabs/packages/core/infracost"
 )
+
+// costCeilingCurrency is the currency BOTH sides of this comparison are denominated in.
+//
+// It is not a guess and it is not configurable here: the ceiling arrives as
+// DeployParams.CostCeilingMonthlyUSD, read from ALETHIA_COST_CEILING_MONTHLY_USD, and the estimate
+// it is compared against is infracost's `totalMonthlyCost`, which this repo never asks for in any
+// other currency (nothing sets INFRACOST_CURRENCY, and CostBreakdown.Currency — parsed at
+// infracost/types.go:8 — has no production reader). Naming the currency is what makes that standing
+// assumption visible: the day the estimate is priced in something else, this constant is the line
+// that has to change, rather than a `$` welded into a sentence.
+const costCeilingCurrency = "USD"
 
 // costCeilingBlock is the fail-closed cost guard for the real-apply path. When a
 // non-zero monthly-USD ceiling is configured, a real apply must not proceed if the
@@ -29,15 +41,21 @@ func costCeilingBlock(cb *infracost.CostBreakdown, ceilingUSD float64) (bool, st
 	}
 	if cb == nil || cb.Summary == nil {
 		return true, fmt.Sprintf(
-			"cost ceiling BLOCKED apply: a $%.2f/mo ceiling is set but no Infracost estimate could be "+
+			"cost ceiling BLOCKED apply: a %s ceiling is set but no Infracost estimate could be "+
 				"produced (is INFRACOST_API_KEY set and did `infracost breakdown` succeed?) — refusing to "+
-				"apply an unpriced plan", ceilingUSD)
+				"apply an unpriced plan", format.MonthlyRate(ceilingUSD, format.Exact, costCeilingCurrency))
 	}
 	if cb.Summary.TotalMonthly > ceilingUSD {
+		// format.Exact, not Estimate: a ceiling and the figure that breached it are both exact
+		// numbers the operator has to act on, and Estimate would render a $0.40 breach of a $0.30
+		// ceiling as `<$1/mo exceeds the <$1/mo ceiling`. Both operands are strictly positive here
+		// (the guard returned above for ceilingUSD <= 0, and TotalMonthly is greater still), so
+		// MonthlyRate's negative-clamp gap cannot reach this line.
 		return true, fmt.Sprintf(
-			"cost ceiling BLOCKED apply: estimated $%.2f/mo exceeds the $%.2f/mo ceiling — shrink the plan "+
+			"cost ceiling BLOCKED apply: estimated %s exceeds the %s ceiling — shrink the plan "+
 				"(cheaper node shape / single NAT / fewer resources) or raise the ceiling",
-			cb.Summary.TotalMonthly, ceilingUSD)
+			format.MonthlyRate(cb.Summary.TotalMonthly, format.Exact, costCeilingCurrency),
+			format.MonthlyRate(ceilingUSD, format.Exact, costCeilingCurrency))
 	}
 	return false, ""
 }

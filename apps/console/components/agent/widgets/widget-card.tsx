@@ -44,7 +44,7 @@ export function WidgetBody({ widget }: { widget: WidgetPayload }) {
     return <def.Body output={widget.data.output} />;
   }
   return (
-    <div className="flex h-full items-center justify-center text-[11px] text-muted-foreground">
+    <div className="flex h-full items-center justify-center text-ui-xs text-muted-foreground">
       No renderer for this widget.
     </div>
   );
@@ -190,7 +190,7 @@ export function WidgetCard({
         </button>
         <span
           title={widget.title}
-          className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+          className="min-w-0 flex-1 truncate font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground"
         >
           {widget.title}
         </span>
@@ -212,7 +212,7 @@ export function WidgetCard({
                     )
                   }
                   className={cn(
-                    "flex flex-none items-center gap-1 font-mono text-[9px] uppercase transition-colors hover:text-foreground",
+                    "flex flex-none items-center gap-1 font-mono text-ui-3xs uppercase transition-colors hover:text-foreground",
                     widget.mode === "live"
                       ? "text-foreground"
                       : "text-muted-foreground/70",
@@ -238,7 +238,7 @@ export function WidgetCard({
           </Tooltip>
         ) : (
           widget.mode === "frozen" && (
-            <span className="flex flex-none items-center gap-1 font-mono text-[9px] uppercase text-muted-foreground/70">
+            <span className="flex flex-none items-center gap-1 font-mono text-ui-3xs uppercase text-muted-foreground/70">
               <Snowflake className="h-2.5 w-2.5" />
               Frozen
             </span>

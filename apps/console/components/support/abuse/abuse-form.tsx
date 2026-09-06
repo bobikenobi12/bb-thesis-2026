@@ -16,7 +16,7 @@ import {
 	type SubmitCaseInput,
 	submitCaseSchema,
 } from "@/lib/validations/support";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { Button } from "@repo/ui/button";
 import { Input } from "@repo/ui/input";
 import { Label } from "@repo/ui/label";
@@ -93,8 +93,7 @@ export function AbuseForm({ orgSlug, defaultEmail }: AbuseFormProps) {
 
 	return (
 		<form onSubmit={onSubmit} className="max-w-2xl space-y-8 py-2">
-			<PageHeader
-				title="Report abuse"
+			<PageToolbar
 				description="Flag phishing, malware, spam, copyright, or other policy violations. Our trust & safety team reviews every report."
 			/>
 

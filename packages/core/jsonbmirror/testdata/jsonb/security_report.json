@@ -1,0 +1,8 @@
+{
+  "critical": 2,
+  "high": 5,
+  "medium": 11,
+  "low": 23,
+  "report_count": 37,
+  "scanned": true
+}

@@ -17,12 +17,12 @@ import {
 	useUpdateAllOutdated,
 	type RunnerReleaseInfo,
 } from "@/lib/query/use-runners-query";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelative } from "@repo/format";
 import { ArrowUpCircle, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-const MONO_LABEL = "font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground";
+const MONO_LABEL = "font-mono text-ui-3xs uppercase tracking-[0.12em] text-muted-foreground";
 
 /** A clickable version label that opens the release-notes popover. */
 function VersionLink({ version }: { version: string }) {
@@ -96,13 +96,13 @@ export function VersionsPanel() {
 						<div className="flex items-center gap-2">
 							<VersionLink version={latestRelease.version} />
 							{latestRelease.is_breaking && (
-								<Badge variant="destructive" className="py-0 text-[10px]">
+								<Badge variant="destructive" className="py-0 text-ui-2xs">
 									Breaking
 								</Badge>
 							)}
 						</div>
-						<span className="text-[11px] text-muted-foreground">
-							Released {formatDistanceToNow(new Date(latestRelease.released_at), { addSuffix: true })}
+						<span className="text-ui-xs text-muted-foreground">
+							Released {formatRelative(latestRelease.released_at)}
 						</span>
 					</div>
 				) : (
@@ -168,12 +168,12 @@ export function VersionsPanel() {
 									<VersionLink version={r.version} />
 									<div className="flex items-center gap-2">
 										{r.is_breaking && (
-											<Badge variant="outline" className="border-border bg-muted py-0 text-[9px] text-muted-foreground">
+											<Badge variant="outline" className="border-border bg-muted py-0 text-ui-3xs text-muted-foreground">
 												Breaking
 											</Badge>
 										)}
-										<span className="font-mono text-[10px] text-muted-foreground">
-											{formatDistanceToNow(new Date(r.released_at), { addSuffix: true })}
+										<span className="font-mono text-ui-2xs text-muted-foreground">
+											{formatRelative(r.released_at)}
 										</span>
 									</div>
 								</li>

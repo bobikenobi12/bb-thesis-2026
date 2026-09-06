@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Hand-maintained status boards under docs/testing/, declared.
+#
+# PROGRAMME.md is the board. A file here asserts status and is NOT generated, so each entry has to
+# say why it is still written by hand and — where one exists — what would retire it. An entry is a
+# DECISION, not a mute button: work not yet done belongs on the board as an issue, where it stays
+# visible. THE LIST ONLY SHRINKS.
+#
+# Enforced by scripts/check-one-board.mjs, which asks PROGRAMME.md's own question about what counts
+# as a status claim (scripts/programme-rollup.mjs `statusClaimsIn`).
+
+- path: docs/testing/cli-demo-bar.md
+  reason: the remaining marks are the verdict LEGEND (what CLIDriven/CLIGap/CloudManual mean), not a claim about a cloud
+  retires_when: the legend is expressed without glyphs, or the guard learns to tell a legend from a verdict
+
+- path: docs/testing/provisioning-e2e-parity.md
+  reason: two marks are the Azure ESv5-vs-ESv3 quota survey, which is a measurement of what the subscription would not create; one is a checklist item using the glyph as a word ("before each dimension flips")
+  retires_when: the quota survey carries its finding as prose, and the checklist item stops naming a glyph
+
+- path: docs/testing/runner-xcloud-parity.md
+  reason: one mark - a DONE marker on the register ELF-arch check, which shipped as the pre-merge runner-image-arch CI guard and so records a completed change rather than a cloud verdict
+  retires_when: that line is rewritten as prose, or the shipped-work note moves out of the board
+
+- path: docs/testing/cloud-preflight-2026-08-24.md
+  reason: a dated point-in-time audit of the cloud ACCOUNTS - quotas, billing state, balances - which the rollup has no input for and cannot see
+  retires_when: it is marked historical, or account preflight gains a generator
+
+- path: docs/testing/keyless-db-parity.md
+  reason: keyless-db is not one of the rollup's seven dimensions, so nothing derives this matrix; it agrees with demos/proofs/keyless-db-e2e-log.md today
+  retires_when: the rollup models a keyless-db dimension, or epic #1500 closes
+
+- path: docs/testing/xacct-secrets-parity.md
+  reason: no rollup dimension exists; the three blocked cells are duplicated in scripts/e2e/secrets-e2e.sh and the ledger, and all three agree
+  retires_when: the rollup models cross-account secret managers, or epic #1206 closes
+
+- path: docs/testing/xacct-registry-parity.md
+  reason: no rollup dimension exists; the dated mint cells match demos/proofs/xacct-registry-e2e-log.md exactly, and test/e2e/t2_xacct_registry.go cites this file in its refusal message
+  retires_when: the rollup models cross-account registries, or epic #1046 closes
+
+- path: docs/testing/xacct-helm-registry-parity.md
+  reason: an AWS-only feature with no rollup dimension and no ledger file at all, so there is nothing to derive from and nothing to disagree with
+  retires_when: the feature gains a ledger, or the board is folded into xacct-registry-parity.md
+
+- path: docs/testing/maintainer-unblock-checklist.md
+  reason: a worklist of units stalled on a human, whose remedies and orderings are reasoning the rollup cannot carry
+  retires_when: the gate-layer rows are dropped in favour of PROGRAMME.md's two gate-reality tables
+
+- path: docs/testing/e2e-nightly-enablement.md
+  reason: a runbook; its single mark is one sentence of context on the keyless ship gate, not a status table
+  retires_when: that sentence is rephrased without a status verb

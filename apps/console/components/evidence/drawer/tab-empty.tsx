@@ -43,10 +43,10 @@ export function TabEmpty({
 				<EmptyMedia className="mb-1.5 text-text-tertiary">
 					<EvIcon name={icon} size={20} />
 				</EmptyMedia>
-				<EmptyTitle className="text-[13px] font-medium text-text-primary">
+				<EmptyTitle className="text-ui-md font-medium text-text-primary">
 					{title}
 				</EmptyTitle>
-				<EmptyDescription className="max-w-[40ch] text-[12px] leading-relaxed text-text-tertiary">
+				<EmptyDescription className="max-w-[40ch] text-ui-sm leading-relaxed text-text-tertiary">
 					{description}
 				</EmptyDescription>
 			</EmptyHeader>
@@ -55,7 +55,7 @@ export function TabEmpty({
 					{docsHref && (
 						<a
 							href={docsHref}
-							className="inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-[11px] text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
+							className="inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-ui-xs text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
 						>
 							Learn more
 							<EvIcon name="arrow-right" size={11} />

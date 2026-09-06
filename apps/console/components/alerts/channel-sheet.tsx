@@ -68,7 +68,7 @@ const HELP: Record<AlertChannelType, ReactNode> = {
 	webhook: (
 		<>
 			Any HTTPS endpoint. With a signing secret the body is signed{" "}
-			<code className="font-mono text-[11px]">X-Alethia-Signature</code> so your
+			<code className="font-mono text-ui-xs">X-Alethia-Signature</code> so your
 			receiver can verify it came from Alethia.
 		</>
 	),
@@ -296,10 +296,10 @@ export function ChannelSheet({
 									>
 										<ChannelIcon type={type} active={on} size={18} />
 										<span className="min-w-0">
-											<span className="block truncate font-medium text-[13px]">
+											<span className="block truncate font-medium text-ui-md">
 												{m.name}
 											</span>
-											<span className="block truncate font-mono text-[10px] text-muted-foreground">
+											<span className="block truncate font-mono text-ui-2xs text-muted-foreground">
 												{m.transport}
 											</span>
 										</span>
@@ -372,7 +372,7 @@ export function ChannelSheet({
 										<div className="flex items-center gap-1.5">
 											<Label htmlFor="ch-secret">
 												Signing secret{" "}
-												<span className="font-mono text-[9px] uppercase text-muted-foreground">
+												<span className="font-mono text-ui-3xs uppercase text-muted-foreground">
 													optional
 												</span>
 											</Label>
@@ -429,7 +429,7 @@ export function ChannelSheet({
 								<p className="leading-relaxed">{submitError}</p>
 							</div>
 						) : (
-							<p className="text-muted-foreground text-[11px]">
+							<p className="text-muted-foreground text-ui-xs">
 								Adding sends a one-off verification to this destination — the
 								channel is only created if it succeeds.
 							</p>
@@ -457,7 +457,7 @@ export function ChannelSheet({
 
 function InfoNote({ children }: { children: ReactNode }) {
 	return (
-		<div className="flex items-start gap-2.5 rounded-md border border-border/40 bg-muted/20 p-3 text-[11px] text-muted-foreground">
+		<div className="flex items-start gap-2.5 rounded-md border border-border/40 bg-muted/20 p-3 text-ui-xs text-muted-foreground">
 			<AlertCircle className="mt-0.5 size-3.5 shrink-0" />
 			<p className="leading-relaxed">{children}</p>
 		</div>

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { Badge } from "@repo/ui/badge";
+import { SectionHeading } from "@repo/ui/section-heading";
 
 /**
  * "Browse by topic" — a curated map into the documentation site, grouped by area. Every href
@@ -75,21 +76,20 @@ export function SupportBrowseTopics() {
 	return (
 		<section className="py-4">
 			<div className="mb-8 space-y-2">
-				<Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider">
+				<Badge variant="outline" className="font-mono text-ui-2xs uppercase tracking-wider">
 					Knowledge base
 				</Badge>
-				<h2 className="text-2xl font-semibold tracking-tight">Browse by topic</h2>
-				<p className="text-sm text-muted-foreground">
-					Guides and references for every part of the Alethia platform.
-				</p>
+				<SectionHeading
+					level={2}
+					title="Browse by topic"
+					description="Guides and references for every part of the Alethia platform."
+				/>
 			</div>
 
 			<div className="grid grid-cols-1 border-t border-l sm:grid-cols-2 lg:grid-cols-3">
 				{TOPICS.map((topic) => (
 					<div key={topic.title} className="border-r border-b p-6">
-						<h3 className="mb-4 text-sm font-semibold tracking-tight">
-							{topic.title}
-						</h3>
+						<SectionHeading level={3} title={topic.title} className="mb-4" />
 						<div className="flex flex-col gap-2.5">
 							{topic.items.map((item) => (
 								<a

@@ -8,61 +8,57 @@ import (
 	"testing"
 )
 
-// setChannelFlags installs the channel-create flag globals for one case and
-// restores them afterwards, so the table cases stay independent.
-func setChannelFlags(t *testing.T, recipients []string, url, signingSecret, routingKey string) {
-	t.Helper()
-	prevRecipients, prevURL := channelRecipients, channelURL
-	prevSecret, prevRouting := channelSigningSecret, channelRoutingKey
-	channelRecipients, channelURL = recipients, url
-	channelSigningSecret, channelRoutingKey = signingSecret, routingKey
-	t.Cleanup(func() {
-		channelRecipients, channelURL = prevRecipients, prevURL
-		channelSigningSecret, channelRoutingKey = prevSecret, prevRouting
-	})
-}
-
-// TestChannelConfig covers the create payload assembly: only the flags actually
-// set become config keys, under the snake_case wire names.
-func TestChannelConfig(t *testing.T) {
+// TestChannelDraftConfig covers the create payload assembly: only the values the draft actually
+// carries become config keys, under the snake_case wire names.
+//
+// It builds a channelDraft directly. The payload used to be assembled from four package-level flag
+// globals, so this test had to install and restore them around every case; the draft carries the
+// same values whether they arrived as flags or as form answers, and a test that no longer has to
+// mutate process state is testing the thing rather than its wiring.
+func TestChannelDraftConfig(t *testing.T) {
 	cases := []struct {
-		name          string
-		recipients    []string
-		url           string
-		signingSecret string
-		routingKey    string
-		want          map[string]interface{}
+		name  string
+		draft channelDraft
+		want  map[string]interface{}
 	}{
 		{
-			name: "no flags",
-			want: map[string]interface{}{},
+			name:  "nothing set",
+			draft: channelDraft{},
+			want:  map[string]interface{}{},
 		},
 		{
-			name:       "email recipients",
-			recipients: []string{"a@b.com", "c@d.com"},
-			want:       map[string]interface{}{"recipients": []string{"a@b.com", "c@d.com"}},
+			name:  "email recipients",
+			draft: channelDraft{Recipients: []string{"a@b.com", "c@d.com"}},
+			want:  map[string]interface{}{"recipients": []string{"a@b.com", "c@d.com"}},
 		},
 		{
-			name:          "webhook with signing secret",
-			url:           "https://hooks.example.com/x",
-			signingSecret: "s3cr3t",
+			name:  "webhook with signing secret",
+			draft: channelDraft{URL: "https://hooks.example.com/x", SigningSecret: "s3cr3t"},
 			want: map[string]interface{}{
 				"url":            "https://hooks.example.com/x",
 				"signing_secret": "s3cr3t",
 			},
 		},
 		{
-			name:       "pagerduty routing key",
-			routingKey: "R0UT1NG",
-			want:       map[string]interface{}{"routing_key": "R0UT1NG"},
+			name:  "pagerduty routing key",
+			draft: channelDraft{RoutingKey: "R0UT1NG"},
+			want:  map[string]interface{}{"routing_key": "R0UT1NG"},
+		},
+		{
+			// The name and the type are NOT config keys — they are top-level fields of the
+			// create call. A draft carrying only those must still produce an empty bag, or the
+			// channel's name would be sent twice and its type would land in the config where
+			// the server does not look for it.
+			name:  "name and type are not config",
+			draft: channelDraft{Name: "Ops Slack", Type: "slack"},
+			want:  map[string]interface{}{},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			setChannelFlags(t, tc.recipients, tc.url, tc.signingSecret, tc.routingKey)
-			if got := channelConfig(); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("channelConfig() = %#v, want %#v", got, tc.want)
+			if got := tc.draft.config(); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("config() = %#v, want %#v", got, tc.want)
 			}
 		})
 	}

@@ -28,6 +28,3 @@ export function orgUrl(slug: string): string {
 	return `${orgHost()}/${slug}`;
 }
 
-/** Vercel-style org name → URL slug (the auto-slug used by /onboarding + the create-org
- *  sheet). Canonical implementation lives in `./slug`; re-exported here for the org callers. */
-export { slugify } from "./slug";

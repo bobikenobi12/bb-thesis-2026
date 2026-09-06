@@ -9,10 +9,28 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { projectPreviewConfig } from "@/lib/db/schema";
+import { appsPathSchema } from "@/lib/validations/apps-path";
 
 /** Placement modes valid for an ephemeral preview (dedicated is excluded). */
 export const PREVIEW_PLACEMENT_MODES = ["namespace", "vcluster"] as const;
 export type PreviewPlacementMode = (typeof PREVIEW_PLACEMENT_MODES)[number];
+
+/**
+ * A namespace prefix, MIRRORING Go's `validatePreviewNamespacePrefix`
+ * (packages/core/argocd/preview_validate.go), which is the authoritative guard — the value is
+ * rendered into the preview ApplicationSet's `destination.namespace` and into the guardrails
+ * AppProject's destination pin, and the console is not a trust boundary for either.
+ *
+ * The previous rule here was `/^[a-z0-9-]+$/` with a message calling it "a DNS-1123 label prefix",
+ * which it is not: it accepted `-`, `--` and `a-`. A lone `-` rendered `namespace: -` in the
+ * vcluster arm, which is not even a well-formed YAML scalar.
+ *
+ * Keep these two constants in step with Go — `preview_prefix_mirror_test.go` reads them out of
+ * this file and fails when they drift.
+ */
+const DNS1123_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+/** 63 (Kubernetes' label limit) minus 8 reserved for `-` plus a seven-digit PR number. */
+const PREVIEW_PREFIX_MAX_LEN = 55;
 
 /** A GitHub/GitLab owner or repo segment: no whitespace, slashes, or path traversal. */
 const repoSegment = z
@@ -27,25 +45,21 @@ export const previewConfigSchema = createInsertSchema(projectPreviewConfig, {
 	git_provider: z.enum(["github", "gitlab", "bitbucket"]),
 	repo_owner: repoSegment,
 	repo_name: repoSegment,
-	apps_path: z
-		.string()
-		.trim()
-		.transform((p) => p.replace(/^\/+|\/+$/g, ""))
-		.transform((p) => (p === "" ? "." : p))
-		// Restrict to a repo-relative path charset — this value is interpolated into the rendered
-		// ApplicationSet YAML, so reject anything that could break out of the field.
-		.refine(
-			(p) => /^[A-Za-z0-9._/-]+$/.test(p),
-			"must be a repo-relative path (letters, digits, . _ - /)",
-		)
-		.optional(),
+	// THE SHARED RULE, not a third one. This field was previously validated here by a local
+	// charset check whose class contained `/` and allowed a segment to start with `.`, so
+	// `../../etc` passed every clause and was stored — while the placed-env lane used
+	// appsPathSchema, and Go's ValidateAppsPath guarded the same value at five other sites.
+	// See packages/core/argocd/preview_validate.go.
+	//
+	// Empty means the repository root, spelled ".", matching what namespace_tenant.go,
+	// vcluster_app.go and now applicationset_preview.go default to at render.
+	apps_path: appsPathSchema.transform((p) => (p == null || p === "" ? "." : p)),
 	placement_mode: z.enum(PREVIEW_PLACEMENT_MODES).optional(),
 	namespace_prefix: z
 		.string()
 		.trim()
-		.min(1)
-		.max(40)
-		.regex(/^[a-z0-9-]+$/, "must be a DNS-1123 label prefix")
+		.max(PREVIEW_PREFIX_MAX_LEN, `must be at most ${PREVIEW_PREFIX_MAX_LEN} characters`)
+		.regex(DNS1123_LABEL, "must be a DNS-1123 label: lowercase alphanumerics and '-', starting and ending alphanumeric")
 		.optional(),
 	fabric_id: z.string().uuid().nullish(),
 	git_credential_id: z.string().uuid().nullish(),

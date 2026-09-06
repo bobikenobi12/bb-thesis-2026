@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { afterEach, describe, expect, it } from "vitest";
-import { orgHost, orgUrl, slugify } from "@/lib/org-url";
+import { orgHost, orgUrl } from "@/lib/org-url";
 
 const ORIGINAL = process.env.NEXT_PUBLIC_APP_URL;
 afterEach(() => {
@@ -25,22 +25,24 @@ describe("orgHost", () => {
 		delete process.env.NEXT_PUBLIC_APP_URL;
 		expect(orgHost()).toBe("alethialabs.io");
 	});
+
+	it("strips a bare host out of a value `new URL` cannot parse", () => {
+		// Not hypothetical: a self-host deployment that sets NEXT_PUBLIC_APP_URL to a bare host
+		// (no scheme) throws in `new URL`, and the answer must still be a host rather than a crash
+		// in every page that shows the org's URL.
+		process.env.NEXT_PUBLIC_APP_URL = "console.internal.example/";
+		expect(orgHost()).toBe("console.internal.example");
+	});
+
+	it("falls back to the brand host when the value carries no host at all", () => {
+		process.env.NEXT_PUBLIC_APP_URL = "https://";
+		expect(orgHost()).toBe("alethialabs.io");
+	});
 });
 
 describe("orgUrl", () => {
 	it("joins the host and slug", () => {
 		process.env.NEXT_PUBLIC_APP_URL = "https://alethialabs.io";
 		expect(orgUrl("acme")).toBe("alethialabs.io/acme");
-	});
-});
-
-describe("slugify", () => {
-	it("normalizes a free-text name to a slug", () => {
-		expect(slugify("  My Cool Team! ")).toBe("my-cool-team");
-	});
-
-	it("drops apostrophes and folds accents (Vercel-style)", () => {
-		expect(slugify("bobikenobi12's Org")).toBe("bobikenobi12s-org");
-		expect(slugify("José's Café")).toBe("joses-cafe");
 	});
 });

@@ -145,14 +145,33 @@ cmd_release() {
   jq --arg s "$slug" 'del(.[$s])' "$REG" | save
 }
 
-# Minutes since the most recently touched env — what env:reap thresholds on. An empty
-# registry reports a very large number so "no envs at all" reaps like "all idle".
+# Minutes since the most recently touched env — what env:reap thresholds on.
+#
+# There are exactly two ways this cannot answer: no rows at all, and a lastSeen it cannot
+# parse. They are the SAME question — "I cannot tell how long this box has been idle" —
+# and both fail safe by reporting zero. That is one rule with two branches, not two
+# branches with two policies.
+#
+# The zero-rows branch used to report 999999, which made a box with no environment on it
+# MAXIMALLY idle by construction: "idle" here is derived solely from env lastSeen times,
+# so an empty registry is not evidence that nobody is using the box — it is evidence that
+# the registry knows nothing about what is. The unattended timer deleted a box on its
+# first tick that way, twice in one session, with a Go toolchain and a live build on it
+# (#3922). A box genuinely abandoned still reaps: `pnpm env:reap --now` skips the
+# threshold entirely, which is what "I am finished for the day" already means.
+#
+# The output is a bare integer and must STAY one. scripts/env.sh compares it with `-lt`,
+# and the copy answering is the one DEPLOYED on the box, which can lag the caller — a
+# word where a number is expected would make that comparison error out and fall through
+# to the destroy path.
 cmd_idle_minutes() {
   ensure
   local latest then_s now_s
   latest="$(jq -r '[.[].lastSeen] | max // empty' "$REG")"
   if [ -z "$latest" ]; then
-    echo 999999
+    # Nothing recorded means nothing measured. Fail safe: report zero idle time — the
+    # same answer, for the same reason, as the unparseable-timestamp branch below.
+    echo 0
     return 0
   fi
   # GNU date — this only ever runs on the Linux box, never on the mac.
@@ -227,11 +246,12 @@ self_test() {
   bash "$me" store delta 01ABC
   check "store id recorded" "$(bash "$me" list | jq -r '.delta.storeId')" "01ABC"
 
-  # An empty registry must read as maximally idle so a box with nothing on it reaps.
+  # An empty registry must fail SAFE (0 = busy), exactly like an unparseable timestamp:
+  # both mean "I cannot tell", and neither is evidence the box is unused (#3922).
   bash "$me" release cache-engine-aws
   bash "$me" release gamma
   bash "$me" release delta
-  check "empty registry is idle" "$(bash "$me" idle-minutes)" "999999"
+  check "empty registry fails safe" "$(bash "$me" idle-minutes)" "0"
 
   # An unparseable lastSeen must fail SAFE (0 = busy), never reap a box in use.
   if date -u -d "2020-01-01T00:00:00Z" +%s >/dev/null 2>&1; then

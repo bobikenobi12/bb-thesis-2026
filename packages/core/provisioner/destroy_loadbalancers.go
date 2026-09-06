@@ -10,6 +10,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 )
 
 // KUBERNETES CREATES CLOUD RESOURCES THAT OPENTOFU HAS NEVER HEARD OF, AND THE DESTROY MUST
@@ -388,7 +390,7 @@ func releaseCloudLoadBalancers(ctx context.Context, out io.Writer) (releaseOutco
 			// balancers. Keep asking until the deadline, then say it could not be confirmed.
 			lastErr, consecutiveErrs = lerr, consecutiveErrs+1
 		case len(remaining) == 0:
-			fmt.Fprintf(out, "   All cloud-backed objects released after %s.\n", time.Since(started).Round(time.Second))
+			fmt.Fprintf(out, "   All cloud-backed objects released after %s.\n", format.Duration(time.Since(started)))
 			return releaseOutcome{Clean: true, Released: len(objs)}, nil
 		default:
 			lastErr, consecutiveErrs = nil, 0

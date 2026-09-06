@@ -1,17 +1,33 @@
 ---
 title: IaC Commands
-description: Inspect the BYO Terraform/OpenTofu source attached to a project environment.
+description: Attach, scan, show and detach the BYO Terraform/OpenTofu source on a project environment.
 ---
 
 # IaC Commands
 
-The `iac` group shows the **BYO Terraform/OpenTofu source** attached to an environment — your own
+The `iac` group manages the **BYO Terraform/OpenTofu source** attached to an environment — your own
 IaC module, pulled from a connected git repo, that Alethia applies for that environment.
 
 <Callout type="info">
-The CLI is a client of the same Console API. `iac show` calls `/cli/projects/<project>/byo-iac`
-with your [CLI token](/cli/authentication) and operates on the **active organization**.
+The CLI is a client of the same Console API. These commands call `/cli/projects/PROJECT/byo-iac`
+with your [CLI token](/cli/authentication) and operate on the **active organization**.
 </Callout>
+
+## Common flags
+
+Every command in the group takes the same two selectors. They are registered on the group, so they
+work in any position.
+
+{/* fieldspec: alethia iac */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Project | The project, by name or id; omit it on a terminal and you are asked | `--project` |
+| Environment | The environment, by name, stage or id; empty means the project's default | `--env` |
+
+`--project` has the short form `-p` and `--env` has `-e`. On a terminal, omitting `--project` opens
+the project picker; with `--no-input`, with `-o json`, or with the output redirected to a file, it
+is required — a form drawn into a redirected stream would corrupt the document you are piping.
 
 ## `alethia iac show`
 
@@ -23,33 +39,45 @@ alethia iac show -p my-project -e staging
 alethia iac show -p my-project -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
-| `--env`, `-e` | No | Environment name, stage, or id. Omit to use the project's default environment. |
-
 Renders a field/value card: **name**, **repo**, **path**, **ref**, **enabled**, **scan** (the
 IaC-safety scan lifecycle), **pinned commit** (what a deploy will apply), **deployed commit** (what
 the last deploy applied), **status**. Prints `No BYO IaC source attached.` when none is configured.
-Add `-o json` for the full source object (the elench scan report itself is console-only). Backing
-call: `GET /cli/projects/<project>/byo-iac`.
+Add `-o json` for the full source object — the elench scan report itself is console-only. Backing
+call: `GET /cli/projects/PROJECT/byo-iac`.
 
 ## `alethia iac attach`
 
 Attach a git repository holding your own Terraform/OpenTofu to one environment.
 
 ```bash
-alethia iac attach -p shop -e dev \
-  --repo https://github.com/acme/infra --path iac/drift/aws --ref main \
-  --var region=eu-west-1
+alethia iac attach -p shop -e dev --repo https://github.com/acme/infra --path iac/drift/aws --ref main --var region=eu-west-1
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--repo` | Yes | Git repository URL. |
-| `--path` | No | Path to the module within the repo. |
-| `--ref` | No | Git ref (branch, tag or SHA). |
-| `--var key=value` | No | A scalar tfvar. Repeatable. |
+{/* fieldspec: alethia iac attach */}
+
+| Field | What it is | How to set it |
+|---|---|---|
+| Repository | The git repository holding your Terraform/OpenTofu | `--repo` |
+| Module path | Where the module sits inside the repository; empty is the repository root | `--path` |
+| Git ref | The branch, tag or commit to apply; empty tracks the repository's default branch | `--ref` |
+| Variable | One scalar tfvar key=value, repeatable, and never a place for a secret | `--var` |
+
+### The interactive path
+
+Run `alethia iac attach` on a terminal with nothing else and it asks for each field it was not
+given. A flag you did pass is never questioned again.
+
+The **repository is chosen, not typed**: the form asks which connected provider to look in, then
+offers the repositories Alethia can already see, with `Type a URL instead…` at the bottom of the
+list. If no provider is connected, or the listing fails, the question falls back to a plain typed
+line rather than refusing the attach.
+
+The run finishes by printing the flags that would have produced the same result.
+
+### With `--no-input`
+
+Nothing is asked, and `--repo` is required. Every field above has a flag, so any attach the form can
+perform, a script can perform.
 
 <Callout type="info">
   **A private repository needs no credential flag.** The runner fetches a short-lived token at job
@@ -73,8 +101,8 @@ alethia iac scan -p shop -e dev
 ```
 
 An attached source is **not deployable until scanned**: the scan reads the module's variables and
-records the verdict the plan-time gate reads. The printed job id follows with
-`alethia jobs logs <id> --follow`.
+records the verdict the plan-time gate reads. The scan is asynchronous: the queued job id is
+printed, and `alethia jobs logs --latest --follow` tails it without repeating that id back.
 
 ## `alethia iac detach`
 
@@ -84,7 +112,9 @@ alethia iac detach -p shop -e dev --yes
 
 <Callout type="warn">
   Detaching stops Alethia managing what the source created. Resources it applied are **not
-  destroyed** — run a destroy first if that is what you want.
+  destroyed** — run a destroy first if that is what you want. The command confirms first and names
+  the environment; with `--no-input`, or when stdin is not a terminal, `--yes` is required and the
+  command fails without it rather than cancelling quietly.
 </Callout>
 
 <Callout type="info">
@@ -96,4 +126,5 @@ alethia iac detach -p shop -e dev --yes
 ## See also
 
 - [Chart Commands](/cli/commands/charts) — your BYO Helm charts.
+- [Repository Commands](/cli/commands/repositories) — the repositories the picker offers.
 - [Command Reference](/cli/commands) — the full command tree and global flags.

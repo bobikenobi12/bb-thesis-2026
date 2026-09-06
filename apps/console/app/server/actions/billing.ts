@@ -34,6 +34,7 @@ import {
 	resolveAiTier,
 } from "@/lib/billing/ai-plan";
 import { canOrgInvite } from "@/lib/billing/collaboration";
+import { effectiveBillingPeriodStart } from "@/lib/billing/period";
 import {
 	type PaidConversionContext,
 	assertOrgPaidConversionAllowed,
@@ -74,7 +75,7 @@ import {
 	queryRunningJobs,
 	type ResourceCounts,
 } from "@/lib/queries/usage-counts";
-import { authorize, authorizeQuiet, currentActor } from "@/lib/authz/guard";
+import { authorize, authorizeInOrg, authorizeQuiet, currentActor } from "@/lib/authz/guard";
 import { getServiceDb } from "@/lib/db";
 import type {
 	BillingPlan,
@@ -256,9 +257,11 @@ export async function getOrgUsage(): Promise<UsageReport> {
 	const included = quotas.includedRunnerMinutes;
 
 	const now = new Date();
-	const from =
-		billing?.currentPeriodStart ??
-		new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const from = effectiveBillingPeriodStart(
+		billing?.currentPeriodStart,
+		billing?.currentPeriodEnd,
+		now,
+	);
 
 	const hasOrg = actor.orgId !== actor.userId;
 	const [rows, runningJobs] = await Promise.all([
@@ -718,20 +721,20 @@ export interface SubscriptionIntent {
 export async function createSubscriptionIntent(
 	plan: PaidPlan,
 	opts?: { billingEmail?: string; currency?: SupportedCurrency },
-): Promise<SubscriptionIntent> {
+): Promise<SubscriptionIntent | { error: string }> {
 	const actor = await authorize("manage_billing", { type: "billing" });
 	requireHostedBilling();
 	if (actor.orgId === actor.userId) {
-		throw new Error("Create an organization before subscribing to a plan.");
+		return { error: "Create an organization before subscribing to a plan." };
 	}
 	const existing = await getOrgBilling(actor.orgId);
 	if (
 		existing?.stripeSubscriptionId &&
 		(existing.status === "active" || existing.status === "trialing")
 	) {
-		throw new Error(
-			"This organization already has an active subscription — change the plan instead.",
-		);
+		return {
+			error: "This organization already has an active subscription — change the plan instead.",
+		};
 	}
 	await gatePaidConversion(actor);
 	const customerId = await ensureCustomer(
@@ -855,8 +858,26 @@ export async function createAiSubscriptionIntent(
  */
 export async function startProTrial(opts?: {
 	currency?: SupportedCurrency;
+	/**
+	 * The org to start the trial ON, when it is not the ambient one.
+	 *
+	 * NAMED, not ambient, for the same reason `linkSubscriptionToNewOrg` takes one (#4133). The
+	 * create-org sheet runs from a page inside the CURRENT org, creates a new org, and then starts
+	 * the trial on it — so under URL-wins the ambient org is the page the sheet is open on, i.e.
+	 * the OLD one. Left ambient, the Stripe trial and the `organization_billing` row landed on the
+	 * old org, the account's ONE trial was burned, and the new org stayed on `community`. Worse, if
+	 * the old org already had a live subscription this threw, and the sheet's rollback then DELETED
+	 * the org it had just created.
+	 *
+	 * Optional because the other caller is `onboarding-form`, which runs on a `(public)` route with
+	 * no `[org]` segment — nothing for the URL to name, so the session is the only answer and the
+	 * ambient path is correct there.
+	 */
+	orgId?: string;
 }): Promise<void> {
-	const actor = await authorize("manage_billing", { type: "billing" });
+	const actor = opts?.orgId
+		? await authorizeInOrg("manage_billing", { type: "billing" }, opts.orgId)
+		: await authorize("manage_billing", { type: "billing" });
 	requireHostedBilling();
 	if (actor.orgId === actor.userId) {
 		throw new Error("Create an organization before starting a trial.");
@@ -1121,11 +1142,13 @@ export async function linkSubscriptionToNewOrg(input: {
 	 */
 	payer?: { capacity: PayerCapacity | null; billingCountry: string | null };
 }): Promise<void> {
-	const actor = await authorize("manage_billing", { type: "billing" });
+	// NAMED, not ambient (#4133). This runs from a sheet on the CURRENT org's page, against the org
+	// just created — so the address and the target genuinely differ, and always did. It used to work
+	// by asking for the verb in the ambient scope and then asserting that scope WAS the new org,
+	// which held only because `setActiveOrganization` had already landed. Asking in the named org
+	// says the same thing without depending on that write, or on the order it happened in.
+	const actor = await authorizeInOrg("manage_billing", { type: "billing" }, input.orgId);
 	requireHostedBilling();
-	if (actor.orgId !== input.orgId) {
-		throw new Error("The new organization must be the active organization.");
-	}
 
 	const sub = await getStripe().subscriptions.retrieve(input.subscriptionId);
 	const subCustomerId =
@@ -1607,6 +1630,21 @@ export interface InvoiceListParams {
 	limit?: number;
 }
 
+// NO `requireHostedBilling()` on either read below, and its absence is the fix for the HTTP 500
+// the UI conformance audit recorded on `~/settings/billing/invoices` (#3731).
+//
+// That guard's own contract is "before any Stripe call" — and these two make none: they read the
+// MIRRORED `invoice` table this deployment already owns. It threw whenever STRIPE_SECRET_KEY is
+// unset, which is every self-managed install and every sandbox env, turning a plain table read
+// into an unhandled server-action rejection → 500. Both of the audit's two 500s per visit were
+// `listInvoices` — the panel's filtered rows query and its unfiltered facet-count query.
+//
+// The main billing panel never showed it because it returns a "Self-managed deployment" card
+// before it mounts anything that calls these; the dedicated invoices page has no such gate, so it
+// called straight through. Refusing to READ mirrored history because Stripe is not wired is also
+// wrong on its own terms — an org that once paid keeps its invoices, and an org that never did
+// simply has none, which is an empty list, not an error.
+
 /**
  * Lists the active org's mirrored invoices (newest paid first), from the local table — no
  * Stripe call, so it's fast and only ever shows real paid invoices. Filterable by period
@@ -1616,15 +1654,24 @@ export async function listInvoices(
 	params: InvoiceListParams = {},
 ): Promise<InvoiceInfo[]> {
 	const actor = await authorize("manage_billing", { type: "billing" });
-	requireHostedBilling();
 	const rows = await listOrgInvoices(actor.orgId, params);
 	return rows.map(toInvoiceInfo);
 }
 
-/** Loads one invoice for the active org (preview dialog), or null if it isn't theirs. */
+/**
+ * Loads one invoice for the active org, or null if it isn't theirs.
+ *
+ * NO PRODUCTION CALLER TODAY — `git grep getInvoice` finds this definition and its tests, nothing
+ * else. It used to say "(preview dialog)", which is wrong and was worth correcting rather than
+ * inheriting: `InvoicePreviewDialog` is presentational and takes an `InvoiceInfo` PROP that both
+ * its parents already hold from `listInvoices`, and the PDF route calls `getOrgInvoice` directly.
+ * So this action contributed NONE of the 500s in #3731 — both were `listInvoices`. It is kept and
+ * fixed alongside its sibling because it is the same read over the same table and an inconsistent
+ * guard between the two is the next reader's trap; if it still has no caller when someone next
+ * touches this file, delete it rather than re-explaining it.
+ */
 export async function getInvoice(id: string): Promise<InvoiceInfo | null> {
 	const actor = await authorize("manage_billing", { type: "billing" });
-	requireHostedBilling();
 	const row = await getOrgInvoice(actor.orgId, id);
 	return row ? toInvoiceInfo(row) : null;
 }

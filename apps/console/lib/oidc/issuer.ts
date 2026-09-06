@@ -11,6 +11,12 @@
 // document and the JWKS, both static signed material. Server-only.
 
 import { createPublicKey } from "node:crypto";
+import {
+	MAX_ASSERTION_TTL_SECONDS,
+	MIN_ASSERTION_TTL_SECONDS,
+	WORKLOAD_SUBJECT,
+	type WorkloadAssertionRequest,
+} from "@repo/workload-identity";
 import * as jose from "jose";
 
 /** RS256 — the widest-compatible alg for cloud workload-identity federation (Azure/Alibaba/GCP). */
@@ -23,10 +29,7 @@ const ISSUER_PATH = "/api/oidc";
  * The single stable, non-secret workload subject. It is the `sub` of every minted token and MUST match
  * the Azure federated-credential subject + the Alibaba RAM-role OIDC condition. Never per-customer.
  */
-export const WORKLOAD_SUBJECT = "alethia-connector";
-
-/** Max token lifetime — assertions are used immediately for a token exchange, so keep them short. */
-const MAX_TTL_SECONDS = 600;
+export { WORKLOAD_SUBJECT } from "@repo/workload-identity";
 
 /** Env var holding the base64-encoded PKCS8 PEM private key (single line; auto-generated in the vault). */
 const SIGNING_KEY_ENV = "ALETHIA_OIDC_SIGNING_KEY";
@@ -148,15 +151,19 @@ export async function discoveryDocument(): Promise<Record<string, unknown>> {
  * audience (e.g. `api://AzureADTokenExchange`, or the Alibaba OIDC client id) — scoping the token so it
  * can't be replayed at a different cloud. `subject` defaults to the fixed workload subject.
  */
-export async function mintWorkloadToken(opts: {
-	audience: string;
-	subject?: string;
-	ttlSeconds?: number;
-}): Promise<string> {
+export async function mintWorkloadToken(
+	opts: WorkloadAssertionRequest,
+): Promise<string> {
 	const { signing } = await load();
 	const { privateKey, kid } = signing;
 	const now = Math.floor(Date.now() / 1000);
-	const ttl = Math.min(Math.max(opts.ttlSeconds ?? MAX_TTL_SECONDS, 60), MAX_TTL_SECONDS);
+	const ttl = Math.min(
+		Math.max(
+			opts.ttlSeconds ?? MAX_ASSERTION_TTL_SECONDS,
+			MIN_ASSERTION_TTL_SECONDS,
+		),
+		MAX_ASSERTION_TTL_SECONDS,
+	);
 	return await new jose.SignJWT({})
 		.setProtectedHeader({ alg: ALG, kid, typ: "JWT" })
 		.setIssuer(issuerUrl())

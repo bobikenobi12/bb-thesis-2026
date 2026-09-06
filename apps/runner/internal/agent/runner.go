@@ -755,9 +755,22 @@ func (w *Runner) executeDeploy(ctx context.Context, job *Job, provider string, i
 	if costCeilingFromEnv() > 0 {
 		deployInfracostToken = os.Getenv("INFRACOST_API_KEY")
 	}
+	// A REFUSED override is not the same as an absent one, and the difference has to reach the
+	// operator. Both builders fail closed on a malformed waiver, and until this line said so the
+	// only symptom was the gate's own message — "…or supply an authorized override to proceed" —
+	// telling someone who HAD supplied one to supply one. stdout is the job log, which is where
+	// they are already looking when an apply blocks.
+	verifyOverride, verifyRefusal := buildVerifyOverride(job.VerifyOverride)
+	compatOverride, compatRefusal := buildCompatOverride(job.CompatOverride)
+	for _, refusal := range []string{verifyRefusal, compatRefusal} {
+		if refusal != "" {
+			fmt.Fprintf(stdout, "Override REFUSED and the gate stays closed: %s\n", refusal)
+		}
+	}
+
 	payload := buildDeployPayload(vc, provider, false, planFile,
 		filepath.Join(resolveProjectTemplatesDir(), provider), resolveCategoriesTemplatesDir(),
-		deployInfracostToken, buildVerifyOverride(job.VerifyOverride), buildCompatOverride(job.CompatOverride),
+		deployInfracostToken, verifyOverride, compatOverride,
 		w.config.AlethiaURL, job.ID)
 	stage, err := newStage(sandbox.StageDeploy, payload)
 	if err != nil {

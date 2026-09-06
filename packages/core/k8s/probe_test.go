@@ -5,7 +5,9 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -245,5 +247,100 @@ func TestIsAuthRejection(t *testing.T) {
 		if isAuthRejection(c) {
 			t.Errorf("isAuthRejection(%q) = true — a transient class must keep retrying", c)
 		}
+	}
+}
+
+// TestWaitClusterReadyRendersDurationsTheWayTheProductDoes pins the shared duration spelling on the
+// two probe messages that carry a span, and on the banner that announces the same budget.
+//
+// The sentence at stake reads `… after <elapsed> (timeout <budget>) …`. Both halves are
+// time.Duration, both are read against each other, and before this they went through
+// Duration.String() — `1m30s`, which is Go's wire spelling and not the `1m 30s` the console, the
+// CLI and packages/core/format all agree on. Migrating one half and not the other would put two
+// spellings of the same unit in one sentence, so the budget is what this test pins: it is the only
+// one of the two a caller controls, and it is exactly the half that a partial migration leaves
+// behind.
+//
+// KNOWN LIMIT, stated rather than papered over: this cannot pin the ELAPSED half. format.Duration
+// and Duration.String() agree below a minute (`47s` == `47s`) and diverge only from 60s up, and
+// there is no clock seam in WaitClusterReady to push elapsed past that without a 60-second test.
+// So a mutation that restores Duration.String() on elapsed ALONE stays green here. What is
+// asserted instead is the elapsed token's GRAMMAR — no `h`/`m` run without a space, which is the
+// shape Duration.String() produces the moment a real wait is long enough to matter.
+func TestWaitClusterReadyRendersDurationsTheWayTheProductDoes(t *testing.T) {
+	resetK8sSeams(t)
+	executeCommandWithOutput = func(string, string, []string) (string, error) {
+		return "", errors.New("dial tcp 10.0.0.1:443: connect: connection refused")
+	}
+
+	// A budget whose two spellings differ, so the assertion has something to fail on: 90s is
+	// `1m 30s` through format.Duration and `1m30s` through Duration.String().
+	const budget = 90 * time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the cancelled branch returns on the first poll — no wall-clock wait for the budget.
+
+	var banner strings.Builder
+	err := WaitClusterReady(ctx, budget, false, &banner)
+	if err == nil {
+		t.Fatal("WaitClusterReady returned nil for a cancelled wait")
+	}
+
+	if got := banner.String(); !strings.Contains(got, "(timeout 1m 30s)") {
+		t.Errorf("the opening banner announces the budget as %q; want the shared `1m 30s` spelling.\n"+
+			"A banner and a failure message that spell one configured value two ways make the reader "+
+			"guess which is the setting", got)
+	}
+	if strings.Contains(banner.String(), "1m30s") {
+		t.Errorf("Duration.String() is back in the banner: %q", banner.String())
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "(timeout 1m 30s)") {
+		t.Errorf("cancelled-wait message = %q, want the budget rendered `1m 30s`", msg)
+	}
+	if strings.Contains(msg, "1m30s") {
+		t.Errorf("Duration.String() is back in the cancelled-wait message: %q", msg)
+	}
+
+	// The elapsed half, by grammar. `after 0s` / `after 3m 20s` pass; `after 3m20s` does not.
+	elapsed := regexp.MustCompile(`cancelled after (\S+(?: \S+)?) \(timeout `).FindStringSubmatch(msg)
+	if elapsed == nil {
+		t.Fatalf("could not find the elapsed span in %q — the message shape changed", msg)
+	}
+	if !regexp.MustCompile(`^(\d+s|\d+m \d+s|\d+h \d+m)$`).MatchString(elapsed[1]) {
+		t.Errorf("elapsed rendered as %q; want packages/core/format's grammar (`47s`, `3m 20s`, `2h 5m`), "+
+			"not Go's wire spelling", elapsed[1])
+	}
+}
+
+// TestWaitClusterReadyTimeoutBudgetSurvivesTheBudgetPath is the sibling of the cancelled path: the
+// exhausted-budget message at the end of WaitClusterReady quotes the budget too, and #1259's rule
+// (report ELAPSED, never the budget as if it were elapsed) means the two numbers must BOTH be
+// there and must NOT be interchangeable. This asserts they are both present and both in the shared
+// spelling — it does not weaken #1259's separation, it renders it.
+func TestWaitClusterReadyTimeoutBudgetSurvivesTheBudgetPath(t *testing.T) {
+	resetK8sSeams(t)
+	executeCommandWithOutput = func(string, string, []string) (string, error) {
+		return "", errors.New("dial tcp 10.0.0.1:443: i/o timeout")
+	}
+
+	// A negative budget puts the deadline in the past, so the loop exits on its first
+	// `time.Now().After(deadline)` check instead of sleeping. format.Duration clamps a
+	// non-positive span to `0s`; Duration.String() would render `-1m30s`, a budget nobody set.
+	err := WaitClusterReady(context.Background(), -90*time.Second, false, io.Discard)
+	if err == nil {
+		t.Fatal("WaitClusterReady returned nil for an exhausted budget")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "(timeout 0s)") {
+		t.Errorf("exhausted-budget message = %q, want the budget clamped to `0s`", msg)
+	}
+	if strings.Contains(msg, "-1m30s") {
+		t.Errorf("a negative budget leaked Go's wire spelling into the message: %q", msg)
+	}
+	// #1259's separation is still intact: elapsed and budget are two distinct fields.
+	if !strings.Contains(msg, "after ") || !strings.Contains(msg, "(timeout ") {
+		t.Errorf("elapsed and budget are no longer reported separately: %q", msg)
 	}
 }

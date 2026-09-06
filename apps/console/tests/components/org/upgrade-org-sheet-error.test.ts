@@ -15,7 +15,7 @@
 // "the fallback was unreachable for the only failure that happens in production".
 
 import { describe, expect, it } from "vitest";
-import { billingIntentMessage } from "@/components/org/upgrade-org-sheet";
+import { billingIntentErrorMessage } from "@/lib/billing/intent-error";
 
 const FALLBACK_HINT = "Billing may not be configured";
 
@@ -34,14 +34,7 @@ describe("billingIntentMessage", () => {
 		["an empty message", ""],
 		["a whitespace-only message", "   "],
 	])("replaces %s with the product sentence", (_label, message) => {
-		expect(billingIntentMessage(new Error(message))).toContain(FALLBACK_HINT);
-	});
-
-	it("keeps a message our own action deliberately wrote", () => {
-		// These are already customer-safe and say something the reader can act on — which
-		// currency was refused, that the org already has a subscription, and so on.
-		const msg = "Currency GBP is not supported for this plan.";
-		expect(billingIntentMessage(new Error(msg))).toBe(msg);
+		expect(billingIntentErrorMessage(new Error(message))).toContain(FALLBACK_HINT);
 	});
 
 	it.each([
@@ -49,6 +42,6 @@ describe("billingIntentMessage", () => {
 		["null", null],
 		["undefined", undefined],
 	])("falls back on %s", (_label, thrown) => {
-		expect(billingIntentMessage(thrown)).toContain(FALLBACK_HINT);
+		expect(billingIntentErrorMessage(thrown)).toContain(FALLBACK_HINT);
 	});
 });

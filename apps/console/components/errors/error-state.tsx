@@ -44,20 +44,20 @@ export function ErrorState({
 				<AlethiaMark className="mb-1 h-7 w-7 text-text-primary" aria-hidden />
 			)}
 			{code && (
-				<span className="font-mono text-[12px] uppercase tracking-[0.22em] text-text-tertiary">
+				<span className="font-mono text-ui-sm uppercase tracking-[0.22em] text-text-tertiary">
 					{code}
 				</span>
 			)}
 			<h1
 				className={cn(
 					"font-grotesk font-semibold tracking-[-0.02em] text-text-primary",
-					fullPage ? "text-[22px]" : "text-[17px]",
+					fullPage ? "text-ui-xl" : "text-ui-xl",
 				)}
 			>
 				{title}
 			</h1>
 			{description && (
-				<p className="text-[13px] leading-relaxed text-text-tertiary">
+				<p className="text-ui-md leading-relaxed text-text-tertiary">
 					{description}
 				</p>
 			)}

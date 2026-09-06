@@ -17,6 +17,13 @@ const authConfigSchema = z.object({
 		.string()
 		.min(1, "BETTER_AUTH_SECRET is required (generate one: openssl rand -base64 32)"),
 	baseURL: z.string().min(1, "BETTER_AUTH_URL or NEXT_PUBLIC_APP_URL is required"),
+	trustedIpHeader: z
+		.string()
+		.regex(
+			/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/,
+			"ALETHIA_TRUSTED_IP_HEADER must be one valid HTTP header name",
+		)
+		.transform((value) => value.toLowerCase()),
 });
 
 export type AuthConfig = z.infer<typeof authConfigSchema>;
@@ -111,6 +118,7 @@ export function getAuthConfig(): ResolvedAuthConfig {
 	const parsed = authConfigSchema.safeParse({
 		secret: env("BETTER_AUTH_SECRET"),
 		baseURL: env("BETTER_AUTH_URL") || env("NEXT_PUBLIC_APP_URL"),
+		trustedIpHeader: env("ALETHIA_TRUSTED_IP_HEADER") || "cf-connecting-ip",
 	});
 
 	if (!parsed.success) {

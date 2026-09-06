@@ -66,7 +66,7 @@ replaced by this.
 
 | Tier   | Cluster                | Cost | Where it runs |
 | ------ | ---------------------- | ---- | ------------- |
-| **T1** | hermetic local `kind`  | $0   | `ci.yml` → `provision-e2e`, merge-queue-gated |
+| **T1** | hermetic local `kind`  | $0   | `ci.yml` → `provision-e2e`; currently no live trigger (#4173) |
 | **T2** | a **real cloud** cluster | ~cents/run | `e2e-nightly.yml`, nightly + manual, **maintainer-gated** |
 
 Both drive the identical spine — the real runner binary claims a real `DEPLOY` job from
@@ -249,4 +249,3 @@ of them (140 GB) behind a destroy that reported success.
 section is safe by default. If you drive `go test` directly, sweep by hand afterwards. On hetzner a
 killed run also leaves the imager provider's `hcloud-upload-image-*` server and SSH key, which no
 selector can reach — remove those manually.
-

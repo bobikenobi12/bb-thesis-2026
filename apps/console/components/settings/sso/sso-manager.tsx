@@ -43,7 +43,7 @@ import { EmptyState } from "@repo/ui/empty";
 import { FacetFilter } from "@repo/ui/facet-filter";
 import { FilterBar, FilterBarReset } from "@repo/ui/filter-bar";
 import { FilterSearch } from "@repo/ui/filter-search";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { Spinner } from "@repo/ui/spinner";
 import { StatusBadge } from "@repo/ui/status-badge";
 import { cn } from "@repo/ui/utils";
@@ -112,8 +112,7 @@ export function SsoManager({ bootstrap }: { bootstrap: SsoBootstrap }) {
 
 	return (
 		<div className="space-y-4">
-			<PageHeader
-				title="Single sign-on"
+			<PageToolbar
 				description="Identity providers your members can sign in through."
 				count={providers.length}
 				actions={
@@ -205,10 +204,10 @@ export function SsoManager({ bootstrap }: { bootstrap: SsoBootstrap }) {
 								)}
 							>
 								<span className="min-w-0 flex-1">
-									<span className="block truncate text-[13px] text-text-primary">
+									<span className="block truncate text-ui-md text-text-primary">
 										{p.providerId}
 									</span>
-									<span className="block truncate font-mono text-[10.5px] text-text-tertiary">
+									<span className="block truncate font-mono text-ui-2xs text-text-tertiary">
 										{p.type === "unknown" ? "misconfigured" : p.type} · {p.domain}
 									</span>
 								</span>
@@ -244,8 +243,8 @@ export function SsoManager({ bootstrap }: { bootstrap: SsoBootstrap }) {
 
 			{/* SCIM — honest. The old page advertised a /scim/v2/<tenant> URL that did not exist. */}
 			<div className="rounded-lg border border-border bg-surface px-5 py-4 shadow-sm">
-				<p className="text-[13px] font-medium text-text-primary">SCIM provisioning</p>
-				<p className="mt-1 text-[12px] text-text-secondary">
+				<p className="text-ui-md font-medium text-text-primary">SCIM provisioning</p>
+				<p className="mt-1 text-ui-sm text-text-secondary">
 					Automatic user provisioning/deprovisioning from your IdP isn&apos;t available
 					yet — SSO users are provisioned just-in-time on first sign-in. If SCIM is a
 					requirement,{" "}
@@ -301,9 +300,9 @@ export function SsoManager({ bootstrap }: { bootstrap: SsoBootstrap }) {
 function KvRow({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="flex items-start justify-between gap-3 border-b border-border px-4 py-2.5 last:border-b-0">
-			<span className="shrink-0 text-[12px] text-text-tertiary">{label}</span>
+			<span className="shrink-0 text-ui-sm text-text-tertiary">{label}</span>
 			<span className="flex min-w-0 items-center gap-1.5">
-				<span className="truncate font-mono text-[11px] text-text-secondary">{value}</span>
+				<span className="truncate font-mono text-ui-xs text-text-secondary">{value}</span>
 				<CopyButton text={value} />
 			</span>
 		</div>
@@ -372,7 +371,7 @@ function ProviderDetail({
 				<div className="flex items-start justify-between gap-3 px-5 py-4">
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
-							<span className="text-[15px] font-semibold text-text-primary">
+							<span className="text-ui-lg font-semibold text-text-primary">
 								{p.providerId}
 							</span>
 							{/* Third local status pill in this file, folded into the shared device. */}
@@ -382,7 +381,7 @@ function ProviderDetail({
 								label={p.domainVerified ? "Connected" : "Pending domain"}
 							/>
 						</div>
-						<p className="mt-1 font-mono text-[11.5px] text-text-tertiary">
+						<p className="mt-1 font-mono text-ui-xs text-text-tertiary">
 							{p.type === "saml"
 								? "SAML 2.0"
 								: p.type === "oidc"
@@ -429,9 +428,9 @@ function ProviderDetail({
 								) : (
 									<XCircle size={13} className="mt-0.5 shrink-0 text-destructive" />
 								)}
-								<span className="text-[12px] text-text-secondary">
+								<span className="text-ui-sm text-text-secondary">
 									{c.label}
-									<span className="ml-1.5 font-mono text-[11px] text-text-tertiary">
+									<span className="ml-1.5 font-mono text-ui-xs text-text-tertiary">
 										{c.detail}
 									</span>
 								</span>
@@ -445,10 +444,10 @@ function ProviderDetail({
 			{!p.domainVerified && (
 				<div className="rounded-lg border border-border bg-surface shadow-sm">
 					<div className="px-5 py-4">
-						<p className="text-[13px] font-medium text-text-primary">
+						<p className="text-ui-md font-medium text-text-primary">
 							Verify {p.domain}
 						</p>
-						<p className="mt-1 text-[12px] text-text-secondary">
+						<p className="mt-1 text-ui-sm text-text-secondary">
 							Sign-in through this provider stays disabled until you prove you control
 							the domain. Add this DNS TXT record, then verify.
 						</p>
@@ -481,7 +480,7 @@ function ProviderDetail({
 
 			{/* What the IdP admin needs from us. */}
 			<div className="rounded-lg border border-border bg-surface shadow-sm">
-				<div className="px-4 py-2.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-text-tertiary">
+				<div className="px-4 py-2.5 font-mono text-ui-3xs uppercase tracking-[0.12em] text-text-tertiary">
 					Service provider details
 				</div>
 				<div className="border-t border-border">

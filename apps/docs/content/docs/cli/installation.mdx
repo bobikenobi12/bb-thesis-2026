@@ -6,8 +6,27 @@ description: Install the Alethia CLI via Homebrew, Scoop, an install script, a L
 # Installation
 
 The `alethia` CLI ships for **macOS, Linux, and Windows** (amd64 + arm64). Pick whichever
-method fits your platform — every one below installs the same binary and self-updates against
-GitHub Releases.
+method fits your platform. Every method installs the same released binary.
+
+## `alethia update`
+
+Update the CLI. One command regardless of how you installed it:
+
+```bash
+alethia update
+```
+
+Alethia checks the release published by your control plane. It delegates Homebrew and Scoop
+installs to those package managers. It downloads and checksum-verifies a writable standalone
+installation before replacing it. For Linux packages and Docker images, it prints the exact native
+update command instead of changing the package database or host from inside a container.
+
+Alethia never invokes `sudo` or opens a User Account Control prompt. If the binary is not writable,
+the command stops and tells you how to rerun the installer with administrator privileges.
+
+Interactive commands check for a new release at most once per day. Set
+`ALETHIA_NO_UPDATE_CHECK=1` to disable these automatic notices. Explicit `alethia version` and
+`alethia update` checks still contact the control plane.
 
 ## macOS / Linux
 
@@ -26,7 +45,8 @@ brew tap alethialabs-io/tap
 brew install alethia
 ```
 
-Upgrade with `brew upgrade alethia`. (The literal tap-free `brew install alethia` requires
+`alethia update` runs `brew update` and upgrades this formula. You can also run
+`brew upgrade alethialabs-io/tap/alethia` directly. (The literal tap-free `brew install alethia` requires
 [Homebrew core](/cli/homebrew-core) — a future adoption milestone.)
 
 ### Install script
@@ -70,7 +90,7 @@ scoop bucket add alethia https://github.com/alethialabs-io/scoop-bucket
 scoop install alethia
 ```
 
-Upgrade with `scoop update alethia`.
+`alethia update` delegates to `scoop update alethia`.
 
 ### Install script
 

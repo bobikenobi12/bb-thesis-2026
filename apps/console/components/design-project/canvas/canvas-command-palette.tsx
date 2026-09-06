@@ -137,7 +137,7 @@ export function CanvasCommandPalette({
 				<Icon className="h-4 w-4" />
 				<span>Add {def.label}</span>
 				{serviceName && serviceName !== "—" && (
-					<span className="ml-auto font-mono text-[11px] text-muted-foreground">
+					<span className="ml-auto font-mono text-ui-xs text-muted-foreground">
 						{serviceName}
 					</span>
 				)}
@@ -170,7 +170,7 @@ export function CanvasCommandPalette({
 							>
 								<GitBranch className="h-4 w-4" />
 								<span>Bring your own Helm chart</span>
-								<span className="ml-auto font-mono text-[11px] text-muted-foreground">
+								<span className="ml-auto font-mono text-ui-xs text-muted-foreground">
 									Helm · GitOps
 								</span>
 								<ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -184,7 +184,7 @@ export function CanvasCommandPalette({
 							>
 								<Boxes className="h-4 w-4" />
 								<span>Bring your own IaC</span>
-								<span className="ml-auto font-mono text-[11px] text-muted-foreground">
+								<span className="ml-auto font-mono text-ui-xs text-muted-foreground">
 									OpenTofu · replace
 								</span>
 								<ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -224,7 +224,7 @@ export function CanvasCommandPalette({
 								>
 									<Icon className="h-4 w-4" />
 									<span>{name}</span>
-									<span className="ml-auto font-mono text-[11px] text-muted-foreground">
+									<span className="ml-auto font-mono text-ui-xs text-muted-foreground">
 										{def.label}
 									</span>
 								</CommandItem>

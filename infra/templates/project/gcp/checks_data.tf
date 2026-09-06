@@ -54,7 +54,7 @@
 # not wired and the BUILT_IN password user is still in use, and the apply still succeeds.
 check "keyless_cloud_sql_app_identity_wired" {
   assert {
-    condition     = !local.app_db_iam_requested || (var.provision_gke && local.app_db_adopted && length(data.google_service_account.app_db_adopted) == 1 && length(try(trimspace(module.cloud_sql[0].app_iam_user), "")) > 0)
+    condition     = !local.app_db_iam_requested || (var.provision_gke && local.app_db_adopted && length(data.google_service_account.app_db_adopted) == 1 && length(trimspace(try(module.cloud_sql[0].app_iam_user, null) != null ? module.cloud_sql[0].app_iam_user : "")) > 0)
     error_message = "cloud_sql_iam_auth is on but keyless is NOT wired — the app still uses the BUILT_IN password user. It needs provision_gke=true, cloud_sql_app_service_account_email set to an account pre-granted roles/cloudsql.client + roles/cloudsql.instanceUser by the connector bootstrap, and the CLOUD_IAM_SERVICE_ACCOUNT database user."
   }
 }

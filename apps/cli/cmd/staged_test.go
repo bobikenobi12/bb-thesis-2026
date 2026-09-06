@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 )
 
@@ -59,5 +60,45 @@ func TestRunStagedListError(t *testing.T) {
 	c := &fakeClient{err: errors.New("boom")}
 	if err := runStagedList(c, &bytes.Buffer{}, "table", "proj", ""); err == nil {
 		t.Error("expected error to propagate")
+	}
+}
+
+// TestRunStagedListCSVKeepsTheWireValues pins the machine reading of `staged list`.
+//
+// ui.Render writes spec.Rows VERBATIM in its CSV branch, so every cell stagedRows humanises is a
+// cell a script receives. `Created` must stay the wire's RFC3339 — `9 Mar 2026, 15:04` neither
+// sorts nor parses and has dropped the seconds and the zone — and a CREATE's absent `Component ID`
+// must stay an EMPTY cell, because "—" (U+2014) is a value a script has to special-case where ""
+// already means absent.
+func TestRunStagedListCSVKeepsTheWireValues(t *testing.T) {
+	c := &fakeClient{staged: &api.StagedChanges{
+		Environment: "production",
+		Changes: []api.StagedChange{
+			{ComponentType: "database", Op: "create", CreatedAt: "2026-03-09T15:04:05Z"},
+		},
+	}}
+	var buf bytes.Buffer
+	if err := runStagedList(c, &buf, ui.FormatCSV, "proj", ""); err != nil {
+		t.Fatalf("runStagedList csv: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "2026-03-09T15:04:05Z") {
+		t.Errorf("csv Created is not the wire stamp:\n%s", out)
+	}
+	if strings.Contains(out, ui.SymbolDash) {
+		t.Errorf("csv carries the dash glyph %q where an empty cell means absent:\n%s", ui.SymbolDash, out)
+	}
+	// The premise: the TABLE cell for the same instant is the humanised one, so the split is
+	// guarding a difference that exists. Without this the assertions above would still pass with
+	// stagedRows humanising nothing at all, which is a different defect.
+	var tbl bytes.Buffer
+	if err := runStagedList(c, &tbl, ui.FormatTable, "proj", ""); err != nil {
+		t.Fatalf("runStagedList table: %v", err)
+	}
+	if !strings.Contains(tbl.String(), "9 Mar 2026, 15:04") {
+		t.Fatalf("premise broken: the table Created cell is not the humanised stamp:\n%s", tbl.String())
+	}
+	if !strings.Contains(tbl.String(), ui.SymbolDash) {
+		t.Fatalf("premise broken: the table Component ID cell is not the dash:\n%s", tbl.String())
 	}
 }

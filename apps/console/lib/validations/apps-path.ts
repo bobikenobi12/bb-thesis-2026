@@ -69,6 +69,12 @@ export function isValidAppsPath(p: string): boolean {
 	return trimmed.split("/").every((seg) => APPS_PATH_SEGMENT.test(seg));
 }
 
+export const APPS_PATH_MESSAGE =
+	"must be a repo-relative subpath such as overlays/dev (letters, digits, . _ - and /, no leading or trailing slash, no ..)";
+
+/** Shown when only the length bound is violated, so a 4KB paste does not get the grammar lecture. */
+export const APPS_PATH_TOO_LONG_MESSAGE = `must be at most ${APPS_PATH_MAX_LEN} characters`;
+
 /**
  * Zod schema for an optional apps-repo subpath column. Nullish (the column is nullable and unset
  * means "repository root") and trimmed, but NOT otherwise rewritten — see isValidAppsPath.
@@ -84,8 +90,11 @@ export function isValidAppsPath(p: string): boolean {
 export const appsPathSchema = z
 	.string()
 	.transform(goTrimSpace)
-	.refine(
-		isValidAppsPath,
-		"must be a repo-relative subpath such as overlays/dev (letters, digits, . _ - and /, no leading or trailing slash, no ..)",
-	)
+	// The bound is stated DECLARATIVELY, and after the trim, so that
+	// apps/console/scripts/gen-go-validation.ts can project it into packages/core/validate rather
+	// than leaving it locked inside isValidAppsPath. It is not a new rule: isValidAppsPath applies
+	// the same bound to the same trimmed value, so this only changes which message a 600-character
+	// path gets.
+	.pipe(z.string().max(APPS_PATH_MAX_LEN, APPS_PATH_TOO_LONG_MESSAGE))
+	.refine(isValidAppsPath, APPS_PATH_MESSAGE)
 	.nullish();

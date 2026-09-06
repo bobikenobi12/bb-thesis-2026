@@ -32,7 +32,7 @@
 //     surfacing as a type error in a file nobody edited.
 //
 // Usage:  node scripts/check-source-emitted.mjs [--self-test]
-// Runs in-chain in `check-types`; also `pnpm -F docs check:source-emitted`.
+// Runs in-chain in `check-types`; also `pnpm -C apps/docs run check:source-emitted`.
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -117,7 +117,7 @@ function main() {
 	console.error("✗ fumadocs codegen guard failed:\n");
 	for (const p of problems) console.error(`  · ${p}`);
 	console.error(
-		"\n  This is the #1612 race, not a type error in your change. Re-run `pnpm -F docs check-types`;\n" +
+		"\n  This is the #1612 race, not a type error in your change. Re-run `pnpm -C apps/docs run check-types`;\n" +
 			"  if it persists, confirm `next typegen` still runs before `fumadocs-mdx`.",
 	);
 	process.exit(1);

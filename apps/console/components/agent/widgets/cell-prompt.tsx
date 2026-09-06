@@ -52,7 +52,7 @@ export function CellPrompt({
 				}}
 				placeholder="Describe what goes here…"
 				aria-label={`Describe the widget for row ${cell.y + 1}, column ${cell.x + 1}`}
-				className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground"
+				className="min-w-0 flex-1 bg-transparent text-ui-sm text-foreground outline-none placeholder:text-muted-foreground"
 			/>
 			<CornerDownLeft className="h-3 w-3 flex-none text-muted-foreground" />
 		</div>

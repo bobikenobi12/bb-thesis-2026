@@ -97,7 +97,7 @@ export function RunMenu({
         >
           <SquareCheck className="mr-2 h-4 w-4 text-muted-foreground" />
           <span className="flex-1">Plan</span>
-          <span className="vx-eyebrow text-[9px]">PLAN</span>
+          <span className="vx-eyebrow text-ui-3xs">PLAN</span>
         </DropdownMenuItem>
 
         <DropdownMenuItem
@@ -109,7 +109,7 @@ export function RunMenu({
         >
           <ShieldCheck className="mr-2 h-4 w-4 text-muted-foreground" />
           <span className="flex-1">Audit</span>
-          <span className="vx-eyebrow text-[9px]">AUDIT</span>
+          <span className="vx-eyebrow text-ui-3xs">AUDIT</span>
         </DropdownMenuItem>
 
         <DropdownMenuItem
@@ -121,7 +121,7 @@ export function RunMenu({
         >
           <RefreshCw className="mr-2 h-4 w-4 text-muted-foreground" />
           <span className="flex-1">Detect drift</span>
-          <span className="vx-eyebrow text-[9px]">DRIFT</span>
+          <span className="vx-eyebrow text-ui-3xs">DRIFT</span>
         </DropdownMenuItem>
 
         <DropdownMenuItem
@@ -133,11 +133,11 @@ export function RunMenu({
         >
           <Activity className="mr-2 h-4 w-4 text-muted-foreground" />
           <span className="flex-1">Probe cluster</span>
-          <span className="vx-eyebrow text-[9px]">PROBE</span>
+          <span className="vx-eyebrow text-ui-3xs">PROBE</span>
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+        <DropdownMenuLabel className="text-ui-xs font-normal text-muted-foreground">
           <ScanSearch className="mr-1 inline h-3 w-3" />
           Chart and IaC rescans live on their own cards.
         </DropdownMenuLabel>

@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { LayoutDashboard } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { EmptyState } from "@repo/ui/empty";
 import { ScrollArea } from "@repo/ui/scroll-area";
 import { cn } from "@repo/ui/utils";
 import { useWidgetGridStore } from "@/lib/stores/use-widget-grid-store";
@@ -259,21 +260,19 @@ export function WidgetGrid({ className }: { className?: string }) {
 		<ScrollArea className={cn("h-full", className)}>
 			<div className="p-4">
 				<div className="mb-2 flex items-center justify-between">
-					<span className="vx-eyebrow text-[9px]">Grid</span>
+					<span className="vx-eyebrow text-ui-3xs">Grid</span>
 					<span className="flex items-center gap-1.5">
 						<ArtifactBrowser threadId={threadId} />
 						<SaveArtifactButton widgets={widgets} kind="dashboard" />
 					</span>
 				</div>
 				{widgets.length === 0 && !loading && (
-					<div className="flex flex-col items-center gap-2 border border-dashed border-border py-16 text-center">
-						<LayoutDashboard className="h-4 w-4 text-muted-foreground" />
-						<div className="text-[13px] text-foreground">The grid is empty.</div>
-						<div className="max-w-[260px] text-xs text-muted-foreground">
-							Ask Elench for your clusters, jobs, usage, or a full dashboard —
-							structured results pin here as widgets.
-						</div>
-					</div>
+					<EmptyState
+						className="gap-3 border border-border p-8 md:p-8 [&_[data-slot=empty-title]]:text-ui-md [&_[data-slot=empty-title]]:font-normal [&_[data-slot=empty-description]]:text-xs"
+						icon={<LayoutDashboard />}
+						title="The grid is empty."
+						description="Ask Elench for your clusters, jobs, usage, or a full dashboard — structured results pin here as widgets."
+					/>
 				)}
 				<div
 					ref={containerRef}
@@ -347,7 +346,7 @@ export function WidgetGrid({ className }: { className?: string }) {
 					className="flex cursor-grabbing flex-col overflow-hidden border border-foreground bg-background opacity-95 shadow-lg"
 				>
 					<div className="flex h-7 flex-none items-center border-b border-border px-2">
-						<span className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+						<span className="min-w-0 flex-1 truncate font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 							{activeWidget.title}
 						</span>
 					</div>

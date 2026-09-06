@@ -123,6 +123,7 @@ export function EnvSwitcher() {
 				<SwitcherTrigger
 					variant="topbar"
 					open={open}
+					ariaLabel="Switch environment"
 					label={active?.name ?? ""}
 				/>
 				<PopoverContent className="w-64 p-0" align="start">

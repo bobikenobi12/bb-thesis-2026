@@ -67,6 +67,64 @@ config         /Users/you/Library/Application Support/alethia/config.json
 `alethia config clear-context` clears the active organization context. `alethia config -o json`
 emits the same values as a JSON object.
 
+## Config keys
+
+These are the keys `alethia config get` reads. `alethia config set` writes the ones marked
+`config set`; a key set anywhere else says which command owns it, because a value you can read and
+cannot write needs to tell you what does write it.
+
+{/* configkeys */}
+
+| Key | What it is | How to set it |
+| --- | --- | --- |
+| `web-origin` | The control-plane URL the CLI talks to (hosted, self-hosted or dev). | `config set` |
+| `active-org` | The organization every request is scoped to, sent as X-Alethia-Org. | `alethia org switch` |
+
+`active-org` is deliberately read-only. Setting it by name would have to resolve that name to an id
+and a slug — which is a server round-trip, and that round-trip is `alethia org switch`. A
+`config set active-org` that wrote only the name would leave the id stale and scope every subsequent
+request to the *previous* organization.
+
+The underscore spellings (`web_origin`, `active_org`) are accepted too, because that is how the keys
+appear in `config.json` and people type what they have read.
+
+## `alethia config set`
+
+```bash
+alethia config set                                       # pick the key, edit the current value
+alethia config set web-origin https://alethia.internal.example.com   # the same, unattended
+```
+
+Run with no arguments on a terminal, `config set` asks for both:
+
+{/* fieldspec: alethia config set */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Config key | Which value to change | `[key]` |
+| Value | The new value; the form describes it with the chosen key's own summary | `[value]` |
+
+The value field is pre-filled with the **stored** value, so the form is an edit rather than a
+re-type, and it is validated by the same rule `config set` applies — a value the form accepts is
+never refused a moment later. It shows what is stored rather than what is in effect, because that
+is what the write replaces: if `ALETHIA_WEB_ORIGIN` is set, the form says so and still seeds the
+file's value, so pressing Enter cannot overwrite it with the environment's.
+
+With `--no-input` both arguments are required; the command fails rather than guessing.
+
+<Callout type="info">
+`ALETHIA_WEB_ORIGIN` **outranks** the config file. If it is set to a different URL,
+`alethia config set web-origin` says so after saving, because otherwise the write appears to succeed
+and every subsequent command keeps talking to the environment's origin.
+</Callout>
+
+`alethia config get` prints the bare value in the default table format — so
+`$(alethia config get web-origin)` works — and key/value pairs under `-o json` or `-o csv`.
+
+An unset key, such as `active-org` before you have picked an organization, prints as `—` in the
+table and as an empty string under `-o json` and `-o csv`. The dash is for a person reading a
+column; a script tests the machine formats for emptiness.
+
 ## `alethia config export`
 
 Export an environment's **design document** — the same nested shape the console design form holds,
@@ -112,17 +170,21 @@ then set `ALETHIA_RUNNER_ID` and `ALETHIA_RUNNER_TOKEN` on the host. See
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `ALETHIA_WEB_ORIGIN` | `https://alethialabs.io` (compiled-in default) | Override the Alethia API base URL |
+| `ALETHIA_NO_UPDATE_CHECK` | unset | Disable the daily interactive new-release notice |
 
-This is the only environment variable alethia uses. All other configuration comes from the JSON files above or command-line flags.
+These are the CLI configuration environment variables. Runner processes use a separate runtime
+environment documented with the runner deployment method.
 
 ## Global Flags
 
-Two persistent flags are available on every command:
+Four persistent flags are available on every command:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o, --output <table\|json\|csv>` | `table` | Output format. |
-| `--no-input` | off | Disable interactive prompts (fail instead of prompting). Auto-enabled when stdin is not a TTY. |
+| `-o, --output <table\|json\|csv>` | `table` | Output format. `json`/`csv` print static, machine-readable output, and never open an interactive table. |
+| `--no-input` | off | Disable interactive prompts; fail instead of prompting. Auto-enabled when stdin is not a terminal. A form is refused separately when the stream it would draw on is redirected, so `alethia … 2> log` still renders the rich table. |
+| `--token <token>` | unset | Service-account token for non-interactive use. Prefer the `ALETHIA_TOKEN` environment variable in CI: a flag value lands in the process table and in shell history. |
+| `--org <id>` | the active org | Organization to act in for this invocation, instead of the active one. Sent as the `X-Alethia-Org` header on every request, and used as the org in the request path of `members` and `teams`. It selects a scope rather than granting one: the control plane refuses it with `403` when you are not a member of that organization. Under a service token it must name the token's OWN organization — a different one is refused with `403`, never quietly ignored, so a pipeline cannot believe it is acting on one org while every write lands in another. |
 
 See [Identity & Global Options](/cli/identity) for output-format examples and scripting tips.
 

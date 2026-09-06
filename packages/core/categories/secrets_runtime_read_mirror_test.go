@@ -62,7 +62,7 @@ func readMirror(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(root, mirrorPath))
 	if err != nil {
-		t.Fatalf("read %s (regenerate: pnpm -F console gen:secrets-runtime-read): %v", mirrorPath, err)
+		t.Fatalf("read %s (regenerate: pnpm -C apps/console run gen:secrets-runtime-read): %v", mirrorPath, err)
 	}
 	out := map[string]bool{}
 	for _, m := range mirrorEntry.FindAllStringSubmatch(string(raw), -1) {
@@ -103,13 +103,13 @@ func TestSecretsRuntimeReadMirrorMatchesGo(t *testing.T) {
 		if !present {
 			t.Errorf("secrets/%s is registered in Go but missing from %s — the console reads an absent "+
 				"slug as selectable, so a missing row is the fail-open direction. Run "+
-				"`pnpm -F console gen:secrets-runtime-read`.", slug, mirrorPath)
+				"`pnpm -C apps/console run gen:secrets-runtime-read`.", slug, mirrorPath)
 			continue
 		}
 		if got != want {
 			t.Errorf("secrets/%s: generated mirror says runtime-read=%v, Go says %v "+
 				"(saas=%v keyless=%v). Either the hooks moved and the mirror is stale — run "+
-				"`pnpm -F console gen:secrets-runtime-read` — or the generator's text parse no longer "+
+				"`pnpm -C apps/console run gen:secrets-runtime-read` — or the generator's text parse no longer "+
 				"sees how this provider registers its store.",
 				slug, got, want, IsSaaSSecretStore(slug), IsKeylessSecretStore(slug))
 		}
@@ -144,7 +144,7 @@ func TestSecretsRuntimeReadMirrorIsTotalOverCatalog(t *testing.T) {
 		}
 		if _, ok := mirror[p.Slug]; !ok {
 			t.Errorf("catalog.json offers %s but %s has no row for it — run "+
-				"`pnpm -F console gen:secrets-runtime-read` (it fails closed on this).", key, mirrorPath)
+				"`pnpm -C apps/console run gen:secrets-runtime-read` (it fails closed on this).", key, mirrorPath)
 		}
 	}
 }

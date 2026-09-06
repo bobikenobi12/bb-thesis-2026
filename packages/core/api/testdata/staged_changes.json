@@ -7,5 +7,11 @@
 			"component_id": "string",
 			"created_at": "2026-01-01T00:00:00.000Z"
 		}
-	]
+	],
+	"page": {
+		"mode": "exact",
+		"limit": 1,
+		"total": 0,
+		"next_cursor": "string"
+	}
 }

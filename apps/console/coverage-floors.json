@@ -11,8 +11,8 @@
   },
   "directories": {
     "app/server/actions": {
-      "covered": 6617,
-      "total": 11806
+      "covered": 6722,
+      "total": 11859
     },
     "app/server/actions/aws": {
       "covered": 55,
@@ -35,8 +35,8 @@
       "total": 442
     },
     "lib/addons": {
-      "covered": 1346,
-      "total": 1429
+      "covered": 1678,
+      "total": 1766
     },
     "lib/agent": {
       "covered": 203,
@@ -68,19 +68,19 @@
     },
     "lib/analytics": {
       "covered": 31,
-      "total": 143
+      "total": 112
     },
     "lib/auth": {
-      "covered": 379,
-      "total": 447
+      "covered": 402,
+      "total": 470
     },
     "lib/authz": {
-      "covered": 571,
-      "total": 710
+      "covered": 572,
+      "total": 711
     },
     "lib/billing": {
-      "covered": 958,
-      "total": 1753
+      "covered": 1006,
+      "total": 1804
     },
     "lib/breakglass": {
       "covered": 158,
@@ -95,12 +95,12 @@
       "total": 28
     },
     "lib/cli": {
-      "covered": 465,
-      "total": 703
+      "covered": 531,
+      "total": 722
     },
     "lib/cloud-providers": {
-      "covered": 1244,
-      "total": 1418
+      "covered": 1429,
+      "total": 1603
     },
     "lib/cloud-providers/capabilities": {
       "covered": 1242,
@@ -135,12 +135,12 @@
       "total": 160
     },
     "lib/compat": {
-      "covered": 197,
-      "total": 204
+      "covered": 237,
+      "total": 241
     },
     "lib/compat/generated": {
-      "covered": 247,
-      "total": 247
+      "covered": 261,
+      "total": 261
     },
     "lib/config": {
       "covered": 457,
@@ -167,8 +167,8 @@
       "total": 318
     },
     "lib/db/schema": {
-      "covered": 3203,
-      "total": 3203
+      "covered": 3207,
+      "total": 3207
     },
     "lib/drift": {
       "covered": 21,
@@ -176,7 +176,7 @@
     },
     "lib/email": {
       "covered": 76,
-      "total": 543
+      "total": 539
     },
     "lib/evidence": {
       "covered": 235,
@@ -195,8 +195,8 @@
       "total": 262
     },
     "lib/jobs": {
-      "covered": 663,
-      "total": 801
+      "covered": 656,
+      "total": 794
     },
     "lib/members": {
       "covered": 17,
@@ -231,16 +231,16 @@
       "total": 22
     },
     "lib/promotions": {
-      "covered": 337,
-      "total": 431
+      "covered": 338,
+      "total": 432
     },
     "lib/queries": {
-      "covered": 395,
-      "total": 798
+      "covered": 1231,
+      "total": 1641
     },
     "lib/query": {
-      "covered": 119,
-      "total": 629
+      "covered": 126,
+      "total": 627
     },
     "lib/realtime": {
       "covered": 107,
@@ -255,8 +255,8 @@
       "total": 2106
     },
     "lib/reconcile": {
-      "covered": 113,
-      "total": 115
+      "covered": 134,
+      "total": 136
     },
     "lib/repos": {
       "covered": 1,
@@ -287,16 +287,16 @@
       "total": 146
     },
     "lib/stores": {
-      "covered": 915,
-      "total": 1424
+      "covered": 967,
+      "total": 1453
     },
     "lib/support": {
       "covered": 74,
       "total": 102
     },
     "lib/validations": {
-      "covered": 1514,
-      "total": 1740
+      "covered": 1521,
+      "total": 1732
     },
     "lib/widgets": {
       "covered": 53,

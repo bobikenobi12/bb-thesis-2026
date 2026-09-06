@@ -137,12 +137,12 @@ module "iam_assumable_role_external_dns" {
     main = {
       provider_arn = module.eks.oidc_provider_arn
       # THREE service accounts on one role, for the reason the header above gives about the second.
-      # `external-dns:addon-external-dns-sa` is the MARKETPLACE add-on's KSA (apps/console/lib/addons/
+      # `external-dns:addon-external-dns` is the MARKETPLACE add-on's KSA (apps/console/lib/addons/
       # catalog.ts, EXTERNAL_DNS_ADDON_SA). It is a distinct object from the rail's
       # `external-dns-sa` deliberately: both Applications live in the `external-dns` namespace and
       # naming one KSA would put two ArgoCD Applications on it. The policy it needs is the one
       # already attached, so a second role with an identical policy would be pure duplication.
-      namespace_service_accounts = ["external-dns:external-dns-sa", "external-dns:addon-external-dns-sa", "cert-manager:cert-manager"]
+      namespace_service_accounts = ["external-dns:external-dns-sa", "external-dns:addon-external-dns", "cert-manager:cert-manager"]
     }
   }
 }

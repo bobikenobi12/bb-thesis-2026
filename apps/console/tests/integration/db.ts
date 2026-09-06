@@ -108,6 +108,69 @@ export async function purgeAuthzActivityLog(where: SQL): Promise<void> {
 	});
 }
 
+/**
+ * Every message in an error's `cause` chain, joined.
+ *
+ * drizzle WRAPS the driver error: the thrown object's own message is "Failed query: insert into …"
+ * and the Postgres text — the `RAISE EXCEPTION` a trigger wrote, the constraint name — is one or
+ * more `cause` links down. `expect(...).rejects.toThrow(/…/)` reads only the top message, so a test
+ * written that way matches the wrapper and passes for ANY failure of that statement. That has
+ * already bitten this repo once (see the `causeChain` note in lib/queries/projects.ts) and it is
+ * the failure mode a refusal test can least afford.
+ */
+export function errorText(err: unknown): string {
+	const parts: string[] = [];
+	let cur: unknown = err;
+	for (let i = 0; i < 8 && cur !== null && cur !== undefined; i++) {
+		if (cur instanceof Error) parts.push(cur.message);
+		else parts.push(String(cur));
+		if (typeof cur !== "object" || cur === null || !("cause" in cur)) break;
+		const next: unknown = cur.cause;
+		if (next === cur) break;
+		cur = next;
+	}
+	return parts.join(" | ");
+}
+
+/**
+ * Runs `statement`, expecting the database to REFUSE it, and returns the full Postgres text (see
+ * {@link errorText}) for the caller to match against. Throws if the statement succeeded — a refusal
+ * test whose statement quietly worked must fail, not pass on an empty assertion.
+ */
+export async function refusalText(
+	statement: () => PromiseLike<unknown>,
+): Promise<string> {
+	try {
+		await statement();
+	} catch (err) {
+		return errorText(err);
+	}
+	throw new Error("expected the database to refuse this statement, but it succeeded");
+}
+
+/**
+ * `is_default` for a seeded `project_environments` row: true when the project has no default yet,
+ * false otherwise — evaluated in SQL, at insert time.
+ *
+ * Two constraints now bracket this column. `project_environments_one_default` (the partial unique
+ * index) refuses a SECOND default; `project_environments_one_default_check` (the deferred
+ * constraint trigger in lib/db/programmables.sql, #4127) refuses a commit in which a project has
+ * environments and NONE of them is the default. So a fixture that seeds N environments one call at
+ * a time has to flag exactly the first — and the seed helpers that do this are called from a dozen
+ * separate tests each, with no notion of which call is first.
+ *
+ * Answering the question in SQL keeps that bookkeeping out of every helper. It is only correct for
+ * one-row-per-statement inserts: a multi-row VALUES evaluates the subquery against the same
+ * pre-statement snapshot for every row, so all of them would come back true and collide. Those
+ * fixtures spell `is_default` out per row instead.
+ */
+export function defaultIfFirst(projectId: string): SQL<boolean> {
+	return sql<boolean>`NOT EXISTS (
+		SELECT 1 FROM public.project_environments e
+		 WHERE e.project_id = ${projectId}::uuid AND e.is_default
+	)`;
+}
+
 /** Inserts a managed runner (the FK target for jobs / usage sessions) and returns its id. */
 export async function seedManagedRunner(name: string): Promise<string> {
 	const [row] = await getServiceDb()

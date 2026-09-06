@@ -12,12 +12,12 @@ import { sso } from "@better-auth/sso";
 import { OpenFgaClient } from "@openfga/sdk";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
-import { sql } from "drizzle-orm";
 import type { Actor, Entitlements } from "@/lib/authz/types";
 import type { CoreContext, EnterpriseModule } from "@/lib/enterprise";
 import { FgaTupleSync } from "./fga-tuple-sync";
 import { resolveInstanceLicense } from "./license";
 import { OpenFgaPdp } from "./openfga-pdp";
+import { resolveActiveScope } from "./scope";
 
 /** One OpenFGA client when configured (shared by the engine + the dual-write writer). */
 function buildFgaClient(core: CoreContext): OpenFgaClient | null {
@@ -174,8 +174,11 @@ export const register: EnterpriseEntrypoint<CoreContext, EnterpriseModule> = (
           }) => {
             if (!member.role) {
               // An invitation with no role yields a member with no mappable role, so
-              // ensureMemberGrant would silently no-op (leaving the member ungranted).
-              // Surface it rather than fail silently.
+              // ensureMemberGrant writes nothing (leaving the member ungranted). It now says so
+              // itself for EVERY unmappable role — see core's `toPdpRole` / #3730, where
+              // better-auth's own `member` role was unmapped and this branch never fired because
+              // the role was present, just unrecognised. Kept because this one is the acceptance
+              // path's own precondition and names the invitation.
               console.warn(
                 `[authz] accepted invitation for user ${user.id} in org ${org.id} has no role — no grant written`,
               );
@@ -244,13 +247,22 @@ export const register: EnterpriseEntrypoint<CoreContext, EnterpriseModule> = (
       // the customer's IdP (Okta / Entra ID / AWS IAM Identity Center / …).
       // Loaded after organization() so per-org providers (ssoProvider.organizationId)
       // resolve. SSO users are provisioned into their org as least-privileged
-      // members so the PDP scopes them correctly. STANDUP: add a getRole mapping
-      // (IdP group claim → owner/admin/operator/viewer) and harden SAML
-      // (algorithms.onDeprecated: "reject", enable InResponseTo validation).
+      // members. STANDUP: a JIT-provisioned user still gets NO PDP GRANT — see the
+      // defaultRole comment below; plus add a getRole mapping (IdP group claim →
+      // owner/admin/operator/viewer) and harden SAML (algorithms.onDeprecated:
+      // "reject", enable InResponseTo validation).
       sso({
         organizationProvisioning: {
-          // better-auth's org role (owner/admin/member) — least-privileged
-          // "member"; the PDP then maps it to Alethia's viewer-scoped access.
+          // better-auth's org role (owner/admin/member) — least-privileged "member",
+          // which core's `toPdpRole` maps to Alethia's viewer bundle.
+          //
+          // THAT MAPPING DOES NOT REACH A JIT-PROVISIONED USER. `assignOrganization()`
+          // writes the member row with the generic adapter, not through the organization
+          // plugin's routes, so none of the `organizationHooks` above fire — no
+          // `ensureMemberGrant`, no grant row, no `syncOrgSeats`. The PDP authorizes from
+          // grants, so an employee signing in through the IdP for the first time still
+          // lands on `/{org}` denied. Fixing it needs a hook on the SSO path itself; the
+          // role map (#3730) covers the INVITED member, not this one.
           defaultRole: "member",
         },
         // Prove the customer controls the domain before we trust the IdP for it.
@@ -288,32 +300,15 @@ export const register: EnterpriseEntrypoint<CoreContext, EnterpriseModule> = (
       },
     ],
 
-    // Map a verified user to their active org. Primary org = earliest membership;
-    // users with no org membership fall back to their personal org (orgId == userId).
+    // Map a verified user to their active org — the personal org named explicitly, else a
+    // membership row for the named org, else the primary (earliest) membership, else the
+    // personal org. Lifted into ./scope so the rules can be driven directly by a test rather
+    // than only through a booted enterprise module; see its JSDoc for why a named org the
+    // caller is not a member of still falls back HERE and is refused by the header's reader.
     // STANDUP follow-up: honor session.activeOrganizationId for active-org switching
     // (needs the session/headers threaded into getActiveScope).
-    resolveScope: async (
-      userId: string,
-      activeOrgId?: string,
-    ): Promise<Actor> => {
-      // Honor the session's selected org, but only if the user is a member of it.
-      if (activeOrgId) {
-        const selected = await core.db.execute<{ id: string }>(sql`
-					select organization_id as id from member
-					where user_id = ${userId}::uuid and organization_id = ${activeOrgId}::uuid
-					limit 1
-				`);
-        if (selected[0]) return { userId, orgId: activeOrgId };
-      }
-      // Else the primary (earliest) membership; else the personal org.
-      const rows = await core.db.execute<{ organization_id: string }>(sql`
-				select organization_id from member
-				where user_id = ${userId}::uuid
-				order by created_at asc
-				limit 1
-			`);
-      return { userId, orgId: rows[0]?.organization_id ?? userId };
-    },
+    resolveScope: (userId: string, activeOrgId?: string): Promise<Actor> =>
+      resolveActiveScope(core.db, userId, activeOrgId),
 
     // Per-org entitlement resolution. A validly-licensed instance unlocks everything
     // (an explicit entitlements claim in the license narrows it, else the full set);

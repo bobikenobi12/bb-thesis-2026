@@ -8,8 +8,8 @@
 // or reset to community.
 //
 // Usage:
-//   pnpm -F console org:set-plan <org-slug> <community|team|enterprise> [--status active] [--months 12]
-//   pnpm -F console org:set-plan <org-slug> enterprise --perpetual
+//   pnpm -C apps/console run org:set-plan <org-slug> <community|team|enterprise> [--status active] [--months 12]
+//   pnpm -C apps/console run org:set-plan <org-slug> enterprise --perpetual
 //
 // `active`/`trialing` grant the plan's entitlements; `community` (or --status none) resets.
 //
@@ -57,11 +57,21 @@ function arg(name, fallback) {
 	return idx !== -1 ? process.argv[idx + 1] : fallback;
 }
 
+/** Reads a boolean flag in either --name or --name=true/false form. */
+function booleanArg(name) {
+	const value = arg(name, undefined);
+	if (value === undefined) return process.argv.includes(`--${name}`);
+	if (value === "true") return true;
+	if (value === "false") return false;
+	console.error(`✗ --${name} must be true or false (got "${value}").`);
+	process.exit(1);
+}
+
 async function main() {
 	loadRootEnv();
 	const [slug, plan] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 	const status = arg("status", plan === "community" ? "none" : "active");
-	const perpetual = process.argv.includes("--perpetual");
+	const perpetual = booleanArg("perpetual");
 	const months = Number(arg("months", "12"));
 
 	if (!slug || !PLANS.has(plan)) {

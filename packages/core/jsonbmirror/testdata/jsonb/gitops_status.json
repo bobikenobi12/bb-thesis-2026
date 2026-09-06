@@ -1,0 +1,20 @@
+{
+  "mode": "gitops",
+  "apps_repo": "https://github.com/acme/acme-apps.git",
+  "argocd_app": "apps",
+  "revision": "9f1c0d2a7b3e4f5061728394a5b6c7d8e9f00112",
+  "failed_step": "render",
+  "error": "render failed: templates/user-apps.yaml not found",
+  "app_health": {
+    "health": "Degraded",
+    "sync": "OutOfSync"
+  },
+  "services": {
+    "api": {
+      "health": "Progressing",
+      "sync": "Synced",
+      "message": "Deployment exceeded its progress deadline"
+    }
+  },
+  "manifest_warnings": ["service \"worker\" skipped: no built image"]
+}

@@ -11,11 +11,11 @@
 // is fictional and clearly demo-marked; nothing here provisions real infra.
 //
 // Usage (run from repo root or apps/console):
-//   pnpm -F console seed:demo                     # stable "demo-acme" org (idempotent refresh)
-//   pnpm -F console seed:demo --slug demo-globex   # a differently-named demo org
-//   pnpm -F console seed:demo --email you@dev.test # seed into an existing user's personal org
-//   pnpm -F console seed:demo --fresh              # a new demo-<rand> org
-//   pnpm -F console seed:demo --reset              # tear the demo org down, then reseed
+//   pnpm -C apps/console run seed:demo                     # stable "demo-acme" org (idempotent refresh)
+//   pnpm -C apps/console run seed:demo --slug demo-globex   # a differently-named demo org
+//   pnpm -C apps/console run seed:demo --email you@dev.test # seed into an existing user's personal org
+//   pnpm -C apps/console run seed:demo --fresh              # a new demo-<rand> org
+//   pnpm -C apps/console run seed:demo --reset              # tear the demo org down, then reseed
 //
 // Safety: refuses to run against a production DB unless ALETHIA_ALLOW_DEMO_SEED=1,
 // and never touches an org that isn't demo-marked (unless --force).
@@ -127,8 +127,8 @@ async function main(): Promise<void> {
 	console.log(`  projects       ${seeded.length}  ·  environments ${envCount}`);
 	console.log(`  connectors     ${Object.keys(connectors).join(", ")}`);
 	console.log(`  login          sign in with ${ownerEmail} (dev: OTP prints to the console log)`);
-	console.log(`  refresh        pnpm -F console seed:demo --slug ${slug}`);
-	console.log(`  teardown       pnpm -F console seed:demo --slug ${slug} --reset --reset-only`);
+	console.log(`  refresh        pnpm -C apps/console run seed:demo --slug ${slug}`);
+	console.log(`  teardown       pnpm -C apps/console run seed:demo --slug ${slug} --reset --reset-only`);
 	process.exit(0);
 }
 

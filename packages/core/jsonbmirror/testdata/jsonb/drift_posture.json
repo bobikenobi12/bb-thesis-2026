@@ -1,0 +1,24 @@
+{
+  "in_sync": true,
+  "drifted": 1,
+  "details": [
+    {
+      "address": "aws_db_instance.main",
+      "type": "aws_db_instance",
+      "kind": "modified",
+      "attributes": ["backup_retention_period"]
+    }
+  ],
+  "normalized": 1,
+  "normalized_details": [
+    {
+      "address": "azurerm_kubernetes_cluster.main",
+      "type": "azurerm_kubernetes_cluster",
+      "attributes": ["default_node_pool[0].tags"],
+      "reason": "computed_attribute"
+    }
+  ],
+  "unmanaged": 1,
+  "unmanaged_known": true,
+  "scanned_at": "2026-08-30T09:41:00Z"
+}

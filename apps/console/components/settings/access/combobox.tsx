@@ -37,16 +37,29 @@ export function Combobox({
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
+  // The placeholder is an instruction ("Select a permission…"), so it doubles as the control's
+  // purpose once the trailing ellipsis is dropped.
+  const purpose = placeholder.replace(/[.…]+$/u, "");
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
+          // NO `role="combobox"`: there is no text input and no owned listbox on this button — the
+          // search field lives inside the popup — and base-ui's popover already reports
+          // `aria-haspopup="dialog"` and `aria-expanded` for it. The role's real cost was that it
+          // is name-from-author-only, which left this control with NO accessible name at all while
+          // its label sat visibly inside it.
+          //
+          // A name is written only for the selected state. Empty, the button reads
+          // "Select a permission…" — the placeholder IS the visible text and already states the
+          // purpose, so an `aria-label` there would be a second copy to keep in sync. Selected, it
+          // reads "Kubernetes read", which never says it is a picker; the name adds the purpose and
+          // keeps the visible text inside it (WCAG 2.5.3).
           <Button
             type="button"
             variant="outline"
-            role="combobox"
-            aria-expanded={open}
+            aria-label={selected ? `${purpose}: ${selected.label}` : undefined}
             className="w-full justify-between font-normal"
           >
             <span

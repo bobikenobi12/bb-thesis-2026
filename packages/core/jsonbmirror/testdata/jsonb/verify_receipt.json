@@ -1,0 +1,47 @@
+{
+  "version": "1",
+  "plan_sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b",
+  "tofu_version": "1.9.0",
+  "provider_versions": {
+    "registry.opentofu.org/hashicorp/aws": "5.62.0"
+  },
+  "catalog_version": "elench-controls-0.5.2",
+  "provider": "aws",
+  "verdict": "fail",
+  "report": {
+    "verdict": "fail",
+    "catalog_version": "elench-controls-0.5.2",
+    "provider": "aws",
+    "controls": [
+      {
+        "id": "LEASTPRIV-001",
+        "title": "IAM policies avoid wildcard administrative grants",
+        "severity": "high",
+        "status": "fail",
+        "frameworks": ["CIS-1.16"],
+        "provider": "aws",
+        "findings": [
+          {
+            "address": "aws_iam_policy.admin",
+            "message": "policy grants Action:* on Resource:*"
+          }
+        ],
+        "coverage": "1 policy body is computed until apply and was not inspected"
+      }
+    ],
+    "summary": {
+      "pass": 7,
+      "fail": 1,
+      "warn": 2,
+      "not_evaluable": 3
+    }
+  },
+  "exception": {
+    "controls": ["LEASTPRIV-001"],
+    "reason": "waived for the migration window, tracked in ALE-4821",
+    "by": "user_01J8QK3ZTA",
+    "expiry": "2026-09-30T00:00:00Z"
+  },
+  "runner": "runner_01J8QK4T2P",
+  "evaluated_at": "2026-08-30T09:41:00Z"
+}

@@ -64,15 +64,26 @@ func TestRunChartAttach(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		p    api.AttachChartParams
+		// names is what the refusal must SAY. "both are required" told a caller writing a script
+		// that something was missing without telling them which — and this command is now also
+		// reachable with neither, from a run that could not open a form.
+		names []string
 	}{
-		{"no id", api.AttachChartParams{RepoURL: "https://x"}},
-		{"no repo", api.AttachChartParams{ID: "api"}},
+		{"no id", api.AttachChartParams{RepoURL: "https://x"}, []string{"chart id"}},
+		{"no repo", api.AttachChartParams{ID: "api"}, []string{"--repo"}},
+		{"neither", api.AttachChartParams{}, []string{"chart id", "--repo"}},
 	} {
 		t.Run("refuses with "+tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			f := &fakeClient{}
-			if err := runChartAttach(f, &buf, tc.p); err == nil {
+			err := runChartAttach(f, &buf, tc.p)
+			if err == nil {
 				t.Fatal("expected a local refusal")
+			}
+			for _, want := range tc.names {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal must name %q: %v", want, err)
+				}
 			}
 			if f.attachedChart.ID != "" || f.attachedChart.RepoURL != "" {
 				t.Error("the client must not be called")
@@ -111,10 +122,18 @@ func TestRunChartDetachAndScan(t *testing.T) {
 			t.Fatalf("runChartScan: %v", err)
 		}
 		out := buf.String()
-		// The job id is the useful part: a scan is asynchronous, and without it a caller has to go
-		// looking for what to follow.
-		if !strings.Contains(out, "job-1") || !strings.Contains(out, "jobs logs job-1 --follow") {
-			t.Errorf("output must name the job and how to follow it: %q", out)
+		// The job id is still printed — a scan is asynchronous, and a script polling a SPECIFIC job
+		// needs the handle. The follow-up line no longer REPEATS it: `jobs logs --latest --follow`
+		// resolves the same job without a token the reader has to carry between two commands, which
+		// is the copied-placeholder handoff the CLI programme is removing.
+		if !strings.Contains(out, "job-1") {
+			t.Errorf("output must name the queued job: %q", out)
+		}
+		if !strings.Contains(out, "jobs logs --latest --follow") {
+			t.Errorf("output must say how to follow it without an id: %q", out)
+		}
+		if strings.Contains(out, "jobs logs job-1") {
+			t.Errorf("the follow-up must not ask the reader to copy the id back in: %q", out)
 		}
 	})
 
@@ -260,7 +279,7 @@ func byoEnv(t *testing.T, status int) (func(args ...string) error, *byoRec) {
 	t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 	resetByoFlags(t)
 	return func(args ...string) error {
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		return rootCmd.Execute()
 	}, rec
 }
@@ -497,7 +516,7 @@ func TestByoWritesFailLoudly(t *testing.T) {
 			t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 			resetByoFlags(t)
 			run := func(a ...string) error {
-				rootCmd.SetArgs(a)
+				execRootArgs(a)
 				return rootCmd.Execute()
 			}
 			exited, code, err := connInvoke(t, run, args...)

@@ -1,0 +1,383 @@
+{
+  "_comment": "Shared dependency-line parser contract for coordinate.sh and board-dashboard.mjs.",
+  "cases": [
+    {
+      "name": "declaration at column zero",
+      "body": "blocked-by: #12 #14",
+      "blockedBy": [
+        12,
+        14
+      ]
+    },
+    {
+      "name": "indented capitalized declaration",
+      "body": "  Blocked-by: #21",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "name": "declaration among prose",
+      "body": "Context names #88.\n\nblocked-by: #31 #32\n\nMore context names #89.",
+      "blockedBy": [
+        31,
+        32
+      ]
+    },
+    {
+      "name": "inline prose marker is not a declaration",
+      "body": "The `blocked-by: #3614` marker was removed from #3617.",
+      "blockedBy": []
+    },
+    {
+      "name": "an inline code SPAN mid-sentence is not a declaration",
+      "body": "The parser was `sed -n 's/.*blocked-by: #42/'` before #43 fixed it.",
+      "blockedBy": []
+    },
+    {
+      "name": "a FENCED block is not a declaration, even at column zero",
+      "body": "Example:\n\n```\nblocked-by: #42\n```\n",
+      "blockedBy": []
+    },
+    {
+      "name": "the decompose seeding snippet quoted in a body declares nothing (#3639)",
+      "body": "Seeded with:\n\n```bash\ngh issue create --body \"$(cat <<EOF\nblocked-by: #99\nscope: apps/console/**\nEOF\n)\"\n```\n",
+      "blockedBy": []
+    },
+    {
+      "name": "an UNTERMINATED fence does not swallow a later declaration",
+      "body": "```\nsome snippet nobody closed\n\nblocked-by: #44\n",
+      "blockedBy": [
+        44
+      ]
+    },
+    {
+      "name": "a declaration AFTER a closed fence is still read",
+      "body": "```bash\nblocked-by: #77\n```\n\nblocked-by: #78\n",
+      "blockedBy": [
+        78
+      ]
+    },
+    {
+      "name": "issue references without a declaration",
+      "body": "Related work:\n- #51\n- #52",
+      "blockedBy": []
+    },
+    {
+      "name": "TWO declaration lines are unioned, not just the first",
+      "body": "blocked-by: #10\nsome prose\nblocked-by: #11\n",
+      "blockedBy": [
+        10,
+        11
+      ]
+    },
+    {
+      "name": "a list-item declaration is READ, not silently dropped",
+      "body": "Depends on:\n- blocked-by: #12\n",
+      "blockedBy": [
+        12
+      ]
+    },
+    {
+      "name": "a bold declaration is READ, not silently dropped",
+      "body": "**blocked-by:** #13\n",
+      "blockedBy": [
+        13
+      ]
+    },
+    {
+      "name": "duplicates collapse and the result is ascending",
+      "body": "blocked-by: #30 #12\nblocked-by: #12\n",
+      "blockedBy": [
+        12,
+        30
+      ]
+    }
+  ],
+  "_scopeComment": "Shared SCOPE-line contract for scripts/lib/scope-overlap.mjs — the one matcher behind coordinate.sh's report, decompose-validate.mjs's seed-time check and board-dashboard.mjs's collisions panel. Expected values are hand-authored DATA and must stay that way: computing them from the matcher would make the suite agree with itself and prove nothing.",
+  "scopeCases": [
+    {
+      "name": "declaration at column zero, several globs",
+      "body": "scope: apps/console/lib/db/schema/** packages/core/types/**",
+      "status": "declared",
+      "globs": [
+        "apps/console/lib/db/schema/**",
+        "packages/core/types/**"
+      ],
+      "unusable": []
+    },
+    {
+      "name": "an indented declaration is still a declaration",
+      "body": "  scope: infra/templates/**\n",
+      "status": "declared",
+      "globs": [
+        "infra/templates/**"
+      ],
+      "unusable": []
+    },
+    {
+      "name": "leading ./ and a trailing slash normalize away",
+      "body": "scope: ./apps/console/lib/",
+      "status": "declared",
+      "globs": [
+        "apps/console/lib"
+      ],
+      "unusable": []
+    },
+    {
+      "name": "no scope line at all — MISSING, not empty-and-fine",
+      "body": "This unit tidies a comment. Nothing about files.",
+      "status": "missing",
+      "globs": [],
+      "unusable": []
+    },
+    {
+      "name": "a backtick-wrapped declaration is invisible to the parser (board #4089)",
+      "body": "The files it owns: `scope: apps/console/components/**`\n",
+      "status": "mentioned-not-declared",
+      "globs": [],
+      "unusable": []
+    },
+    {
+      "name": "a prose mention mid-sentence is not a declaration",
+      "body": "Its scope: is stated in the parent epic, not here.\n",
+      "status": "mentioned-not-declared",
+      "globs": [],
+      "unusable": []
+    },
+    {
+      "name": "a declaration whose globs are backticked declares nothing usable",
+      "body": "scope: `apps/console/**`\n",
+      "status": "declared",
+      "globs": [],
+      "unusable": [
+        "`apps/console/**`"
+      ]
+    },
+    {
+      "name": "a repo-wide glob is not a scope",
+      "body": "scope: **\n",
+      "status": "declared",
+      "globs": [],
+      "unusable": [
+        "**"
+      ]
+    },
+    {
+      "name": "a usable glob beside an unusable one is still compared",
+      "body": "scope: apps/runner/internal/agent/** `apps/runner/docs/**`\n",
+      "status": "declared",
+      "globs": [
+        "apps/runner/internal/agent/**"
+      ],
+      "unusable": [
+        "`apps/runner/docs/**`"
+      ]
+    },
+    {
+      "name": "a Next.js route group and dynamic segments are PATHS, not prose",
+      "body": "scope: apps/console/app/(private)/[org]/~/support/** apps/console/app/(private)/cli/login/**\n",
+      "status": "declared",
+      "globs": [
+        "apps/console/app/(private)/[org]/~/support/**",
+        "apps/console/app/(private)/cli/login/**"
+      ],
+      "unusable": []
+    },
+    {
+      "name": "the FIRST declaration wins, matching decompose-validate.mjs",
+      "body": "scope: apps/a/**\nscope: apps/b/**\n",
+      "status": "declared",
+      "globs": [
+        "apps/a/**"
+      ],
+      "unusable": []
+    },
+    {
+      "name": "KNOWN GAP pinned: a fenced declaration IS read (see the module header)",
+      "body": "Seed it like this:\n\n```\nscope: apps/x/**\n```\n",
+      "status": "declared",
+      "globs": [
+        "apps/x/**"
+      ],
+      "unusable": []
+    }
+  ],
+  "overlapCases": [
+    {
+      "name": "identical globs",
+      "a": "apps/console/lib/**",
+      "b": "apps/console/lib/**",
+      "overlap": true
+    },
+    {
+      "name": "prefix subsumption",
+      "a": "apps/console/lib/**",
+      "b": "apps/console/lib/db/**",
+      "overlap": true
+    },
+    {
+      "name": "sibling directories are disjoint",
+      "a": "apps/console/lib/**",
+      "b": "apps/console/app/**",
+      "overlap": false
+    },
+    {
+      "name": "a LOOKALIKE prefix with no separator is disjoint",
+      "a": "apps/console/lib/**",
+      "b": "apps/console/library/**",
+      "overlap": false
+    },
+    {
+      "name": "an intra-path wildcard segment matches a literal one",
+      "a": "infra/templates/*/aws/**",
+      "b": "infra/templates/project/aws/main.tf",
+      "overlap": true
+    },
+    {
+      "name": "a filename wildcard matches a literal filename",
+      "a": "infra/templates/project/aws/*.tf",
+      "b": "infra/templates/project/aws/main.tf",
+      "overlap": true
+    },
+    {
+      "name": "two distinct files in one directory are disjoint",
+      "a": "apps/console/lib/a.ts",
+      "b": "apps/console/lib/b.ts",
+      "overlap": false
+    },
+    {
+      "name": "** matches zero segments, so a dir and its subtree collide",
+      "a": "apps/console/**",
+      "b": "apps/console",
+      "overlap": true
+    },
+    {
+      "name": "different top-level trees are disjoint",
+      "a": "apps/**",
+      "b": "infra/**",
+      "overlap": false
+    },
+    {
+      "name": "a single file under a different subtree is disjoint",
+      "a": "packages/core/verify/report.go",
+      "b": "packages/core/git/**",
+      "overlap": false
+    }
+  ],
+  "boardCases": [
+    {
+      "name": "disjoint scopes, and a BLOCKED overlapping unit is out of the set",
+      "verdict": "CLEAN",
+      "collisions": [],
+      "gaps": [],
+      "board": [
+        {
+          "number": 10,
+          "title": "console lib lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "scope: apps/console/lib/**"
+        },
+        {
+          "number": 11,
+          "title": "console app lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "scope: apps/console/app/**"
+        },
+        {
+          "number": 12,
+          "title": "schema lane, waiting on the seams",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }, { "name": "blocked" }],
+          "body": "scope: apps/console/lib/db/**"
+        }
+      ]
+    },
+    {
+      "name": "a CLAIMED unit overlapping a ready one, across waves, is a collision",
+      "verdict": "COLLISIONS",
+      "collisions": [[20, 21]],
+      "gaps": [],
+      "board": [
+        {
+          "number": 20,
+          "title": "query builders",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W2" }, { "name": "claimed" }],
+          "body": "scope: apps/console/lib/**"
+        },
+        {
+          "number": 21,
+          "title": "facet counts",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:hygiene" }],
+          "body": "scope: apps/console/lib/query/**"
+        }
+      ]
+    },
+    {
+      "name": "a unit with no scope line is a GAP, never folded into the clean count",
+      "verdict": "CLEAN-WITH-GAPS",
+      "collisions": [],
+      "gaps": [31],
+      "board": [
+        {
+          "number": 30,
+          "title": "scoped lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "scope: apps/console/lib/**"
+        },
+        {
+          "number": 31,
+          "title": "unscoped lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "No file scope was ever written onto this issue."
+        }
+      ]
+    },
+    {
+      "name": "a backtick-wrapped declaration reads as scoped to a human and unscoped to the parser",
+      "verdict": "CLEAN-WITH-GAPS",
+      "collisions": [],
+      "gaps": [40],
+      "board": [
+        {
+          "number": 40,
+          "title": "components lane",
+          "labels": [{ "name": "class:ui" }, { "name": "wave:W1" }],
+          "body": "Files: `scope: apps/console/components/**`"
+        },
+        {
+          "number": 41,
+          "title": "runner lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "scope: apps/runner/**"
+        }
+      ]
+    },
+    {
+      "name": "not one workable unit declares a scope — NOT CHECKED, and never ✓",
+      "verdict": "NOT-CHECKED",
+      "collisions": [],
+      "gaps": [50, 51],
+      "board": [
+        {
+          "number": 50,
+          "title": "prose lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "Prose only."
+        },
+        {
+          "number": 51,
+          "title": "another prose lane",
+          "labels": [{ "name": "class:backend" }, { "name": "wave:W1" }],
+          "body": "Prose only."
+        }
+      ]
+    },
+    {
+      "name": "an empty board read is NOT CHECKED, not a clean board",
+      "verdict": "NOT-CHECKED",
+      "collisions": [],
+      "gaps": [],
+      "board": []
+    }
+  ]
+}

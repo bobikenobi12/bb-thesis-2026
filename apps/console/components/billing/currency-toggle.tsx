@@ -41,7 +41,7 @@ export function CurrencyToggle({ value, onChange, disabled, className }: Currenc
 					aria-pressed={value === opt.value}
 					onClick={() => onChange(opt.value)}
 					className={cn(
-						"rounded px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+						"rounded px-2.5 py-1 text-ui-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
 						value === opt.value
 							? "bg-surface text-text-primary shadow-sm"
 							: "text-text-secondary hover:text-text-primary",

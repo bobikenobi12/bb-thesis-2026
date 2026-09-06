@@ -88,4 +88,10 @@ The migrate init container re-runs on each rollout, so schema changes apply auto
 | `postgres.enabled` | `true` | `false` → set `postgres.host` |
 | `objectStore.enabled` | `true` | `false` → set `objectStore.endpoint` |
 | `ingress.className` | `nginx` | Ingress controller class |
+| `ingress.trustedIpHeader` | `x-real-ip` | Header the ingress overwrites with the client IP for authentication throttling |
 | `ingress.tls.clusterIssuer` | `letsencrypt-prod` | cert-manager issuer |
+
+The default matches ingress-nginx, which overwrites `X-Real-IP` before forwarding a request. If you
+use another ingress controller, set `ingress.trustedIpHeader` to a single-value client IP header
+that controller overwrites. Authentication returns HTTP 503 in production when that contract is
+missing or malformed, instead of placing every client in one shared rate-limit bucket.

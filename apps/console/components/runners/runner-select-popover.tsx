@@ -79,7 +79,7 @@ export function RunnerSelectPopover({
             Choose which runner runs this job.
           </p>
           {variant === "destructive" && description && (
-            <div className="mt-2 flex gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
+            <div className="mt-2 flex gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-ui-xs text-destructive">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
               <span>{description}</span>
             </div>
@@ -145,11 +145,11 @@ export function RunnerSelectPopover({
                   </TooltipProvider>
                   <span className="truncate flex-1">{w.name}</span>
                   {w.is_default && (
-                    <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                    <span className="text-ui-2xs text-muted-foreground font-medium uppercase tracking-wide">
                       Default
                     </span>
                   )}
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-ui-2xs text-muted-foreground">
                     {w.operator === "managed" ? "managed" : "self"}
                   </span>
                 </button>

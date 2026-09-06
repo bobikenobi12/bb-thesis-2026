@@ -31,7 +31,7 @@ import {
 	reapBackoffMs,
 	reapExpiredEphemeralEnvs,
 } from "@/lib/reconcile/reap";
-import { describeIfDb } from "./db";
+import { defaultIfFirst, describeIfDb } from "./db";
 
 const USER = randomUUID();
 const db = getServiceDb();
@@ -58,6 +58,7 @@ async function seedEnv(
 			user_id: USER,
 			name,
 			status,
+			is_default: defaultIfFirst(projectId),
 			stage: opts.stage ?? "development",
 			lifecycle: opts.lifecycle ?? "persistent",
 			expires_at: opts.expiresAt ?? null,

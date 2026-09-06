@@ -25,6 +25,7 @@ import { PaymentForm } from "@/components/billing/payment-form";
 import { StripeElementsProvider } from "@/components/billing/stripe-elements";
 import { track } from "@/lib/analytics/track";
 import { AI_CREDIT_PACKS, type CreditPack } from "@/lib/billing/ai-credits";
+import { billingIntentErrorMessage } from "@/lib/billing/intent-error";
 import { Badge } from "@repo/ui/badge";
 import { Button } from "@repo/ui/button";
 import {
@@ -116,7 +117,7 @@ export function CreditPackDialog({
 			const intent = await createCreditPackIntent(next.id);
 			setClientSecret(intent.clientSecret);
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Couldn't start the purchase.");
+			setError(billingIntentErrorMessage(e));
 		}
 	}
 
@@ -184,7 +185,7 @@ export function CreditPackDialog({
 function UpgradeFirst({ onUpgrade }: { onUpgrade: () => void }) {
 	return (
 		<div className="space-y-3">
-			<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-[12.5px] leading-relaxed text-text-secondary">
+			<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-ui-sm leading-relaxed text-text-secondary">
 				Top-up credits are available on AI Plus and AI Max. A paid plan includes far
 				more usage per dollar than a pack — upgrade first, then top up if you still
 				run out.
@@ -233,39 +234,39 @@ function PackList({
 					>
 						<span className="flex items-center gap-2">
 							<span className="flex flex-col">
-								<span className="text-[13px] font-medium text-text-primary">
+								<span className="text-ui-md font-medium text-text-primary">
 									{p.credits.toLocaleString("en-US")} credits
 								</span>
-								<span className="font-mono text-[10.5px] text-text-tertiary">
+								<span className="font-mono text-ui-2xs text-text-tertiary">
 									One-time top-up
 								</span>
 							</span>
 							{p.id === BEST_VALUE_PACK_ID && paidTiersEnabled && (
-								<Badge variant="secondary" className="font-mono text-[9px] uppercase">
+								<Badge variant="secondary" className="font-mono text-ui-3xs uppercase">
 									Best value
 								</Badge>
 							)}
 						</span>
 						<span className="flex items-center gap-2">
 							{!paidTiersEnabled && (
-								<Badge variant="outline" className="font-mono text-[9px] uppercase">
+								<Badge variant="outline" className="font-mono text-ui-3xs uppercase">
 									Coming soon
 								</Badge>
 							)}
-							<span className="font-mono text-[13px] text-text-secondary">
+							<span className="font-mono text-ui-md text-text-secondary">
 								{usd(p.amountCents)}
 							</span>
 						</span>
 					</button>
 				))}
 			</div>
-			<div className="flex items-center justify-between border-t border-border pt-3 text-[12px] text-text-tertiary">
+			<div className="flex items-center justify-between border-t border-border pt-3 text-ui-sm text-text-tertiary">
 				<span>Current balance</span>
 				<span className="font-mono text-text-secondary">
 					{summary.purchasedBalance.toLocaleString("en-US")} credits
 				</span>
 			</div>
-			<p className="text-[11px] leading-relaxed text-text-tertiary">
+			<p className="text-ui-xs leading-relaxed text-text-tertiary">
 				Packs are priced above your plan&apos;s included rate — if you hit limits
 				often, upgrading your AI plan is the better deal.
 			</p>
@@ -290,7 +291,7 @@ function PurchaseStep({
 	if (error) {
 		return (
 			<div className="space-y-3">
-				<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-[12.5px] text-text-secondary">
+				<p className="rounded-lg border border-border bg-surface-sunken px-4 py-3 text-ui-sm text-text-secondary">
 					{error}
 				</p>
 				<Button variant="outline" className="w-full" onClick={onBack}>
@@ -315,7 +316,7 @@ function PurchaseStep({
 			<button
 				type="button"
 				onClick={onBack}
-				className="w-full text-center text-[12px] text-text-tertiary transition-colors hover:text-text-primary"
+				className="w-full text-center text-ui-sm text-text-tertiary transition-colors hover:text-text-primary"
 			>
 				← Choose a different pack
 			</button>

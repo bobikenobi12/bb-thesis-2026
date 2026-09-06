@@ -1,0 +1,2 @@
+CREATE INDEX "idx_projects_org_cursor" ON "projects" USING btree ("org_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "idx_jobs_org_cursor" ON "jobs" USING btree ("org_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

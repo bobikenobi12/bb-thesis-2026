@@ -1,0 +1,20 @@
+{
+  "log_url": "https://rekor.sigstore.dev",
+  "log_id": "c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d",
+  "log_index": 1049231,
+  "integrated_time": 1788000000,
+  "body": "eyJraW5kIjoiaGFzaGVkcmVrb3JkIn0=",
+  "inclusion_proof": {
+    "log_index": 1049231,
+    "root_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "tree_size": 1049232,
+    "hashes": [
+      "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+    ],
+    "checkpoint": "rekor.sigstore.dev - 2605736670972794746\n1049232\nBoZrJ/808c4Z1rgE7/Wj9XR62k6qIvHUnAHlLdt4dbQ=\n"
+  },
+  "signed_entry_timestamp": "MEUCIQDkZ3RleHRzaWduZWRlbnRyeXRpbWVzdGFtcA==",
+  "anchor_algorithm": "ecdsa-p256-sha256",
+  "anchor_signature": "MEQCIGFuY2hvcnNpZ25hdHVyZWJ5dGVzZm9ydGVzdGluZw==",
+  "anchor_public_key": "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0K"
+}

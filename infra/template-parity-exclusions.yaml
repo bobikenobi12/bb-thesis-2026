@@ -1645,3 +1645,17 @@ uniform:
   # own note at the top of `exclusions:` about a ceiling with no name to hang on.
   - variable: ack_cluster_admins
     reason: Alibaba's spelling of cluster-scoped admin grants — alicloud_cs_kubernetes_permissions (role_type "cluster", role_name "admin"), REPLACE-not-merge, one resource per RAM uid (alibaba/cluster-admins.tf). AWS (eks_cluster_admins) and Azure (aks_admin_group_object_ids) already carry their own spellings (baseline:, #2004). GCP and Hetzner are genuine ceilings, not debt — see gcp/gke.tf for GCP's two named invariants and CUSTOMIZABILITY-PARITY.md for Hetzner's (no cloud IAM plane).
+
+  # ── The Talos snapshot cache (#3027) ───────────────────────────────────────────────────────────
+  # Single-cloud because the WORK is. Hetzner is the only cloud whose template BUILDS a node image:
+  # `imager_image` boots a rescue server, writes the Talos raw.xz into it and snapshots the disk,
+  # before any cluster exists. EKS, AKS, GKE and ACK are handed a node image by the managed control
+  # plane and there is nothing to build, cache, refresh or reclaim — so there is no knob to add on
+  # the other four, not a knob that is missing from them.
+  #
+  # The variable exists because the cached snapshot is a real, billable, deliberately un-sweepable
+  # resource in an account shared with prod, and an operator needs three answers from it and not
+  # two: reuse it, supersede it (a poisoned entry, invalidated without deleting anything), or opt
+  # out entirely and go back to a per-cluster image the run's own teardown reclaims.
+  - variable: talos_image_cache
+    reason: Hetzner-only by construction — it is the only template that BUILDS a node image (imager_image snapshots a Talos raw.xz before any cluster exists, ~5m and the floor's dominant deadline flake). EKS/AKS/GKE/ACK receive a node image from the managed control plane, so there is nothing for them to cache and no counterpart knob to add. See infra/templates/project/hetzner/README.md § The Talos snapshot cache.

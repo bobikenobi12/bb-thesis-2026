@@ -73,7 +73,7 @@ export function ProviderConfigFields({
 								<div className="flex items-center gap-1.5">
 									<Label htmlFor={id}>{field.label}</Label>
 									{field.required ? (
-										<span className="vx-eyebrow text-[10px] text-muted-foreground">
+										<span className="vx-eyebrow text-ui-2xs text-muted-foreground">
 											required
 										</span>
 									) : null}

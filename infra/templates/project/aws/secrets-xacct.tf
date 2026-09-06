@@ -23,19 +23,22 @@ locals {
   # (arn:aws:iam::<acct>:role/<name>). ESO's operator ServiceAccount is annotated with this role, so
   # adding the assume permission here is what lets `spec.provider.aws.role` reach the target account.
   #
-  # This local was NOT one of #1772's thirteen break sites, and it needs no `try()`. Two facts make
-  # the bare index safe, and both are worth stating because the opposite was believed while #1772 was
-  # being fixed: (1) `enable_secrets_xacct` above already carries `var.provision_eks`, so on a
-  # cluster-less shape the condition is FALSE; and (2) OpenTofu SHORT-CIRCUITS a conditional whose
-  # condition is known at plan time — the untaken branch is never evaluated, so `module.eks[0]` is
-  # never reached. (Measured: reverting this line to the bare index leaves the cluster-less proof in
-  # checks_cluster_optional.tftest.hcl green, and the unfixed template's thirteen "Invalid index"
-  # errors name outputs.tf and irsa.tf only.)
+  # This local was NOT one of #1772's thirteen break sites, and the reasoning recorded here for why
+  # the bare index was safe held for #1772 and NOT for #3351: (1) `enable_secrets_xacct` above
+  # already carries `var.provision_eks`, so on a cluster-less shape the condition is FALSE; and
+  # (2) OpenTofu SHORT-CIRCUITS a conditional whose condition is known at plan time. Both are still
+  # true, and both are beside the point under `-refresh-only`, where the condition is TRUE —
+  # `provision_eks` is set — while `module.eks` has no instance in state yet. The index then reaches
+  # an empty tuple and aborts the whole refresh (#3351/#3509). The predicate had to move onto the
+  # module instance itself; `enable_secrets_xacct` stays because it also carries the xacct feature
+  # gate, which no module count expresses.
   #
-  # Left fail-closed on purpose. A `try()` here would swallow a future rename of
-  # eks_irsa_external_secrets_arn into "" → `element(split("/", ""), 1)` → an aws_iam_role_policy with
-  # an empty `role`, demoting a loud plan error into a mid-apply one on the greenfield path.
-  eso_irsa_role_name = local.enable_secrets_xacct ? element(split("/", module.eks[0].eks_irsa_external_secrets_arn), 1) : ""
+  # STILL fail-closed, which is why this is a probe and not a `try()`. A bare
+  # `try(module.eks[0].eks_irsa_external_secrets_arn, "")` would swallow a future RENAME of that
+  # output into "" → `element(split("/", ""), 1)` → an aws_iam_role_policy with an empty `role`,
+  # demoting a loud plan error into a mid-apply one on the greenfield path. Repeating the traversal
+  # OUTSIDE the try() keeps a renamed output a validation error; only the empty tuple is caught.
+  eso_irsa_role_name = local.enable_secrets_xacct && try(module.eks[0].eks_irsa_external_secrets_arn, null) != null ? element(split("/", module.eks[0].eks_irsa_external_secrets_arn), 1) : ""
 }
 
 resource "aws_iam_role_policy" "secrets_xacct_assume" {

@@ -86,17 +86,17 @@ locals {
   external_secrets_adopted = var.provision_aks && var.external_secrets_identity_name != "" && var.external_secrets_identity_resource_group != ""
   external_secrets_identity_id = var.provision_aks ? (
     local.external_secrets_adopted
-    ? data.azurerm_user_assigned_identity.external_secrets_adopted[0].id
+    ? one(data.azurerm_user_assigned_identity.external_secrets_adopted[*].id)
     : one(azurerm_user_assigned_identity.external_secrets[*].id)
   ) : ""
   external_secrets_client_id = var.provision_aks ? (
     local.external_secrets_adopted
-    ? data.azurerm_user_assigned_identity.external_secrets_adopted[0].client_id
+    ? one(data.azurerm_user_assigned_identity.external_secrets_adopted[*].client_id)
     : one(azurerm_user_assigned_identity.external_secrets[*].client_id)
   ) : ""
   external_secrets_principal_id = var.provision_aks ? (
     local.external_secrets_adopted
-    ? data.azurerm_user_assigned_identity.external_secrets_adopted[0].principal_id
+    ? one(data.azurerm_user_assigned_identity.external_secrets_adopted[*].principal_id)
     : one(azurerm_user_assigned_identity.external_secrets[*].principal_id)
   ) : ""
 

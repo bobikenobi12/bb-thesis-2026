@@ -137,8 +137,11 @@ zustand store  →  debounce  →  normalize  →  TanStack key  →  server act
 is the input; `FacetFilter` (checkbox popover) for any option list; `FilterChipGroup`
 for ≤ ~7 always-visible options (stages); `MultiCombobox` for long/searchable entity
 lists (clouds via the option `leading` icon slot, authors, projects); `FilterBarReset`
-for the mono "Reset · N". Result counts live in the **count pill next to the section
-heading** — never "N of M" prose in the bar. Radix `Select`s and stat-card strips are
+for the mono "Reset · N". Result counts live in the **count pill above the list** —
+next to the section heading (`@repo/ui/section-heading`) where the list has one, and
+otherwise in the page's toolbar row (`@repo/ui/page-toolbar`), which is where a list
+page's count went when the console dropped its page titles. Never "N of M" prose in
+the bar. Radix `Select`s and stat-card strips are
 banned from filter bars.
 
 The evidence page is the reference implementation; jobs (`getJobsPage` + `useJobsFilters`),

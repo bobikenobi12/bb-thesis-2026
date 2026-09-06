@@ -36,7 +36,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 const { getServiceDb } = vi.hoisted(() => ({ getServiceDb: vi.fn() }));
 vi.mock("@/lib/db", () => ({ getServiceDb }));
 
-import { exists, ilike, isNull } from "drizzle-orm";
+import { exists, ilike, inArray, isNull } from "drizzle-orm";
 import { MEMBER_ROW_STATUSES, queryMembersPage } from "@/lib/queries/members";
 
 const JOINED = new Date("2026-01-05T09:00:00.000Z");
@@ -117,7 +117,10 @@ describe("queryMembersPage", () => {
 			{
 				id: "i1",
 				email: "grace@x.io",
-				role: "member",
+				// STORED as better-auth's own `member` (what an invite sent with the plugin's
+				// default carries), READ as the role it grants: viewer. The table renders one role
+				// column for both kinds and its <select> only offers our four.
+				role: "viewer",
 				inviterName: "Ada Lovelace",
 				createdAt: "2026-08-20T09:00:00.000Z",
 			},
@@ -144,6 +147,44 @@ describe("queryMembersPage", () => {
 			{ value: "owner", label: null, count: 1 },
 			{ value: "viewer", label: null, count: 1 },
 		]);
+	});
+
+	it("reads better-auth's `member` as the viewer it grants — one bucket, not two", async () => {
+		// members, invitations, facet(members), facet(invitations), facet(teams), teams, sessions.
+		seed(
+			[memberRow({ role: "member" })],
+			[],
+			[
+				{ role: "viewer", status: "active" },
+				{ role: "member", status: "active" },
+			],
+			[],
+			[],
+			[],
+			[],
+		);
+		const page = await queryMembersPage("org-1", "viewer-1");
+		// The row's <select> offers owner/admin/operator/viewer; `member` matches no option and
+		// renders blank, and a second facet bucket claims the org has a role it cannot filter to.
+		expect(page.members[0]?.role).toBe("viewer");
+		expect(page.facets.roles).toEqual([
+			{ value: "viewer", label: null, count: 2 },
+		]);
+	});
+
+	it("selects the `member` spelling too when the viewer facet is picked", async () => {
+		// The rows are DISPLAYED as viewer, so a viewer selection that matched only the literal
+		// string would offer a count of 2 and then return 1 row.
+		seed();
+		await queryMembersPage("org-1", "viewer-1", { roles: ["viewer"] });
+		const roleFilters = vi
+			.mocked(inArray)
+			.mock.calls.filter(
+				([, values]) => Array.isArray(values) && values.includes("viewer"),
+			);
+		// Both role passes: the member rows and the pending invitations.
+		expect(roleFilters).toHaveLength(2);
+		for (const [, values] of roleFilters) expect(values).toContain("member");
 	});
 
 	it("selects the NULL invitation role when the viewer facet is picked", async () => {

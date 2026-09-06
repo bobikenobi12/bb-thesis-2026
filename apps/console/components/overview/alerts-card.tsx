@@ -8,15 +8,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelative } from "@repo/format";
 import { BellOff, Zap } from "lucide-react";
 import { StatusBadge, type StatusTier } from "@repo/ui/status-badge";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
 import { Skeleton } from "@repo/ui/skeleton";
 import {
 	type DeliveryDTO,
 	getAlertsBootstrap,
 } from "@/app/server/actions/alerts";
+import { CARD_EMPTY } from "@/components/overview/card-empty";
 import { globalHref } from "@/lib/routing";
 import { useUpgradeSheet } from "@/components/org/upgrade-sheet-provider";
 
@@ -61,14 +63,14 @@ export function AlertsCard({ orgSlug }: { orgSlug: string }) {
 		<div className="rounded-lg border bg-card shadow-sm">
 			<div className="flex min-h-[50px] items-center gap-2 border-b px-4 py-2.5">
 				<span className="font-display text-sm font-semibold">Alerts</span>
-				<span className="font-mono text-[10px] text-muted-foreground">
+				<span className="font-mono text-ui-2xs text-muted-foreground">
 					{deliveries === null || alerting === false
 						? ""
 						: `${deliveries.length} recent`}
 				</span>
 				<Link
 					href={globalHref(orgSlug, "alerts")}
-					className="ml-auto font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+					className="ml-auto font-mono text-ui-xs text-muted-foreground transition-colors hover:text-foreground"
 				>
 					Manage →
 				</Link>
@@ -81,25 +83,28 @@ export function AlertsCard({ orgSlug }: { orgSlug: string }) {
 					))}
 				</div>
 			) : alerting === false ? (
-				<div className="flex flex-col items-center gap-2.5 px-4 py-7 text-center">
-					<BellOff className="h-5 w-5 text-muted-foreground/70" />
-					<p className="max-w-[34ch] text-xs text-muted-foreground">
-						Alerting — notification channels and policies — unlocks on the Pro plan.
-					</p>
-					<Button
-						variant="outline"
-						size="xs"
-						className="gap-1.5 text-xs"
-						onClick={openUpgrade}
-					>
-						<Zap className="h-3 w-3" />
-						Upgrade
-					</Button>
-				</div>
+				// A locked feature stands exactly where its rows would have been, which is what §6
+				// calls an empty state — so it is the same shape as the one two lines below rather
+				// than a second centred div that happens to sit in the same slot.
+				<EmptyState
+					className={CARD_EMPTY}
+					icon={<BellOff />}
+					title="Alerting is a Pro feature"
+					description="Notification channels and policies unlock on the Pro plan."
+					action={
+						<Button
+							variant="outline"
+							size="xs"
+							className="gap-1.5 text-xs"
+							onClick={openUpgrade}
+						>
+							<Zap className="h-3 w-3" />
+							Upgrade
+						</Button>
+					}
+				/>
 			) : deliveries.length === 0 ? (
-				<p className="px-4 py-8 text-center font-mono text-xs text-muted-foreground">
-					No recent alerts.
-				</p>
+				<EmptyState className={CARD_EMPTY} title="No recent alerts." />
 			) : (
 				deliveries.map((d) => (
 					<div
@@ -113,17 +118,14 @@ export function AlertsCard({ orgSlug }: { orgSlug: string }) {
 							className="mt-1"
 						/>
 						<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-							<span className="truncate text-[13px] text-foreground">
+							<span className="truncate text-ui-md text-foreground">
 								{d.title}
 							</span>
-							<span className="truncate font-mono text-[10px] text-muted-foreground">
-								{d.event_key} ·{" "}
-								{formatDistanceToNow(new Date(d.created_at), {
-									addSuffix: true,
-								})}
+							<span className="truncate font-mono text-ui-2xs text-muted-foreground">
+								{d.event_key} · {formatRelative(d.created_at)}
 							</span>
 						</div>
-						<span className="shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
+						<span className="shrink-0 rounded-full border px-2 py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
 							{d.status}
 						</span>
 					</div>

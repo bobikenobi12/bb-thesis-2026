@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // The Go e2e harness seeds the FULL add-on surface (all 19 charts) from a GENERATED fixture —
-// `test/e2e/fixtures/addon_catalog.<cloud>.json`, produced by `pnpm -F console export:addon-catalog` from
+// `test/e2e/fixtures/addon_catalog.<cloud>.json`, produced by `pnpm -C apps/console run export:addon-catalog` from
 // catalog.ts via the real `resolveAddOnInstall`.
 //
 // This guard is what makes that safe. catalog.ts is the SSOT for chart coordinates; a fixture that
@@ -35,7 +35,7 @@ describe("add-on catalog export fixture (e2e full-surface seed)", () => {
 	// have gone green over four stale files, which is the exact "silently stale generated artifact"
 	// failure this test exists to prevent — reproduced once per cloud.
 	it.each([...EXPORT_CLOUDS])(
-		"%s is current with catalog.ts — regenerate with `pnpm -F console export:addon-catalog`",
+		"%s is current with catalog.ts — regenerate with `pnpm -C apps/console run export:addon-catalog`",
 		(cloud) => {
 			const live = JSON.parse(JSON.stringify(exportCatalogSpecs(cloud)));
 			expect(readFixture(cloud)).toEqual(live);

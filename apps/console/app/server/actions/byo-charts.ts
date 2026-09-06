@@ -41,9 +41,9 @@ import {
 } from "@/lib/validations/chart-workloads";
 import {
 	byoChartAttachSchema,
-	chartSlug,
 	type ByoChartAttachInput,
 } from "@/lib/validations/byo-charts";
+import { chartSlug } from "@/lib/validations/names";
 import type {
 	AddOnValues,
 	ChartValuePathMap,

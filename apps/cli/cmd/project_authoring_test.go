@@ -100,7 +100,7 @@ func sampleEnvironments() []api.Environment {
 
 // Columns: Name(0) Stage(1) Placement(2) Namespace(3) Fabric(4) Status(5) Default(6) Region(7).
 func TestEnvRows(t *testing.T) {
-	rows := envRows(sampleEnvironments())
+	rows := envRows(sampleEnvironments(), ui.FormatTable)
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows, got %d", len(rows))
 	}
@@ -113,16 +113,33 @@ func TestEnvRows(t *testing.T) {
 	if rows[0][2] != "dedicated" || rows[0][3] != ui.SymbolDash || rows[0][4] != "prod" {
 		t.Errorf("unexpected dedicated row placement cells: %+v", rows[0])
 	}
+	// Default(6) is ui.DefaultCell: the brand's `◆` on the one default row and an EMPTY cell on
+	// every other. It was briefly ui.YesNo's `● / ·`, which put a glyph on every line and made
+	// this the only table in the product to mark its default with something other than `◆`.
+	// Region(7) is still a genuine ABSENCE and still the dash — that distinction is untouched.
 	if rows[0][6] != ui.SymbolDefault || rows[0][7] != ui.SymbolDash {
 		t.Errorf("unexpected default row: %+v", rows[0])
+	}
+	// Status(5) carries the glyph now, in the human format only. `runner list` and `clusters list`
+	// have drawn one since #3694 and this table printed the bare shouting enum.
+	if rows[0][5] != ui.StatusCell("DRAFT") {
+		t.Errorf("default row status = %q, want the shared status cell %q", rows[0][5], ui.StatusCell("DRAFT"))
 	}
 
 	// Shared env: a vcluster placed on the SAME Fabric, with its destination namespace.
 	if rows[1][2] != "vcluster" || rows[1][3] != "boutique-staging" || rows[1][4] != "prod" {
 		t.Errorf("unexpected vcluster row placement cells: %+v", rows[1])
 	}
-	if rows[1][6] != ui.SymbolDash || rows[1][7] != "us-east-1" {
+	if rows[1][6] != "" || rows[1][7] != "us-east-1" {
 		t.Errorf("unexpected named row: %+v", rows[1])
+	}
+
+	// The machine half of the Status cell: `-o csv` still carries the raw wire enum, because a
+	// script parsing this column is the reason ui.Cell exists. A glyph in a csv field would be
+	// the plain-text regression #4117 caught one command over, reintroduced here.
+	csv := envRows(sampleEnvironments(), ui.FormatCSV)
+	if csv[0][5] != "DRAFT" || csv[1][5] != "ACTIVE" {
+		t.Errorf("csv status cells = %q/%q, want the raw enum values", csv[0][5], csv[1][5])
 	}
 
 	// The claim the table is FOR: both tiers name one Fabric, so only one cluster was bought.
@@ -241,7 +258,7 @@ func sampleComponents() []api.Component {
 }
 
 func TestComponentRows(t *testing.T) {
-	rows := componentRows(sampleComponents())
+	rows := componentRows(sampleComponents(), ui.FormatTable)
 	if rows[0][3] != ui.SymbolDash {
 		t.Errorf("inherited identity should be dash: %+v", rows[0])
 	}

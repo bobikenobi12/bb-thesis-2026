@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,22 +23,6 @@ import (
 )
 
 // --- the flag resolvers ---------------------------------------------------------------------
-
-func TestCurrentJob(t *testing.T) {
-	cmd := &cobra.Command{}
-	cmd.Flags().StringP("job", "j", "", "")
-
-	if _, err := currentJob(cmd); err == nil || !strings.Contains(err.Error(), "--job is required") {
-		t.Errorf("an absent --job must be a named error, got %v", err)
-	}
-	if err := cmd.Flags().Set("job", "job-7"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := currentJob(cmd)
-	if err != nil || got != "job-7" {
-		t.Errorf("want job-7, got (%q, %v)", got, err)
-	}
-}
 
 func TestVerifyOptsFrom(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
@@ -116,6 +101,19 @@ func verifyEnv(t *testing.T, sr *verify.SignedReceipt, keys []map[string]any) fu
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"signing_keys": keys})
+		case strings.HasSuffix(r.URL.Path, "/jobs"):
+			// The list `--latest` and the picker resolve against. Newest first, and the newest
+			// entry carries NO receipt — so a `--latest` that reached the right job did so by
+			// applying the scope, not by taking whatever was on top.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jobs": []map[string]any{
+					{"id": "job-drift", "job_type": string(types.JobTypeDetectDrift), "status": "SUCCESS",
+						"created_at": "2026-03-09T12:00:00Z"},
+					{"id": "job-1", "job_type": string(types.JobTypeDeploy), "status": "SUCCESS",
+						"created_at": "2026-03-09T11:00:00Z"},
+				},
+				"total": 2, "limit": 50, "offset": 0,
+			})
 		case strings.Contains(r.URL.Path, "/cli/jobs/"):
 			meta := map[string]any{}
 			if sr != nil {
@@ -139,14 +137,20 @@ func verifyEnv(t *testing.T, sr *verify.SignedReceipt, keys []map[string]any) fu
 	resetVerifyFlags(t)
 
 	return func(args ...string) error {
-		rootCmd.SetArgs(args)
+		execRootArgs(args)
 		return rootCmd.Execute()
 	}
 }
 
-// resetVerifyFlags clears the group's persistent --job and the receipt command's own flags.
-// cobra never resets a persistent flag between Execute calls, so without this one test's --job
-// leaks into the next and the "no job" arm becomes unreachable.
+// resetVerifyFlags clears the group's persistent --job, the receipt command's own flags, and the
+// selector flags on both leaves. cobra never resets a flag between Execute calls, so without this
+// one test's --job leaks into the next and the "no job" arm becomes unreachable.
+//
+// The selector flags are cleared FROM THE SPEC rather than by name: a narrowing field added to
+// jobSelectorFields and not to a hand-written list here would leak between subtests, and the
+// symptom — one arm resolving a job another arm proved unresolvable — reads as a resolver bug.
+// `--latest` and the two selector VALUES are reset too, because addJobSelectorFlags binds each
+// flag straight into the package-level jobSelector.
 func resetVerifyFlags(t *testing.T) {
 	t.Helper()
 	reset := func() {
@@ -155,6 +159,13 @@ func resetVerifyFlags(t *testing.T) {
 		_ = verifyReceiptCmd.Flags().Set("key-file", "")
 		_ = verifyReceiptCmd.Flags().Set("allow-unsigned", "false")
 		_ = verifyReceiptCmd.Flags().Set("allow-untrusted", "false")
+		for _, cmd := range []*cobra.Command{verifyReceiptCmd, verifyShowCmd} {
+			_ = cmd.Flags().Set("latest", "false")
+			for _, f := range jobSelectorFields {
+				_ = cmd.Flags().Set(f.Flag, "")
+			}
+		}
+		verifyReceiptSelector, verifyShowSelector = jobSelector{}, jobSelector{}
 	}
 	reset()
 	t.Cleanup(reset)
@@ -229,9 +240,12 @@ func TestVerifyReceiptCmd(t *testing.T) {
 		}
 	})
 
-	t.Run("--job is required", func(t *testing.T) {
+	// No id, no --latest, and a headless `go test` process: the resolver refuses rather than
+	// opening a picker nobody can answer. It is the same refusal `jobs get` takes.
+	t.Run("no id and no terminal is refused", func(t *testing.T) {
 		sr, pub := signedFixture(t, sampleReport())
 		run := verifyEnv(t, sr, []map[string]any{wireKey(pub, "platform")})
+		jobsSelectNoInput(t)
 		exited, code, err := connInvoke(t, run, "verify", "receipt")
 		if err != nil {
 			t.Fatalf("execute: %v", err)
@@ -284,6 +298,77 @@ func TestVerifyReceiptCmd(t *testing.T) {
 	})
 }
 
+// TestVerifyCmdsResolveTheJobThemselves drives both leaves through the REAL cobra tree with no id
+// at all, which is the only thing that proves Run calls the resolver.
+//
+// Everything else about the selector is unit-tested against resolveVerifyJob directly, and a flag
+// that exists, a spec that is complete and a resolver that is correct are all perfectly consistent
+// with a Run that never calls it. The fake list puts a DETECT_DRIFT on top, so a command that
+// resolved by taking the newest row would ask for job-drift — for which the fake serves a receipt
+// too, and the command would pass. It is the STDERR announcement that names which job was taken.
+func TestVerifyCmdsResolveTheJobThemselves(t *testing.T) {
+	for _, leaf := range []string{"receipt", "show"} {
+		t.Run(leaf+" --latest", func(t *testing.T) {
+			sr, pub := signedFixture(t, sampleReport())
+			run := verifyEnv(t, sr, []map[string]any{wireKey(pub, "platform")})
+			jobsSelectNoInput(t)
+
+			stderr, restore := captureStderr(t)
+			exited, code, err := connInvoke(t, run, "verify", leaf, "--latest")
+			announced := restore()
+
+			if err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if exited {
+				t.Fatalf("`verify %s --latest` must resolve a job and exit clean (code %d)\nstderr: %s",
+					leaf, code, announced)
+			}
+			if !strings.Contains(announced, "job-1") {
+				t.Errorf("`verify %s --latest` did not announce the job it chose; stderr was %q", leaf, announced)
+			}
+			if strings.Contains(announced, "job-drift") {
+				t.Errorf("`verify %s --latest` took the newest job rather than the newest one carrying a "+
+					"receipt; stderr was %q", leaf, announced)
+			}
+			_ = stderr
+		})
+	}
+}
+
+// captureStderr redirects os.Stderr for the duration of one call. announceResolvedJob writes
+// there — deliberately, so a `-o json` document on stdout stays parseable — and stderr is
+// therefore the only place the resolved job is observable from outside the resolver.
+func captureStderr(t *testing.T) (*os.File, func() string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		_, _ = io.Copy(&b, r)
+		done <- b.String()
+	}()
+	restored := false
+	restore := func() string {
+		if restored {
+			return ""
+		}
+		restored = true
+		os.Stderr = prev
+		_ = w.Close()
+		out := <-done
+		_ = r.Close()
+		return out
+	}
+	t.Cleanup(func() { restore() })
+	return w, restore
+}
+
 func TestVerifyShowCmd(t *testing.T) {
 	t.Run("renders a non-blocking report", func(t *testing.T) {
 		sr, _ := signedFixture(t, sampleReport())
@@ -309,9 +394,10 @@ func TestVerifyShowCmd(t *testing.T) {
 		}
 	})
 
-	t.Run("--job is required", func(t *testing.T) {
+	t.Run("no id and no terminal is refused", func(t *testing.T) {
 		sr, _ := signedFixture(t, sampleReport())
 		run := verifyEnv(t, sr, []map[string]any{})
+		jobsSelectNoInput(t)
 		exited, code, err := connInvoke(t, run, "verify", "show")
 		if err != nil {
 			t.Fatalf("execute: %v", err)
@@ -334,7 +420,7 @@ func TestVerifyRequiresAuth(t *testing.T) {
 			t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
 			resetVerifyFlags(t)
 			run := func(a ...string) error {
-				rootCmd.SetArgs(a)
+				execRootArgs(a)
 				return rootCmd.Execute()
 			}
 			exited, code, err := connInvoke(t, run, args...)

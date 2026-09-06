@@ -4,18 +4,13 @@
 import { cliJson } from "@/lib/cli/respond";
 import { getServiceDb } from "@/lib/db";
 import { cliReleases } from "@/lib/db/schema";
-import { cliLatestReleaseWire } from "@/lib/validations/cli-contract";
+import {
+	cliLatestReleaseWire,
+	cliReleasePublishWire,
+} from "@/lib/validations/cli-contract";
 import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { bearerMatches } from "@/lib/auth/internal-auth";
-
-/** Returns the Postgres error code if present (e.g. 23505 unique violation). */
-function pgErrorCode(err: unknown): string | undefined {
-	if (typeof err === "object" && err !== null && "code" in err) {
-		return String(err.code);
-	}
-	return undefined;
-}
 
 /**
  * Public: the latest published alethia CLI release. The CLI polls this to tell
@@ -51,34 +46,24 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	let body: {
-		version?: string;
-		release_notes?: string;
-		github_release_url?: string;
-		commit_sha?: string;
-		min_supported_version?: string;
-		is_breaking?: boolean;
-	};
-	try {
-		body = await req.json();
-	} catch {
-		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+	const parsed = cliReleasePublishWire.safeParse(
+		await req.json().catch(() => null),
+	);
+	if (!parsed.success) {
+		return NextResponse.json(
+			{ error: "Invalid release metadata", issues: parsed.error.issues },
+			{ status: 400 },
+		);
 	}
-
 	const {
 		version,
 		release_notes,
+		released_at,
 		github_release_url,
 		commit_sha,
 		min_supported_version,
 		is_breaking,
-	} = body;
-	if (!version || typeof version !== "string") {
-		return NextResponse.json(
-			{ error: "Missing required field: version" },
-			{ status: 400 },
-		);
-	}
+	} = parsed.data;
 
 	try {
 		const db = getServiceDb();
@@ -86,22 +71,32 @@ export async function POST(req: Request) {
 			.insert(cliReleases)
 			.values({
 				version,
-				release_notes: release_notes ?? "",
-				github_release_url: github_release_url ?? null,
-				commit_sha: commit_sha ?? null,
-				min_supported_version: min_supported_version ?? null,
+				release_notes,
+				released_at: new Date(released_at),
+				github_release_url,
+				commit_sha,
+				...(min_supported_version !== undefined
+					? { min_supported_version }
+					: {}),
 				is_breaking: is_breaking ?? false,
+			})
+			.onConflictDoUpdate({
+				target: cliReleases.version,
+				set: {
+					release_notes,
+					released_at: new Date(released_at),
+					github_release_url,
+					commit_sha,
+					...(min_supported_version !== undefined
+						? { min_supported_version }
+						: {}),
+					...(is_breaking !== undefined ? { is_breaking } : {}),
+				},
 			})
 			.returning({ id: cliReleases.id });
 
 		return NextResponse.json({ success: true, id: row.id });
 	} catch (err: unknown) {
-		if (pgErrorCode(err) === "23505") {
-			return NextResponse.json(
-				{ error: `Version ${version} already exists` },
-				{ status: 409 },
-			);
-		}
 		const message =
 			err instanceof Error ? err.message : "Internal Server Error";
 		return NextResponse.json(

@@ -29,15 +29,25 @@
 //     "scope": ["apps/console/lib/db/schema/project_*.ts"],
 //     "blockedBy": []                                 // refs other units' ids (the seams unit)
 //   }
-// A unit is the "seams" unit when its title matches /\bseams?\b/i AND it has no blockedBy.
+// A unit is the "seams" unit when its title matches /\bseams?\b/i AND no OTHER PROPOSED unit
+// blocks it. A blockedBy ref to an id the proposal does not define is an open BOARD issue number
+// and does not disqualify it — that is how a seams unit clears a real overlap with the live board.
+// That exemption is only as good as the SEEDING: this script judges a proposal, and the board
+// learns the ordering solely from the `blocked-by:` line coordinate.sh parses out of the created
+// issue's body. So every unit whose blockedBy names a board number gets a `board ordering` warning
+// on the report spelling out the line that must be seeded — the seams issue included, which is the
+// case the skill's seeding section used to tell the author to leave blocked-by OFF entirely.
 //
 // Usage:
 //   node scripts/decompose-validate.mjs proposal.json   # validate a file
 //   cat proposal.json | node scripts/decompose-validate.mjs
 //   node scripts/decompose-validate.mjs --self-test     # inline fixtures (no I/O)
+//   node scripts/decompose-validate.mjs --no-board      # deliberately skip live-board comparison
 // Exits 0 on PASS, non-zero on FAIL / bad input.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { globsOverlap, scopeGlobs } from "./lib/scope-overlap.mjs";
 
 // ── the known board label set ─────────────────────────────────────────────────
 // DERIVED from scripts/lib/board-labels.json, which `coordinate.sh --init-labels` also reads. This
@@ -60,6 +70,18 @@ const CLASS_LABELS = namesOfKind("class");
 // and a proposal carrying one still fails — same behaviour as before.
 const RUNTIME_LABELS = namesOfKind("runtime");
 const AUTHORABLE_EXTRA = namesOfKind("authorable");
+/**
+ * The lanes that own RENDERED product UI. A `class:backend` unit in one of these is taking the
+ * routing that skips the human design gate, and therefore owes a `check:`.
+ *
+ * It is a SET and not a single lane because a one-lane rule is escapable by relabelling: the
+ * console and the canvas are one file tree (`lane:canvas` owns
+ * `apps/console/components/design-project/**`, `lane:console` the rest), so a unit that owed a
+ * check under `lane:console` could shed the obligation by moving to `lane:canvas` and still ship
+ * exactly the same rendered change. Both lanes, or neither.
+ */
+const CONFORMANCE_LANES = new Set(["lane:console", "lane:canvas"]);
+
 const KNOWN_LABELS = new Set([
 	...WAVE_LABELS,
 	...LANE_LABELS,
@@ -68,72 +90,26 @@ const KNOWN_LABELS = new Set([
 	...AUTHORABLE_EXTRA,
 ]);
 
-/** Normalize a scope glob: trim, drop a leading `./`, collapse `//`, drop a trailing `/`. */
-function normalizeGlob(glob) {
-	return String(glob)
-		.trim()
-		.replace(/^\.\//, "")
-		.replace(/\/{2,}/g, "/")
-		.replace(/\/+$/, "");
-}
-
-/** Compile one path SEGMENT (no `/`) into an anchored regex; `*` → any run of non-slash chars. */
-function segToRegex(seg) {
-	const body = seg
-		.split("*")
-		.map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-		.join("[^/]*");
-	return new RegExp(`^${body}$`);
-}
+// The scope-glob matcher lives in scripts/lib/scope-overlap.mjs, not here.
+//
+// `normalizeGlob`, `scopeGlobs`, `segToRegex`, `segMatch` and `globsOverlap` were module-private
+// in this file, so the two other places that must answer the same question could not call them:
+// board-dashboard.mjs grew a weaker copy (a separator-less `startsWith`), and coordinate.sh grew
+// none at all — its report claimed a scope check that had never been written (#4115). One
+// predicate, three callers, exactly the shape scripts/lib/board-pr.sh exists to enforce.
 
 /**
- * Do two path segments overlap — i.e. is there a filename matching both? `**` is handled by the
- * caller (multi-segment), so here a segment is a literal or a single-segment `*`-glob. Conservative
- * on purpose: when both carry intra-segment wildcards we test a few witness strings and treat them
- * as overlapping if any is matched by both, because a MISSED overlap is what causes the tangle.
+ * A unit is the interface-first "seams" issue when its title says so and nothing IN THE PROPOSAL
+ * blocks it. A ref to an id the proposal does not define is an OPEN BOARD issue number, not a
+ * proposal edge — the same reading `validate()`'s cycle graph already takes — and naming one is
+ * the only escape hatch from a legitimate overlap with something already on the board. Requiring a
+ * literally empty `blockedBy` made that hatch unusable on the seams unit: taking it disqualified
+ * the unit and `validate()` then reported "no interface-first seams unit found" instead.
  */
-function segMatch(a, b) {
-	if (a === b) return true;
-	if (a === "*" || b === "*") return true;
-	const hasWildA = a.includes("*");
-	const hasWildB = b.includes("*");
-	if (!hasWildA && !hasWildB) return false; // two distinct literals — disjoint
-	const rxA = segToRegex(a);
-	const rxB = segToRegex(b);
-	// Witnesses: each pattern with `*` collapsed to "" and to a filler run.
-	const witnesses = [
-		a.replace(/\*/g, ""),
-		a.replace(/\*/g, "x9z"),
-		b.replace(/\*/g, ""),
-		b.replace(/\*/g, "x9z"),
-	];
-	return witnesses.some((w) => rxA.test(w) && rxB.test(w));
-}
-
-/**
- * Do two normalized globs overlap? Segment-by-segment match where `**` matches zero-or-more
- * segments; catches exact equality, prefix subsumption (`a/lib/**` ⊇ `a/lib/db/**`), and
- * wildcard siblings, while keeping disjoint dirs (`a/x/**` vs `a/y/**`) disjoint.
- */
-function globsOverlap(g1, g2) {
-	const a = normalizeGlob(g1).split("/");
-	const b = normalizeGlob(g2).split("/");
-	/** Recursive segment matcher over the remaining segments of each glob. */
-	const walk = (i, j) => {
-		if (i >= a.length && j >= b.length) return true;
-		if (i >= a.length) return b.slice(j).every((s) => s === "**");
-		if (j >= b.length) return a.slice(i).every((s) => s === "**");
-		if (a[i] === "**") return walk(i + 1, j) || walk(i, j + 1);
-		if (b[j] === "**") return walk(i, j + 1) || walk(i + 1, j);
-		if (segMatch(a[i], b[j])) return walk(i + 1, j + 1);
-		return false;
-	};
-	return walk(0, 0);
-}
-
-/** A unit is the interface-first "seams" issue when its title says so and it has no blocked-by. */
-function isSeams(unit) {
-	return /\bseams?\b/i.test(unit.title ?? "") && (unit.blockedBy ?? []).length === 0;
+function isSeams(unit, idSet) {
+	const blockedBy = unit.blockedBy ?? [];
+	const inProposal = idSet ? blockedBy.filter((d) => idSet.has(d)) : blockedBy;
+	return /\bseams?\b/i.test(unit.title ?? "") && inProposal.length === 0;
 }
 
 /**
@@ -158,8 +134,12 @@ function validate(proposal) {
 		labels: Array.isArray(u.labels) ? u.labels : [],
 		scope: Array.isArray(u.scope) ? u.scope.filter(Boolean) : [],
 		blockedBy: Array.isArray(u.blockedBy) ? u.blockedBy : [],
+		check: typeof u.check === "string" ? u.check.trim() : "",
 		_idx: idx,
 	}));
+	// Which refs are proposal edges and which are open board issue numbers. Needed by `isSeams`
+	// below as well as by the graph further down, so it is computed here rather than there.
+	const idSet = new Set(units.map((u) => u.id));
 
 	const seen = new Set();
 	for (const u of units) {
@@ -193,14 +173,38 @@ function validate(proposal) {
 		if (!u.labels.some((l) => LANE_LABELS.has(l))) {
 			warnings.push(`unit ${tag} carries no lane: label (recommended for board reporting)`);
 		}
+
+		// ── a conformance unit that skips the human gate must say what measures it ────────
+		//
+		// `.claude/COORDINATION.md` routes console work that merely ADOPTS an already-decided
+		// primitive (a raw `<h2>` → `SectionHeading`) to `class:backend`, so it lands
+		// autonomously with no human ever seeing the rendered page. That is only sound because the
+		// unit also ships the check that proves the adoption — and until this rule existed, that
+		// obligation was a paragraph of prose with nothing behind it. A unit could be labelled
+		// `lane:console` + `class:backend`, swap 24 headings, declare no check, pass this validator
+		// with zero errors, be handed out by `claim-work.sh --class backend`, and be squash-merged
+		// by Mergify. Nothing at any point asked.
+		//
+		// It is an ERROR and not a warning on purpose: a warning is exactly as enforceable as the
+		// prose it replaces. The check need not be new — naming the existing command that will fail
+		// if the adoption regresses is the point, not writing a fresh guard per unit.
+		const conformanceLane = u.labels.find((l) => CONFORMANCE_LANES.has(l));
+		if (conformanceLane && u.labels.includes("class:backend") && !u.check) {
+			errors.push(
+				`unit ${tag} is ${conformanceLane} + class:backend but declares no \`check:\` — ` +
+					`name the command that proves the adoption (it may be an existing one). This routing ` +
+					`skips the human design gate, and is only sound if something measures the claim.`,
+			);
+		}
 	}
 
 	// ── (b) every non-seams unit declares a blocked-by; exactly one seams root ──────────
-	const seamsUnits = units.filter(isSeams);
+	const seamsUnits = units.filter((u) => isSeams(u, idSet));
 	if (seamsUnits.length === 0) {
 		errors.push(
 			"no interface-first seams unit found — expected exactly one unit whose title says " +
-				'"seams" with an empty blockedBy (the shared types/schema/contract everything blocks on)',
+				'"seams" and that no OTHER PROPOSED unit blocks (the shared types/schema/contract ' +
+				"everything blocks on; a blockedBy ref to an open board issue is allowed there)",
 		);
 	} else if (seamsUnits.length > 1) {
 		warnings.push(
@@ -210,7 +214,7 @@ function validate(proposal) {
 		);
 	}
 	for (const u of units) {
-		if (isSeams(u)) continue;
+		if (isSeams(u, idSet)) continue;
 		if (u.blockedBy.length === 0) {
 			errors.push(
 				`unit #${u.id} "${u.title}" has no blockedBy — every non-seams lane must be blocked-by ` +
@@ -220,7 +224,6 @@ function validate(proposal) {
 	}
 
 	// ── build the in-proposal blockedBy graph (shared by the scope + cycle checks) ──────
-	const idSet = new Set(units.map((u) => u.id));
 	const edges = new Map(); // id -> [ids it is blocked-by, restricted to in-proposal units]
 	for (const u of units) {
 		edges.set(
@@ -301,6 +304,156 @@ function validate(proposal) {
 	return { errors, warnings };
 }
 
+/**
+ * Return whether an open board issue can be claimed alongside a new proposal.
+ *
+ * The exclusion list MIRRORS the emitter — `claim-work.sh`'s `ready` filter, which excludes
+ * claimed / blocked / needs:human / epic and nothing else. `needs:design` is deliberately NOT
+ * among them: it is an `authorable` label that the decompose skill puts on EVERY `class:ui` lane,
+ * so `claim-work.sh --class ui` hands those out. Excluding it here made every open `class:ui` lane
+ * invisible to this guard — a false green in exactly the case it exists to catch.
+ */
+function isCoClaimableBoardUnit(issue) {
+	const labels = new Set((issue.labels ?? []).map((label) => label.name));
+	return (
+		["claimed", "blocked", "needs:human", "epic"].every((label) => !labels.has(label)) &&
+		["class:backend", "class:ui", "wave:", "lane:"].some((prefix) =>
+			[...labels].some((label) => label === prefix || label.startsWith(prefix)),
+		)
+	);
+}
+
+/** Validate proposal scopes against co-claimable open board units. */
+function validateAgainstBoard(proposal, board) {
+	const result = validate(proposal);
+	if (!Array.isArray(board) || board.length === 0) {
+		return {
+			...result,
+			errors: [...result.errors, "open board read returned no issues — use --no-board only for a deliberate offline run"],
+		};
+	}
+	if (result.errors.length > 0 || !Array.isArray(proposal)) return result;
+
+	const proposalUnits = proposal.map((unit, index) => ({
+		id: unit.id ?? index + 1,
+		title: unit.title ?? "(untitled)",
+		scope: Array.isArray(unit.scope) ? unit.scope.filter(Boolean) : [],
+		blockedBy: Array.isArray(unit.blockedBy) ? unit.blockedBy : [],
+	}));
+	const boardUnits = board.filter(isCoClaimableBoardUnit);
+
+	// The escape hatch for a legitimate overlap is naming the open board issue in `blockedBy`, and
+	// it must be TRANSITIVE for the same reason the in-proposal check at (a) uses `reaches()`: a
+	// lane blocked-by a seams unit that is itself blocked-by board #900 is ordered behind #900 and
+	// is not co-claimable with it. Direct-only would have forced every lane to repeat the number.
+	const idSet = new Set(proposalUnits.map((u) => u.id));
+	const byId = new Map(proposalUnits.map((u) => [u.id, u]));
+	/** Open board issue numbers `unit` is ordered behind, following in-proposal blockedBy edges. */
+	const boardBlockers = (unit) => {
+		const numbers = new Set();
+		const visited = new Set([unit.id]);
+		const stack = [unit];
+		while (stack.length) {
+			for (const ref of stack.pop().blockedBy) {
+				if (!idSet.has(ref)) {
+					numbers.add(ref); // not a proposal id ⇒ an open board issue number
+					continue;
+				}
+				if (visited.has(ref)) continue;
+				visited.add(ref);
+				const next = byId.get(ref);
+				if (next) stack.push(next);
+			}
+		}
+		return numbers;
+	};
+
+	for (const proposed of proposalUnits) {
+		const ordered = boardBlockers(proposed);
+		// The exemption above is granted to the PROPOSAL; the board only ever learns the ordering
+		// from the `blocked-by:` line coordinate.sh parses out of the seeded issue body. Name the
+		// DIRECT refs, because that is what goes on THIS unit's body — a lane inherits the seams
+		// unit's board blockers here, but on the board it inherits them by being blocked-by the
+		// seams issue, which stays blocked while they are open.
+		const directBoardRefs = proposed.blockedBy.filter((ref) => !idSet.has(ref));
+		if (directBoardRefs.length > 0) {
+			result.warnings.push(
+				`board ordering: proposed #${proposed.id} ("${proposed.title}") is exempted from the ` +
+					`open board only because it is ordered behind ${directBoardRefs.map((n) => `#${n}`).join(" ")} — ` +
+					`its seeded issue body MUST carry \`blocked-by: ${directBoardRefs.map((n) => `#${n}`).join(" ")}\` ` +
+					"(the seams issue too), or coordinate.sh leaves it unblocked and claim-work.sh hands it out " +
+					"alongside the issue it overlaps",
+			);
+		}
+		for (const existing of boardUnits) {
+			if (ordered.has(existing.number)) continue;
+			for (const proposedGlob of proposed.scope) {
+				for (const existingGlob of scopeGlobs(existing.body)) {
+					if (globsOverlap(proposedGlob, existingGlob)) {
+						result.errors.push(
+							`SCOPE COLLISION: proposed #${proposed.id} ("${proposed.title}") glob "${proposedGlob}" overlaps ` +
+								`open board #${existing.number} ("${existing.title ?? "(untitled)"}") glob "${existingGlob}" — ` +
+								"these units are co-claimable, so sharing files is the mega-commit tangle the board forbids",
+						);
+					}
+				}
+			}
+		}
+	}
+	return result;
+}
+
+// `gh issue list` returns newest-first and puts NOTHING in the JSON to say it truncated at
+// `--limit`. Once the board passes this cap the OLDEST open issues — the long-lived lanes most
+// likely to still be open across a decompose — silently fall out of the response and stop being
+// compared, and the proposal PASSes against a partial board. A full page is the only truncation
+// signal there is, so `readOpenBoard` treats it as one. (87 open issues on 2026-09-02.)
+const BOARD_LIMIT = 300;
+
+/**
+ * Read the open GitHub issue board, failing closed when the response is unavailable, empty, or
+ * large enough to have been truncated at `BOARD_LIMIT`.
+ */
+function readOpenBoard() {
+	let raw;
+	try {
+		raw = execFileSync(
+			"gh",
+			[
+				"issue",
+				"list",
+				"--state",
+				"open",
+				"--limit",
+				String(BOARD_LIMIT),
+				"--json",
+				"number,title,body,labels",
+			],
+			{ encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+		);
+	} catch (error) {
+		throw new Error(`could not read open board: ${error.message ?? String(error)}; use --no-board for a deliberate offline run`);
+	}
+	let board;
+	try {
+		board = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(`open board response was not valid JSON: ${error.message ?? String(error)}`);
+	}
+	if (!Array.isArray(board) || board.length === 0) {
+		throw new Error("open board read returned no issues; use --no-board for a deliberate offline run");
+	}
+	if (board.length >= BOARD_LIMIT) {
+		throw new Error(
+			`open board read returned ${board.length} issues — that is the --limit cap, so the ` +
+				"response is probably truncated and the oldest open lanes were dropped. Raise " +
+				"BOARD_LIMIT in scripts/decompose-validate.mjs rather than comparing against a " +
+				"partial board.",
+		);
+	}
+	return board;
+}
+
 /** Print a PASS/FAIL report for a validation result and return the process exit code. */
 function report(proposal, { errors, warnings }) {
 	for (const w of warnings) console.warn(`  ⚠ ${w}`);
@@ -336,6 +489,168 @@ function runSelfTest() {
 			);
 		}
 	};
+	/**
+	 * Assert a proposal validates against a stubbed open board as expected. A FAIL expectation
+	 * MUST also give `expectError`, a regex over the joined error text: `validateAgainstBoard`
+	 * returns before the board loop when the proposal is malformed on its own, so asserting the
+	 * error COUNT alone lets a board test go green off an unrelated shape error without the board
+	 * comparison ever running — which is precisely how the first two of these passed.
+	 */
+	const expectBoard = (name, prop, board, shouldPass, expectError) => {
+		const { errors } = validateAgainstBoard(prop, board);
+		const passed = errors.length === 0;
+		const matched = shouldPass ? true : Boolean(expectError) && expectError.test(errors.join("\n"));
+		if (passed === shouldPass && matched) {
+			console.log(`ok   - ${name}`);
+			return;
+		}
+		fails++;
+		const why =
+			passed !== shouldPass
+				? `expected ${shouldPass ? "PASS" : "FAIL"} but got ${passed ? "PASS" : "FAIL"}`
+				: `failed, but for the wrong reason — no error matched ${expectError}`;
+		console.error(`FAIL - ${name}: ${why}${errors.length ? ` (${errors[0]})` : ""}`);
+	};
+	/**
+	 * Assert the report carries a warning matching `expectWarning` (or, with `shouldWarn` false,
+	 * that it carries none matching). The board exemption is only honoured if the author writes the
+	 * number onto the seeded issue, so the reminder is the only part of that hand-off this script
+	 * can hold — an assertion on the PASS/FAIL verdict alone cannot see it at all.
+	 */
+	const expectBoardWarning = (name, prop, board, shouldWarn, expectWarning) => {
+		const { warnings } = validateAgainstBoard(prop, board);
+		const matched = expectWarning.test(warnings.join("\n"));
+		if (matched === shouldWarn) {
+			console.log(`ok   - ${name}`);
+			return;
+		}
+		fails++;
+		console.error(
+			`FAIL - ${name}: expected ${shouldWarn ? "a" : "no"} warning matching ${expectWarning}, got ${
+				warnings.length ? warnings.join(" | ") : "(none)"
+			}`,
+		);
+	};
+	const boardIssue = (number, title, scope, labels = ["wave:W1", "lane:server", "class:backend"]) => ({
+		number,
+		title,
+		body: `scope: ${scope}`,
+		labels: labels.map((name) => ({ name })),
+	});
+	const boardOverlapProposal = [
+		{
+			id: 1,
+			title: "seams: new contract",
+			labels: ["wave:W1", "lane:schema", "class:backend"],
+			scope: ["scripts/new-contract.mjs"],
+			blockedBy: [],
+		},
+		{
+			id: 2,
+			// blockedBy: [1] is load-bearing. With an empty one this unit is not the seams unit and
+			// has no blocker, so `validate()` errors on the SHAPE and `validateAgainstBoard` returns
+			// before the board loop — the FAIL expectations below were then met by a rule that has
+			// nothing to do with the board, and no test ever observed a board collision.
+			title: "new canvas unit",
+			labels: ["wave:W1", "lane:server", "class:backend"],
+			scope: ["apps/console/components/design-project/new/**"],
+			blockedBy: [1],
+		},
+	];
+	const openBoard = [
+		boardIssue(900, "existing canvas unit", "apps/console/components/design-project/**"),
+	];
+	expectBoard(
+		"open board sibling overlap FAILs",
+		boardOverlapProposal,
+		openBoard,
+		false,
+		/SCOPE COLLISION: proposed #2 .* open board #900 /,
+	);
+	expectBoard(
+		"an existing blocker permits overlapping scope",
+		[boardOverlapProposal[0], { ...boardOverlapProposal[1], blockedBy: [1, 900] }],
+		openBoard,
+		true,
+	);
+	const prefixBoard = [boardIssue(901, "existing console unit", "apps/console/components/**")];
+	expectBoard(
+		"board prefix subsumption FAILs",
+		boardOverlapProposal,
+		prefixBoard,
+		false,
+		/SCOPE COLLISION: proposed #2 .* open board #901 /,
+	);
+	expectBoard(
+		"empty board response FAILs closed",
+		boardOverlapProposal,
+		[],
+		false,
+		/open board read returned no issues/,
+	);
+	// `needs:design` is on EVERY class:ui lane and is not excluded by claim-work.sh's ready filter,
+	// so such a lane is handed out and must be visible here.
+	expectBoard(
+		"a needs:design board unit is still co-claimable",
+		boardOverlapProposal,
+		[
+			boardIssue(902, "design-gated canvas unit", "apps/console/components/design-project/**", [
+				"wave:W1",
+				"lane:canvas",
+				"class:ui",
+				"needs:design",
+			]),
+		],
+		false,
+		/SCOPE COLLISION: proposed #2 .* open board #902 /,
+	);
+	// A seams unit clears a real board overlap by naming the issue in blockedBy — and it stays the
+	// seams unit while doing so. Everything ordered behind it inherits that, transitively.
+	const boardBlockedSeams = [
+		{
+			id: 1,
+			title: "seams: canvas contract",
+			labels: ["wave:W1", "lane:schema", "class:backend"],
+			scope: ["apps/console/components/design-project/contract.ts"],
+			blockedBy: [900],
+		},
+		{
+			id: 2,
+			title: "canvas lane behind the seams",
+			labels: ["wave:W1", "lane:server", "class:backend"],
+			scope: ["apps/console/components/design-project/new/**"],
+			blockedBy: [1],
+		},
+	];
+	expectBoard("a board blocked-by keeps the seams unit a seams unit", boardBlockedSeams, openBoard, true);
+	// …and the PASS says so out loud. The exemption lives in the proposal; the board only learns it
+	// from the seeded `blocked-by:` line, which a seams issue otherwise does not have — so a silent
+	// PASS here is how the tangle gets seeded behind a green verdict.
+	expectBoardWarning(
+		"the seams unit's board exemption warns that it must be SEEDED",
+		boardBlockedSeams,
+		openBoard,
+		true,
+		/board ordering: proposed #1 .*`blocked-by: #900`/,
+	);
+	// The reminder must be about THIS unit's own body line. Lane #2 is ordered behind #900 only
+	// transitively, and on the board it inherits that by being blocked-by the seams issue — telling
+	// the author to write `blocked-by: #900` on the lane would be wrong, and a warning naming every
+	// unit would train the author to skim past all of them.
+	expectBoardWarning(
+		"a lane inheriting the exemption transitively is NOT told to seed the number",
+		boardBlockedSeams,
+		openBoard,
+		false,
+		/board ordering: proposed #2 /,
+	);
+	expectBoard(
+		"the board exemption reaches nothing once the chain is cut",
+		[{ ...boardBlockedSeams[0], blockedBy: [] }, boardBlockedSeams[1]],
+		openBoard,
+		false,
+		/SCOPE COLLISION: proposed #2 .* open board #900 /,
+	);
 
 	// A clean interface-first set: one seams root, three disjoint lanes blocked-by it.
 	const clean = [
@@ -565,6 +880,56 @@ function runSelfTest() {
 	];
 	expect("unit with two class: labels FAILs", twoClasses, false);
 
+	// ── the `check:` obligation on lane:console + class:backend ────────────────────────────
+	//
+	// Four fixtures, because the rule has to bind on exactly one combination and stay silent on the
+	// other three. A single "it fails without a check" fixture would also pass an implementation
+	// that demanded a check from EVERY unit, which would make the whole board unseedable.
+	const conformanceNoCheck = [
+		{
+			id: 1,
+			title: "seams: the conformance contract",
+			labels: ["wave:console-ui", "lane:tests", "class:backend"],
+			scope: ["scripts/lib/console-routes.mjs"],
+			blockedBy: [],
+		},
+		{
+			id: 2,
+			title: "settings adopts the shared surface",
+			labels: ["wave:console-ui", "lane:console", "class:backend"],
+			scope: ["apps/console/components/settings/**"],
+			blockedBy: [1],
+		},
+	];
+	expect("lane:console + class:backend with NO check: FAILs", conformanceNoCheck, false);
+
+	const conformanceWithCheck = structuredClone(conformanceNoCheck);
+	conformanceWithCheck[1].check = "pnpm check:shared-surface";
+	expect("...and PASSes once it declares one", conformanceWithCheck, true);
+
+	// A whitespace-only check is not a check. Without this, `check: " "` satisfies the rule and the
+	// obligation is back to being decorative.
+	const conformanceBlankCheck = structuredClone(conformanceNoCheck);
+	conformanceBlankCheck[1].check = "   ";
+	expect("...and a whitespace-only check: does NOT satisfy it", conformanceBlankCheck, false);
+
+	// The rule must NOT fire on a class:ui console unit (it keeps the human gate, so the check is
+	// not what makes it safe), nor on a backend unit in any other lane.
+	const conformanceUi = structuredClone(conformanceNoCheck);
+	conformanceUi[1].labels = ["wave:console-ui", "lane:console", "class:ui", "needs:design"];
+	expect("lane:console + class:ui needs no check: (the human gate is intact)", conformanceUi, true);
+
+	const otherLaneNoCheck = structuredClone(conformanceNoCheck);
+	otherLaneNoCheck[1].labels = ["wave:console-ui", "lane:server", "class:backend"];
+	expect("another lane + class:backend needs no check:", otherLaneNoCheck, true);
+
+	// The escape the single-lane version of this rule allowed: shed the obligation by moving to the
+	// OTHER lane that owns rendered UI, and ship the identical change.
+	const relabelEscape = structuredClone(conformanceNoCheck);
+	relabelEscape[1].labels = ["wave:console-ui", "lane:canvas", "class:backend"];
+	relabelEscape[1].scope = ["apps/console/components/design-project/**"];
+	expect("relabelling lane:console -> lane:canvas does NOT shed the check:", relabelEscape, false);
+
 	if (fails === 0) {
 		console.log("\nself-test: all passed");
 		process.exit(0);
@@ -578,6 +943,7 @@ const args = process.argv.slice(2);
 if (args.includes("--self-test")) {
 	runSelfTest();
 }
+const noBoard = args.includes("--no-board");
 
 let raw;
 const fileArg = args.find((a) => !a.startsWith("-"));
@@ -596,4 +962,15 @@ try {
 	process.exit(2);
 }
 
-process.exit(report(proposal, validate(proposal)));
+if (noBoard) {
+	process.exit(report(proposal, validate(proposal)));
+}
+
+let board;
+try {
+	board = readOpenBoard();
+} catch (error) {
+	console.error(`✗ ${error.message ?? String(error)}`);
+	process.exit(2);
+}
+process.exit(report(proposal, validateAgainstBoard(proposal, board)));

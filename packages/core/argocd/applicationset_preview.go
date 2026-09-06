@@ -60,7 +60,7 @@ metadata:
   labels:
     alethia.io/preview: "true"
 [[- range .SortedLabels ]]
-    [[ .Key ]]: "[[ .Value ]]"
+    "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
 spec:
   goTemplate: true
@@ -68,11 +68,11 @@ spec:
   generators:
     - pullRequest:
         [[ .GitProvider ]]:
-          owner: [[ .RepoOwner ]]
-          repo: [[ .RepoName ]]
+          owner: '[[ .RepoOwner ]]'
+          repo: '[[ .RepoName ]]'
 [[- if .TokenSecretRef ]]
           tokenRef:
-            secretName: [[ .TokenSecretRef ]]
+            secretName: '[[ .TokenSecretRef ]]'
             key: token
 [[- end ]]
         requeueAfterSeconds: 60
@@ -83,7 +83,7 @@ spec:
         alethia.io/preview: "true"
         alethia.io/preview-pr: '{{ .number }}'
 [[- range .SortedLabels ]]
-        [[ .Key ]]: "[[ .Value ]]"
+        "[[ .Key ]]": "[[ .Value ]]"
 [[- end ]]
     spec:
       # Untrusted PR code runs here → the hardened preview-apps AppProject (#887,
@@ -92,15 +92,15 @@ spec:
       # can't weaken its own isolation. NOT the wide-open "apps" project.
       project: preview-apps-[[ .Project ]]
       source:
-        repoURL: [[ .AppsRepoURL ]]
+        repoURL: "[[ .AppsRepoURL ]]"
         targetRevision: '{{ .head_sha }}'
         path: '[[ .AppsPath ]]'
       destination:
 [[- if eq .PlacementModeStr "vcluster" ]]
         name: '[[ .VClusterName ]]-{{ .number }}'
-        namespace: [[ .NamespacePrefix ]]
+        namespace: '[[ .NamespacePrefix ]]'
 [[- else ]]
-        server: [[ .DestServerOrDefault ]]
+        server: '[[ .DestServerOrDefault ]]'
         namespace: '[[ .NamespacePrefix ]]-{{ .number }}'
 [[- end ]]
       syncPolicy:
@@ -149,26 +149,60 @@ func RenderPreviewApplicationSet(in PreviewAppSetInput) (string, error) {
 // validate fails closed on missing inputs or an unsupported placement, so a broken config never
 // reaches ArgoCD as a half-formed manifest.
 func (in PreviewAppSetInput) validate() error {
-	switch {
-	case strings.TrimSpace(in.Project) == "":
-		return fmt.Errorf("preview ApplicationSet: project is required")
-	case strings.TrimSpace(in.GitProvider) == "":
-		return fmt.Errorf("preview ApplicationSet: git provider is required")
-	case strings.TrimSpace(in.RepoOwner) == "" || strings.TrimSpace(in.RepoName) == "":
-		return fmt.Errorf("preview ApplicationSet: repo owner and name are required")
-	case strings.TrimSpace(in.AppsRepoURL) == "":
-		return fmt.Errorf("preview ApplicationSet: apps repo URL is required")
+	const what = "preview ApplicationSet"
+
+	// SHAPE, not just presence. Every field below is interpolated into raw YAML by a text/template
+	// — several of them UNQUOTED, and GitProvider in KEY position — so "non-empty" was never the
+	// property that mattered. See preview_validate.go for what each rule is and why.
+	if err := validatePreviewProject(what, in.Project); err != nil {
+		return err
 	}
+	if err := validatePreviewGitProvider(what, in.GitProvider); err != nil {
+		return err
+	}
+	if err := validatePreviewRepoRef(what, "repo owner", in.RepoOwner); err != nil {
+		return err
+	}
+	if err := validatePreviewRepoRef(what, "repo name", in.RepoName); err != nil {
+		return err
+	}
+	if err := validatePreviewSecretRef(what, in.TokenSecretRef); err != nil {
+		return err
+	}
+	if strings.TrimSpace(in.AppsRepoURL) == "" {
+		return fmt.Errorf("%s: apps repo URL is required", what)
+	}
+	if err := validatePreviewURL(what, "apps repo URL", in.AppsRepoURL, gitRemoteSchemes); err != nil {
+		return err
+	}
+	// The missing sixth call site. ValidateAppsPath guards this same value at
+	// namespace_tenant.go, vcluster_app.go and three places in the provisioner; this renderer was
+	// the only one that skipped it, while writing the value into `source.path`.
+	if err := ValidateAppsPath(in.AppsPath); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	if err := validatePreviewNamespacePrefix(what, in.NamespacePrefix); err != nil {
+		return err
+	}
+	if err := validatePreviewURL(what, "destination server", in.DestServer, apiServerSchemes); err != nil {
+		return err
+	}
+	if err := validatePreviewLabels(what, in.Labels); err != nil {
+		return err
+	}
+
 	switch in.PlacementMode {
 	case types.PlacementModeNamespace, types.PlacementModeVcluster:
 		// ok — the two valid preview tenancies.
 	case types.PlacementModeDedicated:
-		return fmt.Errorf("preview ApplicationSet: dedicated placement is not valid for an ephemeral preview (want namespace|vcluster)")
+		return fmt.Errorf("%s: dedicated placement is not valid for an ephemeral preview (want namespace|vcluster)", what)
 	default:
-		return fmt.Errorf("preview ApplicationSet: placement mode %q is not a valid preview placement (want namespace|vcluster)", in.PlacementMode)
+		return fmt.Errorf("%s: placement mode %q is not a valid preview placement (want namespace|vcluster)", what, in.PlacementMode)
 	}
-	if in.PlacementMode == types.PlacementModeVcluster && strings.TrimSpace(in.VClusterName) == "" {
-		return fmt.Errorf("preview ApplicationSet: vcluster placement requires a vcluster name")
+	if in.PlacementMode == types.PlacementModeVcluster {
+		if err := validatePreviewClusterName(what, in.VClusterName); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -190,6 +224,23 @@ type labelKV struct {
 // templateData precomputes derived template values (sorted labels for determinism, the
 // placement-mode string, and the in-cluster default destination).
 func (in PreviewAppSetInput) templateData() previewTemplateData {
+	// Every shape guard judges the TRIMMED value, so the template must render the trimmed one too.
+	// Without this, `Project = "\ndemo"` passes validatePreviewProject (it trims to a valid label)
+	// and then renders `name: preview-` followed by `demo` at column 0 — the half-formed manifest
+	// validate() exists to prevent. vcluster_app.go:204 writes the trimmed value back for the same
+	// reason; this renderer did it only as an emptiness test.
+	in.Project = strings.TrimSpace(in.Project)
+	in.GitProvider = strings.TrimSpace(in.GitProvider)
+	in.RepoOwner = strings.TrimSpace(in.RepoOwner)
+	in.RepoName = strings.TrimSpace(in.RepoName)
+	in.TokenSecretRef = strings.TrimSpace(in.TokenSecretRef)
+	in.AppsPath = strings.TrimSpace(in.AppsPath)
+	in.NamespacePrefix = strings.TrimSpace(in.NamespacePrefix)
+	in.VClusterName = strings.TrimSpace(in.VClusterName)
+	in.DestServer = strings.TrimSpace(in.DestServer)
+
+	in.AppsRepoURL = strings.TrimSpace(in.AppsRepoURL)
+
 	prefix := in.NamespacePrefix
 	if strings.TrimSpace(prefix) == "" {
 		prefix = "preview"
@@ -199,6 +250,12 @@ func (in PreviewAppSetInput) templateData() previewTemplateData {
 	dest := in.DestServer
 	if strings.TrimSpace(dest) == "" {
 		dest = "https://kubernetes.default.svc"
+	}
+
+	// Empty means the repository root, spelled "." — the same default namespace_tenant.go and
+	// vcluster_app.go apply. This renderer omitted it and emitted `path: ''`.
+	if strings.TrimSpace(in.AppsPath) == "" {
+		in.AppsPath = "."
 	}
 
 	keys := make([]string, 0, len(in.Labels))

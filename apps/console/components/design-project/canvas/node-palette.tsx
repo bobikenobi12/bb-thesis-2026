@@ -260,11 +260,11 @@ export function NodePalette({
 												</div>
 											</div>
 											{entry.comingSoon ? (
-												<span className="font-mono text-[10px] uppercase text-muted-foreground">
+												<span className="font-mono text-ui-2xs uppercase text-muted-foreground">
 													Soon
 												</span>
 											) : onCanvas ? (
-												<span className="font-mono text-[10px] text-muted-foreground">
+												<span className="font-mono text-ui-2xs text-muted-foreground">
 													on canvas
 												</span>
 											) : null}
@@ -304,7 +304,7 @@ export function NodePalette({
 												health={a.install.health}
 											/>
 										) : (
-											<span className="font-mono text-[10px] uppercase text-muted-foreground">
+											<span className="font-mono text-ui-2xs uppercase text-muted-foreground">
 												Free
 											</span>
 										)}

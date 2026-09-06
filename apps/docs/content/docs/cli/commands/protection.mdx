@@ -11,7 +11,8 @@ environment: the gates that must pass before a promotion deploys into that envir
 <Callout type="info">
 The CLI is a client of the same Console API. `protection list` calls
 `/cli/projects/<project>/protection` with your [CLI token](/cli/authentication) and operates on the
-**active organization** (`alethia org switch`, or `--org <id>` per invocation).
+**active organization**, which you change with `alethia org switch`. Pass `--org <id>` to scope a single invocation to a different
+organization — it is refused with `403` if you are not a member of it.
 </Callout>
 
 ## `alethia protection list`
@@ -19,13 +20,19 @@ The CLI is a client of the same Console API. `protection list` calls
 List a project's per-environment protection rules.
 
 ```bash
+alethia protection list
 alethia protection list --project my-project
 alethia protection list -p my-project -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project`, `-p` | Yes | Project name or id. |
+Name the project with `--project`; omit it at a terminal and you are asked which project to read,
+from the ones you have.
+
+{/* fieldspec: alethia protection list */}
+
+| Field | What it is | Set with |
+|-------|------------|----------|
+| Project | Whose environments' promotion gates to read | `--project` |
 
 Columns: **Environment**, **Predecessor** (predecessor stage must be deployed + in-sync),
 **Verify** (elench verify must pass), **Approval** (a human must approve), **Approvers** (minimum
@@ -38,6 +45,11 @@ Environment  Predecessor  Verify  Approval  Approvers  Soak (min)  Cost Δ
 production   ✓            ✓       ✓         2          30          $100.00
 staging      —            ✓       —         —          —           —
 ```
+
+Every one of those renderings is for a person reading a column. Under `-o csv` a script gets the
+values instead: a gate is `true` or `false` rather than `✓`/`—`, an unset **Approvers** or **Soak**
+is an empty cell, and **Cost Δ** is a bare `100.00` — no currency symbol, no thousands separator, and
+nothing to strip before it parses as a float. This is the same split `alethia config get` makes.
 
 Add `-o json` for the raw rule objects; `-o csv` for the rows. Backing call:
 `GET /cli/projects/<project>/protection`.

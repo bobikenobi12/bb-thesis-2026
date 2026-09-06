@@ -31,7 +31,9 @@ export const RAMP = {
 	gray300: "#d8d8d8", // oklch(0.882 0 0)
 	gray400: "#bababa", // oklch(0.788 0 0)
 	gray500: "#939393", // oklch(0.664 0 0)
+	gray550: "#838383", // oklch(0.610 0 0)
 	gray600: "#737373", // oklch(0.556 0 0)
+	gray625: "#6b6b6b", // oklch(0.527 0 0)
 	gray700: "#525252", // oklch(0.440 0 0)
 	gray800: "#393939", // oklch(0.345 0 0)
 	gray900: "#262626", // oklch(0.268 0 0)
@@ -50,7 +52,7 @@ export const RAMP_THEME = {
 		surfaceMuted: RAMP.gray100,
 		textPrimary: RAMP.gray1000,
 		textSecondary: RAMP.gray700,
-		textTertiary: RAMP.gray600,
+		textTertiary: RAMP.gray625,
 		border: RAMP.gray200,
 		borderStrong: RAMP.gray300,
 		ink: RAMP.gray950,
@@ -62,7 +64,7 @@ export const RAMP_THEME = {
 		surfaceMuted: RAMP.gray950,
 		textPrimary: RAMP.gray50,
 		textSecondary: RAMP.gray500,
-		textTertiary: RAMP.gray600,
+		textTertiary: RAMP.gray550,
 		border: RAMP.gray900,
 		borderStrong: RAMP.gray800,
 		ink: RAMP.gray50,

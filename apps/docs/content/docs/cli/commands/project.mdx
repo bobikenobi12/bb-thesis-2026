@@ -1,6 +1,6 @@
 ---
 title: Project Commands
-description: List and inspect infrastructure configurations from the CLI.
+description: Create, inspect, author and provision projects from the CLI.
 ---
 
 # Project Commands
@@ -9,40 +9,85 @@ Projects are infrastructure configurations (an *app* that owns one or more envir
 can both **read** projects (`list`, `get`) and **author** them — create a project, manage its
 environments, and CRUD its component resources — so the whole project lifecycle is scriptable.
 
-All authoring commands operate on the **active organization** (set via `alethia org switch`, or
-`--org`). Every command accepts the global `-o, --output <table|json|csv>` flag.
+All authoring commands operate on the **active organization** (set via `alethia org switch`), or on
+the organization named by the global `--org <id>` for a single invocation — which is refused with
+`403` if you are not a member of it. Every command accepts the global
+`-o, --output <table|json|csv>` flag.
+
+## Two rules that hold for every command on this page
+
+**Nothing has to be copied out of another command's output.** Every reference takes the name you
+already know: `--project` takes a project's name *or* its id, `--cloud-account` takes a cloud
+account's label *or* its id, and `--env` takes an environment's name, stage or id. Omit one on a
+terminal and you are asked, from a picker of what actually exists.
+
+**Every question has a flag.** The interactive paths below exist so you do not have to assemble
+anything by hand — they never let you say something a flag cannot. After a run that asked you
+questions, the CLI prints the exact command that reproduces it, so what you answered once can be
+committed to a repository:
+
+```
+Same result, without the questions:
+  alethia project create boutique --region eu-west-1 --cloud-account prod-account --env prod:production:dedicated --env dev-1:development:namespace:boutique-dev-1
+```
+
+So `--no-input` always works, and so does a pipe.
 
 ## `alethia project list`
 
-List all Projects.
+List all projects in the active organization.
 
 ```bash
 alethia project list
+alethia project list --output json
 ```
 
-Output:
+On a terminal this is the shared navigable table (sort, filter, quit); piped or with
+`--output json|csv` it is a plain projection.
 
-```
-ID            PROJECT         PROVIDER  REGION      ENV         STATUS
-a1b2...       api-backend     aws       eu-west-1   production  ACTIVE
-c3d4...       data-pipeline   gcp       us-east4    staging     DRAFT
-```
+| Column | Description |
+|------|----------|
+| Project | Project name |
+| Env | The default environment's stage |
+| Status | Provisioning status |
+| Provider | Cloud provider |
+| Region | Cloud region |
+| Cost | Estimated monthly cost |
+| Updated | Last change |
+
+**Status**, **Provider**, **Region** and **Cost** are rendered for a person: the status carries a
+glyph and is folded to lower case, the provider is upper-cased, an unset provider or region is `—`,
+and a project the wire sent no status for reads as `draft` — an inference that tells a reader the
+project has not been applied yet, rather than leaving a blank that looks like a broken table.
+
+Under `-o csv` a script gets the values instead: each is the wire value, and each is an **empty
+cell when the wire sent nothing** — including the status, because handing a script a status the
+server never sent is the one thing a machine format must not do. **Cost** is a bare number and
+**Updated** an RFC3339 stamp.
 
 ## `alethia project get`
 
-Get detailed information about a specific Project. The project is identified by a **positional
-project name** (not a flag).
+Print a project's full configuration.
 
 ```bash
-alethia project get api-backend
+alethia project get boutique
+alethia project get boutique --open
+alethia project get                      # asks which project
 ```
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<project_name>` | Yes | Project name (positional) |
+| `[project_name]` | No | Project name (positional). Omit it on a terminal to pick from a list. |
 | `--open` | No | Open the project in the web console. (Long-only — `-o` is the global `--output` flag.) |
 
-Shows the full Project configuration including:
+<Callout type="info">
+  `get` looks a project up by **name**, so the picker returns a name and refuses one that two
+  projects share — that lookup answers a duplicate with whichever project is older, and quietly
+  printing another project's region, cluster endpoint and apps repo is worse than an error. Every
+  other command takes `--project`, which resolves a name **or** an id.
+</Callout>
+
+Shows the full project configuration including:
 - Project name, provider, region, environment
 - Status and estimated monthly cost
 - Component summary (network, cluster, databases, caches, etc.)
@@ -53,46 +98,98 @@ printing it.
 
 ## `alethia project create`
 
-Create a new project in the active organization. A default environment is created with it; add
-component resources afterwards with `alethia project component add`.
+Create a new project in the active organization.
 
 ```bash
-alethia project create api-backend --region eu-west-1 --cloud-identity-id <id>
+alethia project create                   # asks for everything, prints the flags back
+```
+
+or say it all at once:
+
+```bash
+alethia project create boutique \
+  --region eu-west-1 --cloud-account prod-account \
+  --env prod:production:dedicated \
+  --env dev-1:development:namespace:boutique-dev-1
 ```
 
 | Argument / Flag | Required | Description |
 |------|----------|-------------|
-| `<name>` | Yes | Project name (positional) |
-| `--region` | Yes* | Cloud region to provision into (*prompted on a TTY when omitted) |
-| `--cloud-identity-id` | No | Cloud account to link (interactive picker on a TTY when omitted) |
+| `[name]` | Yes* | Project name (positional). *Asked for on a terminal when omitted. |
+| `--region` | Yes* | Cloud region to provision into. *Asked for on a terminal when omitted. |
+| `--cloud-account` | No | Cloud account to link, by its **label** or its id. Asked for on a terminal when omitted; a project may be created with none. |
+| `--cloud-identity-id` | No | Cloud account id to link. Prefer `--cloud-account`, which also takes the label. Passing both is an error. |
 | `--stage` | No | Initial environment stage: `development` (default), `staging`, `production` |
 | `--iac-version` | No | OpenTofu version to pin (defaults server-side) |
-| `--placement-mode` | No | Placement of the default environment: `namespace`, `vcluster`, `dedicated` (default) |
-| `--env` | No | `name:stage[:mode[:namespace]]`, repeatable — the full environment matrix |
+| `--placement-mode` | No | Placement of the default environment: `namespace`, `vcluster`, `dedicated` (default `dedicated`) |
+| `--env` | No | `name:stage[:mode[:namespace]]`, repeatable — the full environment matrix. Asked for, one environment at a time, on a terminal when omitted. |
 
-The created project prints as a card (or the typed object with `--output json`).
+The created project prints as a card (or the typed object with `--output json`), followed —
+when anything was asked for — by the `alethia project create` line that would produce the same
+project without the questions. That line names every flag that shaped it, `--stage`,
+`--placement-mode` and `--iac-version` included, so it can be committed as-is.
 
-### Creating the whole environment matrix at once
+`--cloud-account` and `--cloud-identity-id` name the same field, so passing **both** is refused
+rather than resolved by precedence — the same rule `--project` and `--project-id` follow on the job
+commands.
+
+### The environment matrix
 
 `--env` declares every environment and **how each is placed onto a Fabric**, in one command. The
 first entry is the default environment and owns the Fabric it provisions, so it defaults to
 `dedicated`; later entries default to `namespace` and share that Fabric.
 
 ```bash
-alethia project create shop --region eu-west-1 --cloud-identity-id <id> \
+alethia project create shop --region eu-west-1 --cloud-account prod-account \
   --env prod:production \
   --env dev:development:namespace:boutique-dev \
   --env staging:staging:vcluster
 ```
 
-That is **one** cluster hosting three environments. Omit `--env` and you get the default
-Production + Preview pair instead.
+That is **one** cluster hosting three environments. Omit `--env` in a script and you get the
+default Production + Preview pair instead; omit it on a terminal and you are asked for each
+environment in turn — name, stage, placement, namespace — and then shown the `--env` line your
+answers add up to.
+
+A stage or a placement outside the allowed set is refused locally, naming the whole set, rather
+than coming back as a `400`.
 
 <Callout type="warn">
   Placement is the flag with a bill attached. Each `dedicated` environment is a separate cluster with
   its own OpenTofu state; `namespace` and `vcluster` share the Fabric that already exists. A four-cloud
   two-tier demo is four clusters with placement and eight without it.
 </Callout>
+
+## `alethia project plan` · `apply` · `destroy`
+
+Queue a `PLAN`, `DEPLOY` or `DESTROY` job for one environment of a project.
+
+```bash
+alethia project plan --project boutique --env dev-1
+alethia project apply --project boutique --env dev-1 --wait
+alethia project destroy --project boutique --yes
+```
+
+Omit `--project` on a terminal and you are asked which project; omit `--runner-id` and you are
+asked which runner (or "Any available").
+
+| Flag | plan | apply | destroy | Description |
+|------|------|-------|---------|-------------|
+| `--project` | ✓ | ✓ | ✓ | Project by **name** or id. Asked for on a terminal when omitted. |
+| `--project-id` | ✓ | ✓ | ✓ | Project id. Prefer `--project`, which also takes the name. |
+| `--env` | ✓ | ✓ | ✓ | Target environment name (default: the project's default environment) |
+| `--runner-id` | ✓ | ✓ | ✓ | Assign to a specific runner |
+| `--plan-job-id` | | ✓ | | Reference a prior `PLAN` job |
+| `-w`, `--wait` | ✓ | ✓ | ✓ | Wait for job completion |
+| `-y`, `--yes` | | | ✓ | Skip the confirmation prompt (required with `--no-input`) |
+
+`--project` and `--project-id` name the same thing, so passing **both** is refused rather than
+resolved by precedence. A project name that two projects share is also refused, naming both ids —
+the command queues a `DESTROY`, and picking one of two plausible projects is not a decision the
+CLI should make for you.
+
+`destroy` is destructive: on a terminal it confirms, and with `--no-input` it requires `--yes`
+rather than silently doing nothing.
 
 ## `alethia project design apply`
 
@@ -119,13 +216,14 @@ cat shop.json | alethia project design apply -p shop -f -
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `-f`, `--file` | Yes | Design document path, or `-` for stdin. |
-| `--project`, `-p` | Yes | Project name or id. |
-| `--env`, `-e` | No | Environment name, stage, or id. Omit for the project's default. |
+| `-f`, `--file` | Yes* | Design document path, or `-` for stdin. *Asked for on a terminal when omitted. |
+| `-p`, `--project` | Yes* | Project name or id. *Asked for on a terminal when omitted. |
+| `-e`, `--env` | No | Environment name, stage, or id. Omit for the project's default. |
 | `--dry-run` | No | Print the changes that would be made and write nothing. |
 | `--stage` | No | Stage the change for review instead of applying it. |
+| `-y`, `--yes` | No | Confirm an apply whose plan **removes** a component. Required with `--no-input` only in that case. |
 
-`--dry-run` prints one row per component with the action it would take:
+Both `--dry-run` and a real apply print one row per component with the action taken:
 
 ```
 3 change(s) would be made in dev:
@@ -133,6 +231,38 @@ cat shop.json | alethia project design apply -p shop -f -
   CREATE  caches sessions
   DELETE  storage_buckets receipts
 ```
+
+### The gate is on the plan, not on the command
+
+An apply can **delete**: a kind the document omits is a kind the environment loses. So the
+confirmation appears exactly where that happens, and nowhere else.
+
+- A plan that only **adds or updates** applies unprompted, including under `--no-input`. A design
+  document is what a repository commits and CI replays, and a pipeline that adds a cache does not
+  need a human in it.
+- A plan that **removes** a component prints what would go, then confirms. Under `--no-input` it
+  requires `-y`, `--yes`.
+
+To decide which it is, a real apply asks the server for its own `--dry-run` first, so the prompt
+names the components rather than asking in the abstract:
+
+```
+This apply would DELETE 1 component(s) in dev:
+  DELETE  storage_buckets receipts
+```
+
+If that check cannot be read at all, the apply is **refused** rather than run blind — `--yes`
+applies without it.
+
+<Callout type="warn">
+  `--yes` on a `design apply` is not a blanket "this command is destructive" switch. It opts *that
+  invocation* into removing components. Leaving it on a pipeline permanently means every later
+  replay may remove components too; if a replay is suddenly asking for it, the usual cause is a
+  document that stopped declaring something you meant to keep.
+</Callout>
+
+The rows are printed for a real apply as well as for `--dry-run`, so what actually went is visible
+next to what was predicted.
 
 `--dry-run` and `--stage` are mutually exclusive — one writes nothing, the other writes to the review
 tray — so passing both is refused rather than silently resolved to one.
@@ -144,33 +274,48 @@ through the CLI, and the error names the field: `Invalid design document at clus
 ## `alethia project env`
 
 A project owns N independently-provisionable environments. The project is named with `--project`
-(its name **or** id).
+(its name **or** id); omit it on a terminal and you are asked.
 
 ```bash
 # List a project's environments
-alethia project env list --project api-backend
+alethia project env list --project boutique
 
-# Add an environment (shares the existing Fabric by default)
-alethia project env add staging --project api-backend --stage staging
+# Add one, answering the same four questions the --env tuple asks
+alethia project env add --project boutique
 
-# Add one as a vcluster on a named Fabric, with its own destination namespace
+# Or say it outright
+alethia project env add staging --project boutique --stage staging
+
+# As a vcluster on a named Fabric, with its own destination namespace
 alethia project env add staging --project shop --stage staging \
   --placement-mode vcluster --fabric shared --namespace boutique-staging
 
-# Add one that provisions its OWN cluster
+# One that provisions its OWN cluster
 alethia project env add prod --project shop --stage production --placement-mode dedicated
 ```
 
 | Command | Flags | Description |
 |------|----------|-------------|
-| `env list` | `--project <p>` | List the project's environments (default first) |
-| `env add <name>` | `--project <p>` `--stage <s>` `--region <r>` `--placement-mode <m>` `--fabric <f>` `--namespace <n>` `--lifecycle <l>` | Add an environment (name is slugified; region inherits the project's when omitted) |
+| `env list` | `--project` | List the project's environments (default first) |
+| `env add [name]` | `--project` `--stage` `--region` `--placement-mode` `--fabric` `--namespace` `--lifecycle` | Add an environment (name is slugified; region inherits the project's when omitted) |
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--project` | Yes* | Project name or id. *Asked for on a terminal when omitted. |
+| `--stage` | No | `development` (default), `staging`, `production` |
+| `--placement-mode` | No | `namespace` (default), `vcluster`, `dedicated` |
+| `--namespace` | No | ArgoCD destination namespace for a shared placement (default: derived from the name) |
+| `--fabric` | No | Fabric to place onto, by name (default: the one the project's default environment is on) |
+| `--region` | No | Region (inherits the project's when omitted) |
+| `--lifecycle` | No | `persistent` (default) or `ephemeral` |
 
 An **added** environment defaults to `namespace` placement on the Fabric the project's default
 environment already uses — the cheap rung, and the one that makes a second tier free. `--fabric`
-names a different Fabric to place onto; `--namespace` sets the ArgoCD destination namespace
-(otherwise derived from the environment name); `--lifecycle` is `persistent` (default) or
-`ephemeral`. `--fabric` and `--namespace` are ignored for `dedicated`, which owns a new Fabric.
+and `--namespace` are ignored for `dedicated`, which owns a new Fabric.
+
+The interactive form asks for the four fields the `--env` tuple can express: name, stage,
+placement and namespace. `--region`, `--fabric` and `--lifecycle` stay flag-only, so the form can
+never ask for something a script cannot say.
 
 The success line names the placement you got, so a `dedicated` you did not intend is visible
 immediately rather than on the next apply.
@@ -190,27 +335,39 @@ Supported **kinds** — singletons (one per project *per environment*, name-less
 alethia project component kinds
 
 # List a project's components (optionally filter by --kind and/or --env)
-alethia project component list --project api-backend --kind databases
+alethia project component list --project boutique --kind databases
 
-# Add a database (multi kind → --name required)
-alethia project component add --project api-backend --kind databases --name main \
+# Add one by answering questions — kind, name, environment, then field by field
+alethia project component add --project boutique
+
+# Or say it outright. Multi kind → --name required
+alethia project component add --project boutique --kind databases --name main \
   --set engine=postgres --set port=5432 --set iam_auth=true
 
 # Configure the cluster singleton (--name ignored; upserts)
-alethia project component add --project api-backend --kind cluster \
-  --set cluster_version=1.31 --set node_min_size=2 --set 'instance_types=["t3.medium"]'
+alethia project component add --project boutique --kind cluster \
+  --set 'cluster_version="1.31"' --set node_min_size=2 --set 'instance_types=["t3.medium"]'
 
 # Remove components (destructive → confirms)
-alethia project component remove --project api-backend --kind databases --name main
-alethia project component remove --project api-backend --kind network
+alethia project component remove --project boutique --kind databases --name main
+alethia project component remove --project boutique --kind network
 ```
 
 | Command | Flags | Description |
 |------|----------|-------------|
 | `component kinds` | — | List the supported component kinds + their cardinality |
-| `component list` | `--project <p>` `--kind <k>` `--env <e>` | List components (all kinds, or one) |
-| `component add` | `--project <p>` `--kind <k>` `--name <n>` `--env <e>` `--set key=value`… | Create a component |
-| `component remove` | `--project <p>` `--kind <k>` `--name <n>` `--env <e>` | Delete a component (confirms) |
+| `component list` | `--project` `--kind` `--env` | List components (all kinds, or one) |
+| `component add` | `--project` `--kind` `--name` `--env` `--set` | Create a component |
+| `component remove` | `--project` `--kind` `--name` `--env` `-y`, `--yes` | Delete a component (confirms) |
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--project` | Yes* | Project name or id. *Asked for on a terminal when omitted. |
+| `--kind` | Yes* | Component kind. Optional on `list`, where it filters. *Asked for on a terminal for `add` and `remove`. A kind this CLI's cached list does not hold is still authorable — the picker offers it verbatim and the server decides. |
+| `--name` | Yes for multi kinds | Component name. Ignored by singleton kinds, which upsert. *Asked for on a terminal by `add` and `remove`, as a picker over the components that exist. |
+| `--env` | No | Environment id, name or stage. Asked for as a picker on `add`; whichever form you pass is what the picker starts on. |
+| `--set` | No | `key=value` field assignment, repeatable. Asked for, one field at a time, on `add`. |
+| `-y`, `--yes` | No | `remove` only: skip the confirmation prompt (required with `--no-input`) |
 
 ### Components belong to an environment
 
@@ -238,8 +395,9 @@ What `--env` defaults to differs by verb, deliberately:
 
 <Callout type="warn">
   `remove` deletes from **one** environment — the one you named, or the default. It never touches a
-  sibling environment's copy. Confirm the tier in the success line (`Component removed in staging`)
-  before assuming which one went.
+  sibling environment's copy. The confirmation names both the component and the tier
+  (`Deletes the databases main configuration in staging`), and so does the success line
+  (`Component removed in staging`).
 </Callout>
 
 ### The `--set` field setter
@@ -252,7 +410,11 @@ literally — so numbers, booleans, and arrays are typed correctly:
 --set iam_auth=true                   # boolean
 --set instance_types='["t3.medium"]'  # array
 --set engine=postgres                 # string
+--set 'cluster_version="1.31"'        # string that would otherwise parse as a number
 ```
+
+Quote a value that looks like a number but is a string field — `cluster_version=1.31` coerces to the
+number `1.31`, which the server refuses.
 
 Fields are **validated server-side** against the component's schema: an unknown or mistyped field
 fails with a clear `400`, naming the offending field and the allowed set. Singleton kinds ignore

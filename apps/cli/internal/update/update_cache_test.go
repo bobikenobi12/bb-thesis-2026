@@ -67,15 +67,15 @@ func TestNotify(t *testing.T) {
 
 func TestCheckAndNotifyShortCircuits(t *testing.T) {
 	// dev build → no-op.
-	CheckAndNotify("dev")
-	CheckAndNotify("")
+	CheckAndNotify("dev", "")
+	CheckAndNotify("", "")
 
 	// Disabled via env → no-op even with a real version.
 	t.Setenv("ALETHIA_NO_UPDATE_CHECK", "1")
-	CheckAndNotify("1.0.0")
+	CheckAndNotify("1.0.0", "")
 	t.Setenv("ALETHIA_NO_UPDATE_CHECK", "")
 
 	// No origin set → no-op (stdout is non-interactive in tests anyway).
 	t.Setenv("ALETHIA_WEB_ORIGIN", "")
-	CheckAndNotify("1.0.0")
+	CheckAndNotify("1.0.0", "")
 }

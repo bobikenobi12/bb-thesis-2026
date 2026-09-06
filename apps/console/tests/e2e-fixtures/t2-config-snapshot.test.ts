@@ -21,7 +21,7 @@
 // fixture can never drift from buildConfigSnapshot without this test (which CI's turbo fan-out
 // runs) going red — and the Go harness asserts fidelity against that same guarded fixture.
 //
-// Regenerate after an intentional snapshot-shape change:  UPDATE_FIXTURES=1 pnpm -F console test
+// Regenerate after an intentional snapshot-shape change:  UPDATE_FIXTURES=1 pnpm -C apps/console run test
 // t2-config-snapshot
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -286,7 +286,7 @@ describe("T2 config_snapshot fidelity fixture (BYOC A0.5)", () => {
 // instead of hard-failing a deploy at runtime.
 //
 // Regenerate after an intentional shape change:
-//   UPDATE_FIXTURES=1 pnpm -F console test t2-config-snapshot
+//   UPDATE_FIXTURES=1 pnpm -C apps/console run test t2-config-snapshot
 const NOW = "2026-01-01T00:00:00.000Z";
 /** Bookkeeping every component table carries (minus estimated_monthly_cost, absent on three). */
 const BOOKKEEPING = {

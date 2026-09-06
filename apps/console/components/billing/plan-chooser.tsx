@@ -85,7 +85,7 @@ export function PlanChooser({ plans, value, onChange }: PlanChooserProps) {
 										{p.name}
 									</span>
 									{p.popular && (
-										<Badge variant="outline" className="text-[10px] uppercase">
+										<Badge variant="outline" className="text-ui-2xs uppercase">
 											Popular
 										</Badge>
 									)}

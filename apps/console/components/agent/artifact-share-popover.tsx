@@ -109,15 +109,15 @@ export function ArtifactSharePopover({ artifactId }: { artifactId: string }) {
       />
       <PopoverContent align="end" className="w-72 rounded-none p-0">
         <div className="border-b border-border px-3 py-2.5">
-          <div className="text-[13px] font-medium text-foreground">
+          <div className="text-ui-md font-medium text-foreground">
             Share artifact
           </div>
-          <div className="text-[11px] text-muted-foreground">
+          <div className="text-ui-xs text-muted-foreground">
             Choose who in your org can open this. Private to you otherwise.
           </div>
         </div>
         {loading ? (
-          <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-muted-foreground">
+          <div className="flex items-center gap-2 px-3 py-4 text-ui-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Loading…
           </div>
@@ -163,7 +163,7 @@ export function ArtifactSharePopover({ artifactId }: { artifactId: string }) {
 /** A tiny uppercase mono section header inside the popover. */
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="vx-eyebrow px-3 pb-1 pt-2.5 text-[9px] text-muted-foreground">
+    <div className="vx-eyebrow px-3 pb-1 pt-2.5 text-ui-3xs text-muted-foreground">
       {children}
     </div>
   );
@@ -196,11 +196,11 @@ function ShareRow({
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] text-foreground">
+        <span className="block truncate text-ui-md text-foreground">
           {label}
         </span>
         {sub && (
-          <span className="block text-[10.5px] text-muted-foreground">
+          <span className="block text-ui-2xs text-muted-foreground">
             {sub}
           </span>
         )}

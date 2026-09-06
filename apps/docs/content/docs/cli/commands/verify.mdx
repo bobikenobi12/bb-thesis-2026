@@ -18,23 +18,72 @@ The CLI is a client of the same Console API. Both commands call `/cli/jobs/<id>`
 (`alethia org switch`).
 </Callout>
 
+## Choosing the job
+
+Both commands act on one job. The id is optional, and there are three ways to say which job you
+mean:
+
+```bash
+alethia verify receipt 8f3c2a1e-4b7d-4c2a-9f1e-2d3c4b5a6978  # an id you already have
+alethia verify receipt --latest       # the most recent PLAN or DEPLOY — no id needed
+alethia verify receipt                # a picker, on a terminal
+```
+
+`--latest` is the one to use in a script: it needs no terminal, so it works under `--no-input`.
+Narrow it until it names one job.
+
+| Flag | Description |
+|------|-------------|
+| `--latest` | Act on the most recent matching job instead of naming one. Works with `--no-input`. |
+| `--type` | Narrow to a job type — see [Jobs Commands](/cli/commands/jobs) for the full set. |
+| `--status` | Narrow to a job status. |
+| `--project` | Narrow to a project, by name or by an id prefix. |
+| `--job`, `-j` | The job id, as a flag. The same thing as passing it as an argument. |
+
+Only `PLAN` and `DEPLOY` jobs carry a receipt, so `--latest` and the picker consider **only those
+two types** — otherwise the newest job in a busy org is usually a scheduled `DETECT_DRIFT` that
+`verify` can do nothing with. Naming a `--type` yourself overrides that, and an id on the command
+line is always taken as given.
+
+The receipt is written when the run **finishes**, and `--latest` narrows by type, not by
+completion. `alethia project plan` returns as soon as the job is queued unless you passed `-w`, so
+the newest `PLAN` is often one that is still running — `verify` says so, and says what to do about
+it. Add `--status SUCCESS` to take the newest job that has already finished:
+
+```bash
+alethia verify receipt --latest --status SUCCESS
+```
+
+The search covers the 50 most recent jobs, newest first. A `--type` or `--status` value outside the
+enum is refused, and the message lists the values that exist.
+
+Two combinations are refused rather than guessed:
+
+- An id **and** `--latest`. Both name a job, so obeying one would make the other a lie.
+- An id **and** a narrowing flag. `verify show <the id> --type DEPLOY` on a `PLAN` job would print
+  the plan's report and look as though it had filtered.
+
+When the CLI picked the job for you, it names which one on **stderr** before the output starts, so
+`alethia verify show --latest -o json > report.json` still writes only the report.
+
 ## `alethia verify receipt`
 
 Fetch a job's receipt and verify it.
 
 ```bash
-alethia verify receipt --job 4f3c2b1a-...
-alethia verify receipt -j 4f3c2b1a-... -o json
-alethia verify receipt -j 4f3c2b1a-... --key-file alethia-receipts.pub
+alethia verify receipt --latest
+alethia verify receipt 4f3c2b1a-9d6e-4a3b-8c17-5e2f1a9b7c04 -o json
+alethia verify receipt --latest --key-file alethia-receipts.pub
 ```
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--job`, `-j` | Yes | Job id. `alethia jobs list` prints them. |
 | `--key` | No | Verify against this base64 ed25519 public key instead of the trusted set. |
 | `--key-file` | No | Same, read from a file. |
 | `--allow-unsigned` | No | Exit zero when the receipt carries no signature. |
 | `--allow-untrusted` | No | Exit zero when the signature is self-consistent but its key is not vouched for. |
+
+Plus the selector flags from [Choosing the job](#choosing-the-job).
 
 ```
 alethia · verify receipt
@@ -45,8 +94,20 @@ alethia · verify receipt
   Verdict          pass
   Sealed to plan   3b1f...c204
   Control catalog  elench-controls-0.5.2
+  Evaluated        9 Mar 2026, 15:04
   Controls         14 pass, 0 fail, 0 warn, 0 n/a
 ```
+
+The glyph on the `Signature` row has **three** states, not two:
+
+| Glyph | Meaning |
+|---|---|
+| `✓` | verified against a key that is vouched for, or the one you pinned |
+| `◐` | the signature is self-consistent, but who signed it is **unestablished** |
+| `✗` | there is no signature, or it does not match the receipt |
+
+`◐` is the forged-receipt shape, and it exits non-zero unless you pass `--allow-untrusted`. The
+`Trust` and reason rows below it carry the full answer either way.
 
 ### What a green check means
 
@@ -94,13 +155,11 @@ legitimate state and the receipt still renders — but it is not evidence, so it
 Print the per-control report the receipt seals.
 
 ```bash
-alethia verify show --job 4f3c2b1a-...
-alethia verify show -j 4f3c2b1a-... -o json
+alethia verify show --latest
+alethia verify show 4f3c2b1a-9d6e-4a3b-8c17-5e2f1a9b7c04 -o json
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--job`, `-j` | Yes | Job id. |
+The selector flags from [Choosing the job](#choosing-the-job) are the only ones this command takes.
 
 ```
 Verify: pass (aws, catalog elench-controls-0.5.2) — 14 pass, 0 fail, 0 warn, 1 not evaluable

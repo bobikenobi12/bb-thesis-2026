@@ -3,6 +3,7 @@
 
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
+import { pageInfoSchema } from "@/lib/cli/paging";
 import {
 	cloudIdentities,
 	jobLogs,
@@ -446,11 +447,22 @@ export const componentWire = z.object({
 
 /** Latest published CLI release (GET /api/releases/cli) — drives the update notice. */
 export const cliLatestReleaseWire = z.object({
-	version: z.string(),
+	version: z.string().regex(/^\d+\.\d+\.\d+$/),
 	release_notes: z.string(),
 	released_at: iso,
-	github_release_url: z.string().nullable(),
-	min_supported_version: z.string().nullable(),
+	github_release_url: z.url().nullable(),
+	min_supported_version: z.string().regex(/^\d+\.\d+\.\d+$/).nullable(),
+});
+
+/** Trusted release-workflow payload accepted by POST /api/releases/cli. */
+export const cliReleasePublishWire = z.object({
+	version: z.string().regex(/^\d+\.\d+\.\d+$/),
+	release_notes: z.string(),
+	released_at: iso,
+	github_release_url: z.url(),
+	commit_sha: z.string().regex(/^[0-9a-f]{40}$/),
+	min_supported_version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+	is_breaking: z.boolean().optional(),
 });
 
 // --- Response envelopes (what the CLI actually decodes off the wire) ---
@@ -477,17 +489,50 @@ export const cliDesignApplyResponse = z.object({
 		}),
 	),
 });
-export const cliClustersResponse = z.object({ clusters: z.array(clusterWire) });
+/**
+ * GET /api/cli/clusters — the org's project clusters, cursor-paged (#3672).
+ *
+ * `page` is the shared vocabulary and there is nothing beside it: unlike `cliJobsPageResponse`,
+ * this envelope carries no `total`/`limit`/`offset` twins, because this endpoint never had them.
+ * It returned the whole collection, so there is no pre-cursor caller whose offset walk has to
+ * keep working — and adding the twins to look like the jobs envelope would be inventing a second
+ * mechanism to be consistent with a compatibility shim.
+ *
+ * The array key stays `clusters`, so a reader that only wants the rows is unchanged; what changed
+ * is that the rows may now be one page of them. `packages/core/api/api.go`'s `GetClusters` walks
+ * `page.next_cursor` to exhaustion through `AllPages` for exactly that reason.
+ */
+export const cliClustersPageResponse = z.object({
+	clusters: z.array(clusterWire),
+	page: pageInfoSchema,
+});
 export const cliCloudIdentitiesResponse = z.object({
 	cloud_identities: z.array(cloudIdentityWire),
 });
+/**
+ * GET /api/jobs.
+ *
+ * `page` is the cursor vocabulary and the one to read. `total`, `limit` and `offset` are the
+ * pre-cursor wire, kept because the shipped CLI's interactive pager still walks this endpoint by
+ * offset (`apps/cli/cmd/jobs_table.go:40`) and will until #3667 replaces it; they are ADDITIVE
+ * here, not a second mechanism — `total` and `limit` are `page.total` and `page.limit`, emitted
+ * once and echoed, so the two halves of the envelope cannot disagree.
+ */
 export const cliJobsPageResponse = z.object({
 	jobs: z.array(jobListItemWire),
 	total: z.number().int(),
 	limit: z.number().int(),
 	offset: z.number().int(),
+	page: pageInfoSchema,
 });
 export const cliJobResponse = z.object({ job: jobWire });
+/**
+ * The `page` object every cursor-paged list response carries. Registered here — rather than
+ * only inside the envelopes that embed it — so the shape is fixture-locked against
+ * `api.PageInfo` on its own, before any route converts. Defined in lib/cli/paging.ts; this is
+ * the registration, not a second definition.
+ */
+export const cliPageInfo = pageInfoSchema;
 /** GET /api/cli/signing-keys result — the trusted-key set `alethia verify receipt` binds a
  * receipt's key_id against. One flat list so a verifier does not have to know which custody
  * model produced a key in order to trust it. */
@@ -572,6 +617,7 @@ export const cliProjectResponse = z.object({ project: projectWire });
 /** GET /api/cli/projects/:id/environments result. */
 export const cliEnvironmentsResponse = z.object({
 	environments: z.array(environmentWire),
+	page: pageInfoSchema,
 });
 /** POST /api/cli/projects/:id/environments result. */
 export const cliEnvironmentResponse = z.object({ environment: environmentWire });
@@ -667,6 +713,7 @@ export const addonWire = z.object({
 export const cliAddonsResponse = z.object({
 	environment: z.string(),
 	addons: z.array(addonWire),
+	page: pageInfoSchema,
 });
 
 /** One attached BYO Helm chart in an environment (scan_report omitted — status only). */
@@ -700,6 +747,7 @@ export const cliByoScanResponse = z.object({
 export const cliByoChartsResponse = z.object({
 	environment: z.string(),
 	charts: z.array(byoChartWire),
+	page: pageInfoSchema,
 });
 
 /** The BYO-IaC source attached to an environment (scan_report omitted — status only). */
@@ -736,6 +784,7 @@ export const promotionWire = z.object({
 /** GET /api/cli/projects/:id/promotions result. */
 export const cliPromotionsResponse = z.object({
 	promotions: z.array(promotionWire),
+	page: pageInfoSchema,
 });
 
 /** One approval slot on a promotion. */
@@ -779,6 +828,7 @@ export const stagedChangeWire = z.object({
 export const cliStagedChangesResponse = z.object({
 	environment: z.string(),
 	changes: z.array(stagedChangeWire),
+	page: pageInfoSchema,
 });
 
 /** One discovered network in a cloud identity's inventory. */
@@ -852,11 +902,12 @@ export const cliContract = {
 	ByoScanResponse: cliByoScanResponse,
 	RunnerRegistrationResponse: cliRunnerRegistrationResponse,
 	DesignApplyResponse: cliDesignApplyResponse,
-	ClustersResponse: cliClustersResponse,
+	ClustersPageResponse: cliClustersPageResponse,
 	ClusterDetailResponse: cliClusterDetailResponse,
 	CloudIdentitiesResponse: cliCloudIdentitiesResponse,
 	JobsPageResponse: cliJobsPageResponse,
 	JobResponse: cliJobResponse,
+	PageInfo: cliPageInfo,
 	Job: jobWire,
 	JobLogsResponse: cliJobLogsResponse,
 	RepositoriesResponse: cliRepositoriesResponse,

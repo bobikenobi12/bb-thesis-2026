@@ -307,11 +307,24 @@ heavy_shape() { # <dimension>
 # dimension_label turns the token into the words that go in an issue TITLE. The title is the dedup
 # key, so this mapping is load-bearing: change it and every open nightly issue is orphaned and
 # re-filed under the new name.
-# The `floor` fallback is for the UNSET/unknown token only. Every real dimension names itself, because
-# a run that proved add-ons and filed an issue titled "floor" is the exact mislabelling this function
-# was written to end — and with a dispatchable dimension there are now four more tokens that could
-# hit it. `full` keeps its "full-bar" wording: the title is the dedup key, so changing THAT one would
-# orphan every open nightly issue and re-file it under a new name.
+# `floor` is for the UNSET token and for itself — nothing else. Every real dimension names itself,
+# because a run that proved add-ons and filed an issue titled "floor" is the exact mislabelling this
+# function was written to end. `full` keeps its "full-bar" wording: the title is the dedup key, so
+# changing THAT one would orphan every open nightly issue and re-file it under a new name.
+#
+# WHY THE FALLBACK NOW REFUSES INSTEAD OF SAYING "floor". `cli-demo` is a first-class dimension
+# everywhere else in this file — DIMENSIONS, FULL_EXCLUDES, its own fidelity arm — and was simply
+# absent from the enumerated arm here, so it fell through and labelled itself `floor`. That is worse
+# than a wrong word: the label IS the dedup key. `scripts/programme-rollup.mjs` parses a red title
+# with /^e2e nightly:\s*(\S+)\s+RED\s*\(([^)·]+?)…/, so a `cli-demo` red and a genuine floor red on
+# the same cloud COLLIDE ONTO ONE ISSUE, each silently re-pointing the other — precisely the failure
+# #1755 fixed for full-bar-vs-floor, reintroduced through a missing token. It already happened:
+# #4086 was filed as "hetzner RED (floor)" for a `cli-demo` console build failure that never touched
+# a cloud.
+#
+# So an unknown NON-EMPTY token is a hard refusal, the same shape resolve() uses for an unknown
+# dispatch input. A permissive fallback cannot be reviewed: adding the next dimension to DIMENSIONS
+# and forgetting this arm would repeat the collision in exactly the same silence.
 dimension_label() { # <token>
 	case "${1:-}" in
 	full) echo "full-bar" ;;
@@ -319,8 +332,15 @@ dimension_label() { # <token>
 	# orphan every open nightly issue titled "<cloud> RED (byo)" and immediately re-file each one
 	# under a new name. The dimension is renamed; its issue titles are not, and the two are allowed
 	# to differ precisely because one of them is a database key.
-	maxconfig | addons | byo | gitops | byo-iac | day2) echo "$1" ;;
-	*) echo "floor" ;;
+	maxconfig | addons | byo | gitops | byo-iac | day2 | cli-demo) echo "$1" ;;
+	floor) echo "floor" ;;
+	# The UNSET token only. A caller with no dimension in scope is running the floor, which is what
+	# nightly-rollup.sh's own `${E2E_DIMENSION:-floor}` default already says.
+	"") echo "floor" ;;
+	*)
+		echo "resolve: unknown dimension '${1}' — refusing to label it (want one of: $DIMENSIONS${DIMENSION_ALIASES:+ $DIMENSION_ALIASES})" >&2
+		return 2
+		;;
 	esac
 }
 
@@ -393,8 +413,41 @@ run_self_test() {
 	_a "day2" "$(dimension_label day2)" "day2 labels as day2, not floor"
 	_a "byo" "$(dimension_label byo)" "byo labels as byo, not floor"
 
+	_a "gitops" "$(dimension_label gitops)" "gitops labels as gitops, not floor"
+	_a "byo-iac" "$(dimension_label byo-iac)" "byo-iac labels as byo-iac, not floor"
+	# THE REGRESSION, and the one this arm was written for. `cli-demo` was in DIMENSIONS,
+	# FULL_EXCLUDES and its own fidelity arm, and missing from the label case — so it labelled itself
+	# `floor`, and because the label is the DEDUP KEY a cli-demo red and a real floor red on the same
+	# cloud landed on ONE issue. #4086 was filed as "hetzner RED (floor)" for a cli-demo console build
+	# failure that never reached a cloud.
+	_a "cli-demo" "$(dimension_label cli-demo)" "cli-demo labels as cli-demo, not floor (#4086)"
+
 	_a "full-bar" "$(dimension_label full)" "the full token labels as full-bar in an issue title"
 	_a "floor" "$(dimension_label floor)" "the floor token labels as floor in an issue title"
+	_a "floor" "$(dimension_label)" "an UNSET token still labels as floor"
+
+	# DERIVED, not typed. A hand-written list of dimensions to check stops covering the moment
+	# DIMENSIONS grows — which is exactly how cli-demo went unlabelled. Every token the resolver can
+	# produce must label as SOMETHING other than a fallback, and `full` is the one that renames.
+	for _d in $DIMENSIONS $DIMENSION_ALIASES; do
+		_want="$_d"
+		[ "$_d" = "full" ] && _want="full-bar"
+		_a "$_want" "$(dimension_label "$_d")" "every DIMENSIONS token gets its own label: $_d -> $_want"
+	done
+	unset _d _want
+
+	# And the fallback FAILS CLOSED. A label function that answers "floor" for a token it has never
+	# heard of cannot be reviewed: the wrong answer is a valid dimension name, so nothing downstream
+	# can tell it apart from a real floor run.
+	_a "2" "$(dimension_label no-such-dimension >/dev/null 2>&1; echo $?)" "an unknown token is refused, not labelled floor"
+	_a "" "$(dimension_label no-such-dimension 2>/dev/null)" "...and prints no label at all"
+	# Captured into a variable rather than piped into grep: this script runs under `pipefail`, so
+	# `dimension_label … | grep -q` reports the REFUSAL's exit 2, not grep's verdict, and the
+	# assertion would fail on a message that matched perfectly.
+	_err="$(dimension_label no-such-dimension 2>&1 >/dev/null || true)"
+	_a "yes" "$(case "$_err" in *"unknown dimension 'no-such-dimension'"*) echo yes ;; *) echo no ;; esac)" \
+		"...and the refusal names the token it was given"
+	unset _err
 
 	# ── The fidelity table (#2356). These are the assertions that were missing, and their absence is
 	# why a documented definition and an asserted one could diverge for weeks. ──

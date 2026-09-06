@@ -25,7 +25,7 @@ import {
 	runners,
 } from "@/lib/db/schema";
 import type { ProjectStatus } from "@/lib/db/schema/enums";
-import { describeIfDb } from "./db";
+import { defaultIfFirst, describeIfDb } from "./db";
 
 const USER = randomUUID();
 const ORG = randomUUID();
@@ -184,7 +184,13 @@ describeIfDb("recover_stale_jobs — poison cap + progress stall", () => {
 	it("(cap) fails a job TERMINAL at max_attempts and returns it for env reconciliation", async () => {
 		const [e] = await getServiceDb()
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "prod-cap", status: "PROVISIONING" })
+			.values({
+				project_id: projectId,
+				user_id: USER,
+				name: "prod-cap",
+				status: "PROVISIONING",
+				is_default: defaultIfFirst(projectId),
+			})
 			.returning({ id: projectEnvironments.id });
 		const envId = e.id;
 		const j = await seedJob({
@@ -220,7 +226,13 @@ describeIfDb("recover_stale_jobs — poison cap + progress stall", () => {
 	it("(cap end-to-end) recoverStaleJobs() drives the capped DEPLOY's env to FAILED via the CAS (no stuck env)", async () => {
 		const [e] = await getServiceDb()
 			.insert(projectEnvironments)
-			.values({ project_id: projectId, user_id: USER, name: "prod-e2e", status: "PROVISIONING" })
+			.values({
+				project_id: projectId,
+				user_id: USER,
+				name: "prod-e2e",
+				status: "PROVISIONING",
+				is_default: defaultIfFirst(projectId),
+			})
 			.returning({ id: projectEnvironments.id });
 		const envId = e.id;
 		await seedJob({

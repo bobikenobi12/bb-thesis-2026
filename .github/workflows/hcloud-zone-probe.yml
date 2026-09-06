@@ -65,7 +65,7 @@ jobs:
 
       # The answer goes on the issue, because a job summary is unfindable a week later and this is a
       # measurement someone will want to cite when they change the gate.
-      - name: Post the result to #2843
+      - name: 'Post the result to #2843'
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}

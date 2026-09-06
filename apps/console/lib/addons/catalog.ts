@@ -128,7 +128,145 @@ interface ExternalDnsProviderAuth {
 	identityLabel?: string;
 	/** Providers ExternalDNS has no native support for, reached through a webhook sidecar instead. */
 	webhook?: { image: { repository: string; tag: string } };
+	/** Providers whose ExternalDNS provider reads a CONFIG FILE off disk before it applies any flag
+	 * — see `ExternalDnsConfigFile`. Absent for every provider that is fully configurable by flags
+	 * and env, which is all of them but azure. */
+	configFile?: ExternalDnsConfigFile;
 }
+
+/**
+ * The knobs external-dns's Azure config file is assembled from.
+ *
+ * A tuple, so the REFUSAL, the field descriptors and the file's contents all read one list — the
+ * same discipline `EXTERNAL_DNS_PROVIDERS` applies to the credential path. They are the three facts
+ * `azure.json` needs that the ServiceAccount annotation does not already carry.
+ */
+export const EXTERNAL_DNS_CONFIG_FILE_KEYS = [
+	"azureTenantId",
+	"azureSubscriptionId",
+	"azureResourceGroup",
+] as const;
+
+/** One knob an `ExternalDnsConfigFile` is built from. */
+export type ExternalDnsConfigFileKey = (typeof EXTERNAL_DNS_CONFIG_FILE_KEYS)[number];
+
+/** The knob values one config file is rendered from — every declared key, all present. */
+type ExternalDnsConfigFileValues = Record<ExternalDnsConfigFileKey, string>;
+
+/** One non-secret identifier a provider's config FILE is assembled from. */
+interface ExternalDnsConfigFileField {
+	/** The `configSchema` knob it reads. */
+	key: ExternalDnsConfigFileKey;
+	/** The form label, so the refusal and the field cannot name it two different things. */
+	label: string;
+	/** What it IS, in the words a user needs to go and find one — the `identityLabel` discipline. */
+	describe: string;
+}
+
+/**
+ * How a provider that reads a CONFIG FILE off disk is given one by the MARKETPLACE add-on.
+ *
+ * WHY THIS EXISTS — the defect it removes (#3589). external-dns's azure provider resolves its
+ * settings in `provider/azure/config.go`'s `getConfig()`, which opens with an UNCONDITIONAL
+ * `os.ReadFile(configFile)` (default `/etc/kubernetes/azure.json`) and returns an error when the
+ * file is absent. The flag overrides for subscription and resource group are applied AFTER that
+ * read, so they cannot rescue it, and `useWorkloadIdentityExtension` — without which
+ * `getCredentials()` falls through workload identity to MSI and authenticates as the node's kubelet
+ * identity — is FILE-ONLY: v0.15.0 has no flag for it anywhere. A workload-identity AKS cluster lays
+ * no such file down (that path belongs to the legacy in-tree cloud provider), so the controller dies
+ * in its constructor and CrashLoops.
+ *
+ * The PLATFORM RAIL (`infra/templates/argocd/external-dns.yaml`) has mounted this file since #2868,
+ * from a Secret the deploy path seeds (`packages/core/argocd/install.go`, `azureDNSConfigJSON`). The
+ * marketplace add-on had no equivalent and no knob to build one, so an azure user who pasted a
+ * PERFECTLY VALID client id still got a crashing controller — #3469's rule refuses only an EMPTY
+ * identity, and a valid one sailed straight through into a guaranteed CrashLoop. The rail is not
+ * reachable from here: it renders only when the ENVIRONMENT manages DNS (`.DNSEnabled` and a
+ * `.DNSProvider`), it is a different Application, and its Secret holds THAT environment's zone.
+ *
+ * So this is the rail's knowledge moved to where the marketplace can use it, exactly as
+ * `EXTERNAL_DNS_PROVIDERS` itself was.
+ *
+ * WHY THE SECRET AND NOT `secretConfiguration`. The chart's own `secretConfiguration` block would
+ * create and mount a Secret from inline values — and it is DEPRECATED in 1.15.0, so it can vanish
+ * under a chart bump, and it would inline the identifiers into the Application spec (and into the
+ * customer's gitops repo in `gitops` mode). The add-on already has a Secret the runner seeds
+ * pre-sync (`alethia-addon-external-dns`), and `extraVolumes`/`extraVolumeMounts` are the chart's
+ * supported, non-deprecated way to mount one — which is also what the rail does, so the two paths
+ * stay one integration rather than two.
+ *
+ * NOTHING HERE IS A CREDENTIAL. The file holds four identifiers and a boolean; `aadClientSecret` is
+ * absent, which is what keeps `getCredentials()` out of the service-principal branch and the whole
+ * path keyless. It travels through `requiredSecretData` rather than `values` only so it lands in a
+ * FILE at a path the provider reads, which is the one thing Helm values cannot express.
+ */
+interface ExternalDnsConfigFile {
+	/** The file's name inside the mount — the basename external-dns reads. */
+	fileName: string;
+	/** The directory it is mounted at (external-dns's `--azure-config-file` default directory). */
+	mountPath: string;
+	/** The pod's volume name; also the volumeMount name, so the two cannot drift. */
+	volumeName: string;
+	/** The knobs it is assembled from, in the order a refusal should name them. */
+	fields: readonly ExternalDnsConfigFileField[];
+	/** Renders the file's contents. Deterministic — a value that moved between renders would keep
+	 * the add-on permanently OutOfSync (#2822, #2823), so no clock, no randomness, fixed key order. */
+	render: (values: ExternalDnsConfigFileValues) => string;
+}
+
+/**
+ * `azure.json`, byte-for-byte the shape the platform rail seeds (`azureDNSConfigJSON` in
+ * `packages/core/argocd/install.go`).
+ *
+ * `aadClientId` is deliberately OMITTED even though the user gave us one: the
+ * `azure.workload.identity/use` pod label makes the webhook inject `AZURE_CLIENT_ID` from the
+ * ServiceAccount's `client-id` annotation — which `toValues` already emits from `workloadIdentity` —
+ * and azidentity reads it from the environment when the config leaves it empty. Writing it here as
+ * well would give one fact two sources that can disagree.
+ */
+function externalDnsAzureConfigJson(values: ExternalDnsConfigFileValues): string {
+	// JSON.stringify over an object literal: string keys serialise in insertion order, so the
+	// rendered bytes are a pure function of the knobs.
+	return `${JSON.stringify(
+		{
+			cloud: "AzurePublicCloud",
+			tenantId: values.azureTenantId,
+			subscriptionId: values.azureSubscriptionId,
+			resourceGroup: values.azureResourceGroup,
+			useWorkloadIdentityExtension: true,
+		},
+		null,
+		2,
+	)}\n`;
+}
+
+/** Azure's config file: what it is called, where it is mounted, and what it is built from. */
+const EXTERNAL_DNS_AZURE_CONFIG: ExternalDnsConfigFile = {
+	// external-dns's `--azure-config-file` DEFAULT is `/etc/kubernetes/azure.json`, and the add-on
+	// passes no such flag — so the basename and the directory below are not a choice, they are what
+	// the provider goes looking for.
+	fileName: "azure.json",
+	mountPath: "/etc/kubernetes",
+	volumeName: "azure-config",
+	fields: [
+		{
+			key: "azureTenantId",
+			label: "Azure tenant ID",
+			describe: "the directory (tenant) ID of the Entra ID tenant the managed identity belongs to",
+		},
+		{
+			key: "azureSubscriptionId",
+			label: "Azure subscription ID",
+			describe: "the ID of the subscription the DNS zone lives in",
+		},
+		{
+			key: "azureResourceGroup",
+			label: "Azure resource group",
+			describe: "the name of the resource group the DNS zone lives in",
+		},
+	],
+	render: externalDnsAzureConfigJson,
+};
 
 /** The provider ids the catalog offers. */
 export const EXTERNAL_DNS_PROVIDER_IDS = ["cloudflare", "digitalocean", "hetzner", "aws", "google", "azure"] as const;
@@ -170,6 +308,9 @@ export const EXTERNAL_DNS_PROVIDERS: Record<ExternalDnsProvider, ExternalDnsProv
 		label: "Azure DNS",
 		saAnnotation: "azure.workload.identity/client-id",
 		identityLabel: "a managed-identity client id",
+		// The identity ALONE is not enough on azure, and that is not a parity quirk — see
+		// ExternalDnsConfigFile. #3589.
+		configFile: EXTERNAL_DNS_AZURE_CONFIG,
 	},
 };
 
@@ -201,7 +342,12 @@ export const EXTERNAL_DNS_PROVIDERS: Record<ExternalDnsProvider, ExternalDnsProv
  * rather than have the add-on borrow the rail's ServiceAccount, which cannot work for the reason
  * just given.
  */
-export const EXTERNAL_DNS_ADDON_SA = "addon-external-dns-sa";
+export const EXTERNAL_DNS_ADDON_SA = "addon-external-dns";
+
+/** The external-dns catalog id. A named constant because the entry has to reach its OWN
+ * runner-seeded Secret name (`addonSecretName`) from inside `toValues` to mount the azure config
+ * file off it — and an id spelled twice is an id that can be spelled two ways. */
+const EXTERNAL_DNS_ADDON_ID = "external-dns";
 
 /**
  * Why an external-dns configuration cannot be installed, or null when it can.
@@ -239,6 +385,50 @@ function externalDnsIdentityRequirement(config: {
 		`Without it the controller runs with no identity: on AWS it starts, reports healthy and ` +
 		`silently writes no DNS records at all.`
 	);
+}
+
+/**
+ * One refusal per MISSING config-file knob, or an empty list when the provider needs no file (or has
+ * everything it needs). #3589.
+ *
+ * WHY THIS IS A SEPARATE RULE FROM THE IDENTITY ONE ABOVE. They refuse different things and a user
+ * can hit one without the other. `externalDnsIdentityRequirement` asks "is there an identity to put
+ * in the annotation"; this asks "can the provider get far enough to USE it". On azure the answer to
+ * the second was NO for every configuration the marketplace could express, including — and this is
+ * the defect — one with a perfectly valid client id in it. A valid-but-unusable identity passed the
+ * only gate there was and installed a controller that dies in its provider constructor before it
+ * ever reads a flag, which the customer meets as a CrashLoop they have to open ArgoCD to find.
+ *
+ * ONE ISSUE PER FIELD, on that field's own path, rather than one summary issue on the object root:
+ * the configure form renders a message against the knob it names, and three missing identifiers are
+ * three things to go and find, not one. The message names the field and says what the value IS, for
+ * the same reason `identityLabel` exists — "azureTenantId is required" closes no loop.
+ *
+ * DRIVEN OFF `EXTERNAL_DNS_PROVIDERS` rather than off `c.provider === "azure"`, so a second provider
+ * that reads a config file is covered the moment it declares one, and so the rule cannot come to
+ * disagree with the mount `toValues` emits from the same table.
+ */
+function externalDnsConfigFileRequirements(config: {
+	provider: ExternalDnsProvider;
+	azureTenantId: string;
+	azureSubscriptionId: string;
+	azureResourceGroup: string;
+}): { path: ExternalDnsConfigFileKey; message: string }[] {
+	const p = EXTERNAL_DNS_PROVIDERS[config.provider];
+	if (!p.configFile) return [];
+	const out: { path: ExternalDnsConfigFileKey; message: string }[] = [];
+	for (const field of p.configFile.fields) {
+		if (config[field.key].trim() !== "") continue;
+		out.push({
+			path: field.key,
+			message:
+				`${p.label} needs "${field.label}" — ${field.describe}. ExternalDNS reads it from ` +
+				`${p.configFile.mountPath}/${p.configFile.fileName}, which it opens BEFORE it applies any ` +
+				`flag, so a workload identity on its own cannot get the controller started: it exits in ` +
+				`its provider constructor and CrashLoops.`,
+		});
+	}
+	return out;
 }
 
 /**
@@ -1733,7 +1923,7 @@ export const ADDON_CATALOG: AddOnDef[] = [
 		requires: ["storage"],
 	}),
 	defineAddOn({
-		id: "external-dns",
+		id: EXTERNAL_DNS_ADDON_ID,
 		name: "ExternalDNS",
 		category: "networking",
 		icon: "Network",
@@ -1760,6 +1950,15 @@ export const ADDON_CATALOG: AddOnDef[] = [
 			 *
 			 * REQUIRED on a workload-identity provider — see the superRefine below. */
 			workloadIdentity: z.string().default(""),
+			/** The three identifiers external-dns's Azure config file is built from (#3589). NOT
+			 * secrets — an Entra tenant id, a subscription id and a resource-group name are
+			 * identifiers, so they ride in the clear exactly like `workloadIdentity`, and validation
+			 * can therefore SEE whether they are there. Ignored by every other provider.
+			 *
+			 * REQUIRED on azure — see `externalDnsConfigFileRequirements` and the superRefine below. */
+			azureTenantId: z.string().default(""),
+			azureSubscriptionId: z.string().default(""),
+			azureResourceGroup: z.string().default(""),
 		})
 			// #3469. A provider that authenticates by ANNOTATION with nothing to annotate is not a
 			// half-configured install, it is an install that CANNOT work — and on AWS it does not
@@ -1776,6 +1975,18 @@ export const ADDON_CATALOG: AddOnDef[] = [
 						code: "custom",
 						path: ["workloadIdentity"],
 						message: why,
+					});
+				}
+				// #3589. The identity being PRESENT is not the same question as the provider being
+				// able to start, and azure is where the two come apart: a valid client id with no
+				// azure.json installs a controller that CrashLoops in its provider constructor.
+				// Reported alongside rather than instead — a user with neither should be told both,
+				// once, rather than made to fix one and resubmit to discover the next.
+				for (const missing of externalDnsConfigFileRequirements(c)) {
+					ctx.addIssue({
+						code: "custom",
+						path: [missing.path],
+						message: missing.message,
 					});
 				}
 			}),
@@ -1812,6 +2023,46 @@ export const ADDON_CATALOG: AddOnDef[] = [
 							...(c.provider === "azure" ? { podLabels: { "azure.workload.identity/use": "true" } } : {}),
 						}
 					: {}),
+				// #3589. A provider whose ExternalDNS implementation reads a CONFIG FILE off disk
+				// gets one, mounted from the add-on's OWN runner-seeded Secret — the same shape the
+				// platform rail uses, and the reason this add-on was un-installable on azure by any
+				// combination of values the console offered.
+				//
+				// `extraVolumes`/`extraVolumeMounts` and not the chart's `secretConfiguration`: that
+				// block is DEPRECATED in chart 1.15.0 and would inline the identifiers into the
+				// Application spec (and into the customer's repo in gitops mode). The Secret's
+				// CONTENT comes from `requiredSecretData` below, which is what makes it a file at a
+				// path rather than a Helm value.
+				//
+				// Unconditional on `p.configFile` — deliberately, and for the reason the
+				// `saAnnotation` gate above states: the schema now refuses a config-file provider
+				// with a missing identifier, so the Secret key is guaranteed to be seeded here; and
+				// were that refusal ever removed, a pod that cannot mount its volume is visibly
+				// stuck rather than silently running without the file.
+				...(p.configFile
+					? {
+							extraVolumes: [
+								{
+									name: p.configFile.volumeName,
+									secret: {
+										secretName: addonSecretName(EXTERNAL_DNS_ADDON_ID),
+										// PROJECTED rather than mounted whole: the same Secret carries
+										// `apiToken` whenever one has ever been stored, and mounting
+										// every key would drop a stray credential file into the
+										// provider's config directory.
+										items: [{ key: p.configFile.fileName, path: p.configFile.fileName }],
+									},
+								},
+							],
+							extraVolumeMounts: [
+								{
+									name: p.configFile.volumeName,
+									mountPath: p.configFile.mountPath,
+									readOnly: true,
+								},
+							],
+						}
+					: {}),
 			};
 		},
 		secretValues: (refs, c) => {
@@ -1826,6 +2077,30 @@ export const ADDON_CATALOG: AddOnDef[] = [
 			const env = [{ name: p.tokenEnv, valueFrom: { secretKeyRef: { name: ref.name, key: ref.key } } }];
 			// The webhook sidecar reads its token from ITS OWN env block, not the controller's.
 			return p.webhook ? { provider: { webhook: { env } } } : { env };
+		},
+		/**
+		 * The config FILE a provider reads off disk, as one key in the add-on's Secret (#3589).
+		 *
+		 * `requiredSecretData` and not `secretStaticData`: this file is needed whether or not any
+		 * credential exists — on azure there is none, by design — so it has to be sufficient on its
+		 * own to make the runner seed the Secret. Nothing in it is material a snapshot must not
+		 * carry: four identifiers and a boolean, with `aadClientSecret` absent so the credential
+		 * path stays keyless. The Secret is used only because external-dns wants a FILE at a path,
+		 * which no Helm value can express.
+		 *
+		 * `toValues` above mounts it. The two read the SAME `configFile` descriptor, so the file
+		 * this seeds and the path the controller opens cannot come to disagree.
+		 */
+		requiredSecretData: (c) => {
+			const p = EXTERNAL_DNS_PROVIDERS[c.provider];
+			if (!p.configFile) return {};
+			return {
+				[p.configFile.fileName]: p.configFile.render({
+					azureTenantId: c.azureTenantId,
+					azureSubscriptionId: c.azureSubscriptionId,
+					azureResourceGroup: c.azureResourceGroup,
+				}),
+			};
 		},
 		fields: [
 			{
@@ -1854,6 +2129,20 @@ export const ADDON_CATALOG: AddOnDef[] = [
 					`add-on's ServiceAccount, "${EXTERNAL_DNS_ADDON_SA}" in the "external-dns" namespace. Not needed ` +
 					"for the token providers, which take an API token above instead.",
 			},
+			// #3589. Azure's three identifiers, derived from the provider table so the form, the
+			// refusal and the file it ends up in are one list. They are identifiers, not credentials
+			// — `type: "string"`, in the clear, exactly like the workload identity above.
+			...EXTERNAL_DNS_AZURE_CONFIG.fields.map((f) => ({
+				key: f.key,
+				label: `${f.label} (Azure only)`,
+				type: "string" as const,
+				default: "",
+				help:
+					`REQUIRED for Azure — ${f.describe}. ExternalDNS's Azure provider reads these from ` +
+					`${EXTERNAL_DNS_AZURE_CONFIG.mountPath}/${EXTERNAL_DNS_AZURE_CONFIG.fileName} before it applies ` +
+					"any flag, so the workload identity alone cannot start it. Alethia builds that file and mounts " +
+					"it for you; no credential goes in it. Leave empty for every other provider.",
+			})),
 		],
 		syncWave: 2,
 	}),
@@ -1951,6 +2240,24 @@ export function resolveAddOnInstall(row: {
 	);
 	const secretWiring =
 		secretKeys.length > 0 && def.secretValues ? def.secretValues(refs, config) : {};
+	// NON-secret data the chart needs IN ITS OWN RIGHT (#3589) — computed before the decision below
+	// because it is now half of that decision.
+	//
+	// A Secret used to be seeded only when some SECRET-typed knob had a stored value. external-dns
+	// on azure needs a Secret and no credential at all: its `azure.json` is four identifiers and a
+	// boolean, and the provider reads it as a FILE off a path before it applies any flag, so no Helm
+	// value can carry it. Under the old gate the add-on could not be given one by any combination of
+	// values the console offered, and an azure user who pasted a perfectly valid managed-identity
+	// client id still got a controller that CrashLoops in its constructor.
+	//
+	// Deliberately NOT `secretStaticData`, which is PAIRED data — widening that one instead would
+	// seed grafana and minio a Secret holding nothing but an admin username on every install that
+	// never set a password.
+	//
+	// The runner already handles this shape: `EnsureAddOnSecrets` seeds `StaticData` first and
+	// tolerates an empty `Keys` (packages/core/argocd/addon_secrets.go), so nothing changes there.
+	const requiredData = def.requiredSecretData ? def.requiredSecretData(config) : {};
+	const needsSecret = secretKeys.length > 0 || Object.keys(requiredData).length > 0;
 	const bootstrap = def.bootstrap ? def.bootstrap(config) : null;
 	// Precedence (low → high): chart defaults → schema knobs → secret wiring → the user's raw
 	// Helm-values YAML. Unparseable raw YAML is ignored (the save-time action validates it) so
@@ -1976,16 +2283,25 @@ export function resolveAddOnInstall(row: {
 		// to the schema defaults here exactly as `values` does — the two can never disagree about
 		// which configuration was resolved.
 		...(bootstrap ? { bootstrap } : {}),
-		...(secretKeys.length > 0
+		...(needsSecret
 			? {
 					secretRef: {
 						secretName,
 						namespace: def.namespace,
 						keys: secretKeys,
-						// Paired NON-secret Secret data (#644): e.g. the admin USERNAME a chart
-						// reads from the same Secret as the password. Snapshot-safe by contract.
-						...(def.secretStaticData
-							? { staticData: def.secretStaticData(config) }
+						// Paired NON-secret Secret data (#644): the admin USERNAME a chart reads from
+						// the same Secret as the password — plus, since #3589, data the chart needs
+						// in its own right (a config FILE it mounts). Both snapshot-safe by contract;
+						// they share one k8s Secret, so they merge here rather than at the runner.
+						// Omitted entirely when neither yields anything, so an add-on with only
+						// secret knobs exports the spec it always did.
+						...(def.secretStaticData || Object.keys(requiredData).length > 0
+							? {
+									staticData: {
+										...(def.secretStaticData ? def.secretStaticData(config) : {}),
+										...requiredData,
+									},
+								}
 							: {}),
 					},
 				}

@@ -53,7 +53,7 @@ function ConnectAction({
 	const label = PROVIDER_LABEL[provider] ?? provider;
 	if (alreadyConnected) {
 		return (
-			<div className="flex w-fit items-center gap-2 border border-border px-3 py-1.5 text-[12px] text-muted-foreground">
+			<div className="flex w-fit items-center gap-2 border border-border px-3 py-1.5 text-ui-sm text-muted-foreground">
 				<span className="h-1.5 w-1.5 flex-none rounded-full bg-foreground" />
 				{label} is already connected.
 				<Link href={`/${org}/~/connectors`} className="text-foreground underline underline-offset-2">
@@ -65,7 +65,7 @@ function ConnectAction({
 	return (
 		<Link
 			href={`/${org}/~/connectors?connect=${provider}`}
-			className="flex w-fit items-center gap-2 border border-foreground bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+			className="flex w-fit items-center gap-2 border border-foreground bg-foreground px-3 py-1.5 text-ui-sm font-medium text-background transition-opacity hover:opacity-90"
 		>
 			Connect {label} →
 		</Link>

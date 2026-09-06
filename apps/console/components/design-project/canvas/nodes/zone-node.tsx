@@ -81,7 +81,7 @@ export function ZoneNode({ id, data, selected }: NodeProps<Node<ZoneNodeData>>) 
 					</span>
 					<span className="vx-eyebrow">{label}</span>
 					{meta && (
-						<span className="truncate font-mono text-[10px] text-muted-foreground">
+						<span className="truncate font-mono text-ui-2xs text-muted-foreground">
 							{meta}
 						</span>
 					)}

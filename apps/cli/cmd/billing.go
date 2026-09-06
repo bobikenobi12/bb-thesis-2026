@@ -45,9 +45,9 @@ func runBilling(c apiClient, out io.Writer, format string) error {
 		{"Plan", billing.Plan},
 		{"Status", billing.Status},
 		{"Seats", seats},
-		{"Subscription", orDash(billing.StripeSubscriptionID)},
-		{"Trial ends", formatCreatedAt(billing.TrialEndsAt)},
-		{"Period ends", formatCreatedAt(billing.CurrentPeriodEnd)},
+		{"Subscription", ui.OrDash(billing.StripeSubscriptionID)},
+		{"Trial ends", ui.RelativeTime(billing.TrialEndsAt)},
+		{"Period ends", ui.RelativeTime(billing.CurrentPeriodEnd)},
 	}
 	return ui.RenderCard(out, format, "alethia · billing", rows, billing)
 }

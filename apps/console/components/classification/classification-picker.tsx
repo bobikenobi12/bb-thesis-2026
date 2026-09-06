@@ -138,7 +138,7 @@ export function ClassificationPicker({
                   </span>
                   <Badge
                     variant="outline"
-                    className="h-4 px-1 text-[10px] font-normal text-muted-foreground"
+                    className="h-4 px-1 text-ui-2xs font-normal text-muted-foreground"
                   >
                     {dimension.multi ? "multi" : "single"}
                   </Badge>

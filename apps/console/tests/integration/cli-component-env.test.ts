@@ -20,6 +20,7 @@ import { getServiceDb } from "@/lib/db";
 import {
 	projectCluster,
 	projectEnvironments,
+	projectFabrics,
 	projects,
 } from "@/lib/db/schema";
 import { describeIfDb } from "./db";
@@ -27,6 +28,7 @@ import { describeIfDb } from "./db";
 const ORG = randomUUID();
 const USER = randomUUID();
 const PROJ = randomUUID();
+const FABRIC = randomUUID();
 const ENV_DEFAULT = randomUUID();
 const ENV_OTHER = randomUUID();
 
@@ -41,21 +43,43 @@ describeIfDb("CLI project component add — environment scoping (#662)", () => {
 			region: "westeurope",
 			iac_version: "1.0",
 		});
-		// Two envs; the non-default is created first, so a naive "earliest" pick would get it wrong —
-		// the resolver must prefer is_default.
-		await db.insert(projectEnvironments).values({
-			id: ENV_OTHER,
+		await db.insert(projectFabrics).values({
+			id: FABRIC,
 			project_id: PROJ,
 			user_id: USER,
-			name: "staging",
-			is_default: false,
+			org_id: ORG,
+			name: "shared",
 		});
-		await db.insert(projectEnvironments).values({
-			id: ENV_DEFAULT,
-			project_id: PROJ,
-			user_id: USER,
-			name: "production",
-			is_default: true,
+		// Two envs; the non-default is the OLDER one, so a naive "earliest" pick would get it wrong —
+		// the resolver must prefer is_default.
+		//
+		// ONE TRANSACTION, and `created_at` written by hand. Between the two inserts this project has
+		// an environment and no default, which `project_environments_one_default_check`
+		// (lib/db/programmables.sql) refuses — but it is a DEFERRED constraint trigger, so it judges
+		// the state at COMMIT and the intermediate one is legal. Inside a transaction `defaultNow()`
+		// is the transaction timestamp for both rows, which would erase the age gap this fixture
+		// exists to create; the explicit timestamps keep it.
+		await db.transaction(async (tx) => {
+			await tx.insert(projectEnvironments).values({
+				id: ENV_OTHER,
+				project_id: PROJ,
+				user_id: USER,
+				name: "staging",
+				is_default: false,
+				fabric_id: FABRIC,
+				placement_mode: "namespace",
+				created_at: new Date("2025-01-01T00:00:00.000Z"),
+			});
+			await tx.insert(projectEnvironments).values({
+				id: ENV_DEFAULT,
+				project_id: PROJ,
+				user_id: USER,
+				name: "production",
+				is_default: true,
+				fabric_id: FABRIC,
+				placement_mode: "dedicated",
+				created_at: new Date("2025-06-01T00:00:00.000Z"),
+			});
 		});
 	});
 
@@ -83,6 +107,7 @@ describeIfDb("CLI project component add — environment scoping (#662)", () => {
 			.where(eq(projectCluster.project_id, PROJ));
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.environment_id).toBe(ENV_DEFAULT);
+		expect(rows[0]?.fabric_id).toBe(FABRIC);
 		expect(rows[0]?.node_desired_size).toBe(2);
 	});
 
@@ -102,8 +127,8 @@ describeIfDb("CLI project component add — environment scoping (#662)", () => {
 	});
 
 	// The two-tier shape the CLI could not build before `--env`: the SAME singleton kind in two
-	// environments, with DIFFERENT config. This is the enterprise demo in miniature (dev and staging
-	// pointing at different overlays), and it only works because the unique is composite.
+	// environments, with DIFFERENT config. They share one Fabric, so only the dedicated owner's row
+	// may claim fabric_id; stamping the namespace row too violates project_cluster_fabric_id_key.
 	it("holds the same singleton kind in two environments, independently", async () => {
 		await insertProjectComponent("cluster", PROJ, ENV_OTHER, "", {
 			node_desired_size: 9,
@@ -118,6 +143,8 @@ describeIfDb("CLI project component add — environment scoping (#662)", () => {
 		const byEnv = new Map(rows.map((r) => [r.environment_id, r.node_desired_size]));
 		expect(byEnv.get(ENV_DEFAULT)).toBe(4);
 		expect(byEnv.get(ENV_OTHER)).toBe(9);
+		expect(rows.find((row) => row.environment_id === ENV_DEFAULT)?.fabric_id).toBe(FABRIC);
+		expect(rows.find((row) => row.environment_id === ENV_OTHER)?.fabric_id).toBeNull();
 	});
 
 	// THE REGRESSION, and a mock could not catch it because the bug was the SQL predicate.

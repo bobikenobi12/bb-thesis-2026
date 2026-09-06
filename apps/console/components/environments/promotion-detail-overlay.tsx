@@ -43,17 +43,17 @@ export function PromotionDetailOverlay({
 						<div className="sticky top-0 z-10 border-b bg-surface-raised px-5 pb-4 pt-[18px]">
 							<div className="flex items-start justify-between gap-3">
 								<div>
-									<div className="mb-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-text-tertiary">
+									<div className="mb-1.5 font-mono text-ui-3xs uppercase tracking-[0.16em] text-text-tertiary">
 										Promotion
 									</div>
 									<div className="flex items-center gap-2">
-										<span className="font-mono text-[15px] text-text-primary">
+										<span className="font-mono text-ui-lg text-text-primary">
 											{detail.sourceName} → {detail.targetName}
 										</span>
-										<StatusDot {...promoStatus(detail.status)} className="text-[11px]" />
+										<StatusDot {...promoStatus(detail.status)} className="text-ui-xs" />
 									</div>
 									{detail.initiator && (
-										<div className="mt-1 font-mono text-[11px] text-text-tertiary">
+										<div className="mt-1 font-mono text-ui-xs text-text-tertiary">
 											by {detail.initiator}
 										</div>
 									)}
@@ -75,12 +75,14 @@ export function PromotionDetailOverlay({
 								{pipelineSteps(detail.status).map((s, i, arr) => (
 									<div key={s.label} className={cn("flex items-start", i < arr.length - 1 && "flex-1")}>
 										<div className="flex w-[62px] shrink-0 flex-col items-center gap-1.5">
-											<StatusDot tier={s.tier} size={12} />
-											<span className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
+											<StatusDot tier={s.tier} />
+											<span className="font-mono text-ui-2xs uppercase tracking-wider text-text-tertiary">
 												{s.label}
 											</span>
 										</div>
-										{i < arr.length - 1 && <div className="mx-1 mt-2.5 h-0.5 flex-1 bg-border" />}
+										{/* 3px centres the 2px rail on the shared 7px `.vx-status__dot` — see
+										    active-promotion-panel.tsx, which draws the same pipeline. */}
+										{i < arr.length - 1 && <div className="mx-1 mt-[3px] h-0.5 flex-1 bg-border" />}
 									</div>
 								))}
 							</div>
@@ -88,7 +90,7 @@ export function PromotionDetailOverlay({
 							{/* gates */}
 							{detail.gates.length > 0 && (
 								<div>
-									<div className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.16em] text-text-tertiary">
+									<div className="mb-2 font-mono text-ui-3xs uppercase tracking-[0.16em] text-text-tertiary">
 										Gates
 									</div>
 									<div className="flex flex-col gap-2.5">
@@ -96,11 +98,11 @@ export function PromotionDetailOverlay({
 											<div key={g.type} className="rounded-md border bg-surface px-3.5 py-2.5">
 												<div className="flex items-center gap-2.5">
 													<g.icon className="size-[15px] shrink-0 text-text-secondary" />
-													<span className="flex-1 text-[13px] text-text-primary">{g.label}</span>
-													<StatusDot tier={g.tier} label={g.word} className="text-[11px]" />
+													<span className="flex-1 text-ui-md text-text-primary">{g.label}</span>
+													<StatusDot tier={g.tier} label={g.word} className="text-ui-xs" />
 												</div>
 												{g.detail && (
-													<div className="mt-1.5 pl-[25px] text-[12px] leading-relaxed text-text-tertiary">
+													<div className="mt-1.5 pl-[25px] text-ui-sm leading-relaxed text-text-tertiary">
 														{g.detail}
 													</div>
 												)}
@@ -114,10 +116,10 @@ export function PromotionDetailOverlay({
 							{detail.approvals.length > 0 && (
 								<div>
 									<div className="mb-2 flex items-baseline justify-between">
-										<span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-text-tertiary">
+										<span className="font-mono text-ui-3xs uppercase tracking-[0.16em] text-text-tertiary">
 											Approvals
 										</span>
-										<span className="font-mono text-[11px] text-text-secondary">
+										<span className="font-mono text-ui-xs text-text-secondary">
 											{detail.approved} / {detail.required}
 										</span>
 									</div>
@@ -131,21 +133,21 @@ export function PromotionDetailOverlay({
 												)}
 												<div className="min-w-0 flex-1">
 													<div className="flex items-center gap-2">
-														<span className="text-[13px] font-medium text-text-primary">
+														<span className="text-ui-md font-medium text-text-primary">
 															{slot.name ?? "Awaiting a reviewer"}
 														</span>
 														{slot.status === "approved" && (
-															<StatusDot tier="active" label="Approved" className="text-[11px]" />
+															<StatusDot tier="active" label="Approved" className="text-ui-xs" />
 														)}
 														{slot.status === "rejected" && (
-															<StatusDot tier="failed" label="Rejected" className="text-[11px]" />
+															<StatusDot tier="failed" label="Rejected" className="text-ui-xs" />
 														)}
 													</div>
-													<div className="mt-px text-[11px] text-text-tertiary">
+													<div className="mt-px text-ui-xs text-text-tertiary">
 														{slot.requiredRole ? `Any ${slot.requiredRole}` : "Any listed approver"}
 													</div>
 													{slot.comment && (
-														<div className="mt-1.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-[12px] leading-relaxed text-text-secondary">
+														<div className="mt-1.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-ui-sm leading-relaxed text-text-secondary">
 															{slot.comment}
 														</div>
 													)}
@@ -160,10 +162,10 @@ export function PromotionDetailOverlay({
 							{detail.diff && detail.diff.changes.length > 0 && (
 								<div>
 									<div className="mb-2 flex items-baseline justify-between">
-										<span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-text-tertiary">
+										<span className="font-mono text-ui-3xs uppercase tracking-[0.16em] text-text-tertiary">
 											Changes
 										</span>
-										<span className="font-mono text-[11px] text-text-tertiary">
+										<span className="font-mono text-ui-xs text-text-tertiary">
 											{detail.diff.summary.join(" · ")}
 										</span>
 									</div>
@@ -177,14 +179,14 @@ export function PromotionDetailOverlay({
 												>
 													<div className="flex items-center gap-2.5">
 														<op.icon className="size-[15px] shrink-0 text-text-secondary" />
-														<span className="font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+														<span className="font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 															{op.label}
 														</span>
-														<span className="text-[12px] text-text-tertiary">{c.component_type}</span>
-														<span className="font-mono text-[12.5px] text-text-primary">{c.key}</span>
+														<span className="text-ui-sm text-text-tertiary">{c.component_type}</span>
+														<span className="font-mono text-ui-sm text-text-primary">{c.key}</span>
 													</div>
 													{c.fields && Object.keys(c.fields).length > 0 && (
-														<div className="mt-1.5 pl-[25px] font-mono text-[11px] leading-relaxed text-text-tertiary">
+														<div className="mt-1.5 pl-[25px] font-mono text-ui-xs leading-relaxed text-text-tertiary">
 															{Object.entries(c.fields)
 																.map(([k, f]) => fieldLine(k, f.from, f.to))
 																.join(" · ")}

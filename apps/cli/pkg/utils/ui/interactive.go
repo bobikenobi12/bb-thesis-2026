@@ -15,11 +15,20 @@ import (
 
 // RunSpinner shows a grayscale loading spinner with the given title while action
 // runs, returning when it completes.
+//
+// It draws on InteractiveOutput. huh's spinner passes a nil writer to bubbletea, which resolves to
+// os.Stdout, so before this the spinner's frames went into the caller's redirected stdout ahead of
+// the payload and `alethia … -o json > f` produced a file jq could not read. Progress is narration
+// and belongs on stderr; the document belongs on stdout.
+//
+// Callers in apps/cli/cmd go through cmd.runSpinner, which additionally declines to draw at all
+// when there is no terminal on that stream — see hyg_cli_spinner_test.go.
 func RunSpinner(title string, action func()) error {
 	return spinner.New().
 		Title(" " + title).
 		Style(SpinnerStyle).
 		TitleStyle(SecondaryStyle).
+		Output(InteractiveOutput()).
 		Action(action).
 		Run()
 }

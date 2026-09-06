@@ -131,7 +131,7 @@ export function GcpConnection({
 							No local tooling — this runs in your browser. Replace{" "}
 							<b className="font-medium text-foreground">YOUR_PROJECT_ID</b>.
 						</p>
-						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-2.5 font-mono text-[11px] text-foreground">
+						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-2.5 font-mono text-ui-xs text-foreground">
 							<span className="min-w-0 break-all">{cloudShellCmd}</span>
 							<CopyButton text={cloudShellCmd} className="mt-0.5 shrink-0 rounded p-1 hover:bg-muted" />
 						</div>
@@ -169,7 +169,7 @@ export function GcpConnection({
 			) : (
 				<div className="space-y-6">
 					<Step n={1} title="Apply the Terraform module">
-						<div className="space-y-1 overflow-x-auto rounded-md border border-border/50 bg-muted/20 p-2.5 font-mono text-[11px] text-foreground">
+						<div className="space-y-1 overflow-x-auto rounded-md border border-border/50 bg-muted/20 p-2.5 font-mono text-ui-xs text-foreground">
 							<div>terraform init && terraform apply \</div>
 							<div className="pl-4">-var &quot;project_id=YOUR_PROJECT_ID&quot;</div>
 						</div>
@@ -268,7 +268,7 @@ export function GcpConnection({
 								/>
 							</div>
 						</div>
-						<p className="text-[11px] text-muted-foreground">
+						<p className="text-ui-xs text-muted-foreground">
 							Alethia builds the Workload Identity Federation config from these — no JSON to
 							paste. It stores only the trust config; no secret.
 						</p>
@@ -279,7 +279,7 @@ export function GcpConnection({
 					<button
 						type="button"
 						onClick={() => setRawMode((v) => !v)}
-						className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+						className="text-ui-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
 					>
 						{rawMode ? "Use the two-field form" : "Paste raw config JSON instead"}
 					</button>

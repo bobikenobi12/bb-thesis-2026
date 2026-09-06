@@ -9,6 +9,31 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
 
+# A superseded run is not evidence about the head of the branch, and while it keeps a runner it is
+# denying one to the run that is. `ci.yml` and `addon-render-determinism.yml` have carried this
+# since they were written; these seven did not, and the gap only became expensive when the queue
+# started landing PRs faster than a run takes to finish.
+#
+# MEASURED 2026-09-02 19:2xZ, with the dev queue draining: 48 runs queued against 2 in progress,
+# and the single largest group was 23 runs headed `dev` — the standing `dev → staging` promotion
+# PR #3562, which re-triggers every `pull_request` workflow on EVERY merge into dev. `CI` had
+# already cancelled its own superseded runs and showed 1; these seven each showed a full stack.
+#
+# Keyed on the PR NUMBER rather than `github.ref`, and this workflow is the ONE of the seven that
+# must be. The other six trigger on `pull_request`, where GitHub sets `GITHUB_REF` to
+# `refs/pull/<N>/merge` — already per-PR, so `github.ref` is correct there and should stay.
+# This one triggers on `pull_request_target`, where `GITHUB_REF` is the BASE branch instead. Every
+# open PR in the repo would therefore render the SAME group, `contribution-legal-refs/heads/dev`,
+# and each new PR would cancel the CLA check of every other open PR — strictly worse than the
+# queueing this comment was written to fix, and invisible until two PRs are open at once.
+#
+# `|| github.ref` covers any trigger with no pull-request context. Note that this form is NOT a
+# blanket improvement: `infra-sandbox.yml` and `infra-templates.yml` also fire on `push`, where the
+# number renders EMPTY, so sweeping them to it would collapse every push to `main` into one group.
+concurrency:
+  group: contribution-legal-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

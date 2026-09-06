@@ -11,7 +11,7 @@ import type { DashboardBlock } from "@/types/jsonb.types";
 
 /** Small empty-state line for blocks without enough data. */
 function BlockEmpty({ text }: { text: string }) {
-	return <div className="py-3 text-center text-[11px] text-muted-foreground">{text}</div>;
+	return <div className="py-3 text-center text-ui-xs text-muted-foreground">{text}</div>;
 }
 
 /** A stat block → a big mono value + optional caption. */
@@ -26,11 +26,11 @@ export function StatCard({
 }) {
 	return (
 		<div className="flex h-full flex-col justify-center px-3 py-3">
-			<div className="vx-eyebrow text-[9px]">{title}</div>
+			<div className="vx-eyebrow text-ui-3xs">{title}</div>
 			<div className="mt-1 truncate font-mono text-2xl font-semibold tracking-tight text-foreground">
 				{value}
 			</div>
-			{sub && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{sub}</div>}
+			{sub && <div className="mt-0.5 truncate text-ui-xs text-muted-foreground">{sub}</div>}
 		</div>
 	);
 }
@@ -49,7 +49,7 @@ export function BarChart({ data }: { data: Array<{ label: string; value: number 
 					className="flex min-w-0 flex-1 flex-col items-center gap-1"
 					title={`${d.label}: ${d.value}`}
 				>
-					<span className="font-mono text-[9px] text-muted-foreground">
+					<span className="font-mono text-ui-3xs text-muted-foreground">
 						{d.value}
 					</span>
 					<div className="flex w-full flex-1 items-end">
@@ -58,7 +58,7 @@ export function BarChart({ data }: { data: Array<{ label: string; value: number 
 							style={{ height: `${Math.max(2, (d.value / max) * 100)}%` }}
 						/>
 					</div>
-					<span className="w-full truncate text-center text-[9px] text-muted-foreground">
+					<span className="w-full truncate text-center text-ui-3xs text-muted-foreground">
 						{d.label}
 					</span>
 				</div>
@@ -125,7 +125,7 @@ export function KeyValueList({
 			{rows.map((r) => (
 				<div
 					key={r.label}
-					className="flex items-center justify-between gap-3 px-3 py-1.5 text-[12px]"
+					className="flex items-center justify-between gap-3 px-3 py-1.5 text-ui-sm"
 				>
 					<span className="truncate text-muted-foreground">{r.label}</span>
 					<span className="truncate font-mono text-foreground">{r.value}</span>

@@ -38,7 +38,7 @@
 #     and confirms each billable survivor before failing the step.
 #
 # Usage:
-#   ALETHIA_E2E_ENV=<run_id>-<attempt> ALETHIA_E2E_REGION=europe-west3 ./scripts/e2e/gcp-cleanup.sh
+#   ALETHIA_E2E_ENV=<run_id>-<attempt> ALETHIA_E2E_REGION=europe-west3-a ./scripts/e2e/gcp-cleanup.sh
 #   (positional $1 accepted for call-site symmetry with hcloud-cleanup.sh but IGNORED.)
 #   ALETHIA_E2E_PROJECT=<project_name>  # the project_name used in resource NAMES (optional; helps the
 #                                       # mid-destroy cluster reconstruction). Distinct from the GCP
@@ -89,7 +89,7 @@ SELF_TEST=0
 if [ "${1:-}" = "--self-test" ]; then
 	SELF_TEST=1
 	ALETHIA_E2E_ENV="selftest-4177-1"
-	ALETHIA_E2E_REGION="europe-west3"
+	ALETHIA_E2E_REGION="europe-west3-a"
 	# The probe retries are a real-cloud kindness (a transient 5xx must not red a healthy teardown)
 	# and pure dead time against a stub. The retry LOOP is still exercised; it just does not wait.
 	PROBE_RETRY_DELAY=0
@@ -97,11 +97,13 @@ fi
 
 ENV="${ALETHIA_E2E_ENV:-}"
 # Region is AUTHORITATIVE from ALETHIA_E2E_REGION only. A silent fallback to an ambient region that
-# differs from where the run provisioned would make the regional scoping wrong. It may be a REGION
-# (europe-west3) or a ZONE (europe-west3-a) — regional/global gcloud lists don't need it (we read
-# each resource's own location back), but the contract requires it be set so the run's region is
-# never ambiguous.
+# differs from where the run provisioned would make the regional scoping wrong. The nightly hands
+# this script the cluster's ZONE (europe-west3-a), while regional managed-service commands require
+# the parent REGION (europe-west3), so normalize the final `-<letter>` exactly once here.
 REGION="${ALETHIA_E2E_REGION:-}"
+case "$REGION" in
+*-[a-z]) REGION="${REGION%-?}" ;;
+esac
 # The project_name segment used in resource NAMES (gke-<short>-<ENV>-<project>). Optional — only used
 # to tighten the mid-destroy cluster/VPC reconstruction. NOT the GCP project ID.
 PROJECT_NAME="${ALETHIA_E2E_PROJECT:-}"
@@ -742,6 +744,19 @@ if [ "$PREFLIGHT" = "1" ]; then
 	[ "$DRY_RUN" = "1" ] && echo "  (DRY_RUN=1 — listing only, deleting nothing)"
 	orphans="$(list_orphan_envs || true)"
 	if [ -z "$orphans" ]; then
+		# ── REPORT BEFORE THE EARLY RETURN. ────────────────────────────────────────────────────
+		#
+		# This branch is reached BOTH when discovery answered "nothing" and when discovery never
+		# answered at all — an expired session or a throttled API yields an empty orphan list, and
+		# the ✓ line below then prints over an account nobody looked at, exit 0, with the
+		# `probe_warn_unverifiable` call at the bottom of this block never reached. That log is
+		# byte-identical to a genuinely empty account, and scripts/e2e/reaper-result.mjs recorded it
+		# as `clean` — evidence about resources that BILL.
+		#
+		# hcloud-cleanup.sh has always reported here; the other four did not. See
+		# scripts/e2e/lib/sweep-probe.sh's probe_report_discovery header for why the marker is
+		# positive rather than another warning.
+		probe_report_discovery gcp "the preflight orphan scan"
 		echo "✓ preflight: no prior-run e2e orphans — nothing to sweep"
 		exit 0
 	fi
@@ -786,7 +801,7 @@ if [ "$PREFLIGHT" = "1" ]; then
 		# ⚠️ Not "the project is clean" — "every orphan this preflight could SEE is swept". The
 		# discovery listings can fail too, and preflight is explicitly non-blocking, so the honest
 		# report here is a warning; the always() teardown is what gates.
-		probe_warn_unverifiable gcp "the preflight orphan scan"
+		probe_report_discovery gcp "the preflight orphan scan"
 		echo "✓ preflight complete — all prior-run e2e orphans swept"
 	fi
 	exit 0 # preflight never blocks the provisioning run
@@ -801,6 +816,12 @@ fi
 # varies only the output passes just as happily with the fix removed. ──
 if [ "$SELF_TEST" = "1" ]; then
 	st_fails=0
+	if [ "$REGION" = "europe-west3" ]; then
+		echo "  ✓ a zonal nightly location is normalized for regional cleanup commands"
+	else
+		echo "  ✗ zonal nightly location normalized to '${REGION}', want 'europe-west3'" >&2
+		st_fails=$((st_fails + 1))
+	fi
 	gc() {
 		if [ -n "$ST_OUT" ]; then printf '%s\n' "$ST_OUT"; fi
 		if [ "$ST_RC" -ne 0 ]; then printf '%s\n' "${ST_ERR:-ERROR: (gcloud) request failed}" >&2; fi

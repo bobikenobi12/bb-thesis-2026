@@ -7,6 +7,9 @@
 // opened. Individual resource names aren't resolved (they live across ~14 tables) — the
 // per-kind counts are the honest, cheap answer.
 
+import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Sheet, SheetContent } from "@repo/ui/sheet";
 import { Skeleton } from "@repo/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
@@ -45,15 +48,19 @@ export function ValueDrillDrawer({
 						<div className="sticky top-0 border-b bg-surface-raised px-5 pb-4 pt-[18px]">
 							<div className="flex items-start justify-between gap-3">
 								<div>
-									<div className="mb-[7px] font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-tertiary">
+									<div className="mb-[7px] font-mono text-ui-3xs uppercase tracking-[0.14em] text-text-tertiary">
 										{dimensionLabel} · value
 									</div>
-									<div className="flex items-center gap-2.5">
-										<h3 className="m-0 font-display text-lg font-semibold tracking-tight">
-											{value.label}
-										</h3>
-									</div>
-									<div className="mt-1.5 text-[12px] text-text-secondary">
+									{/* A SHEET title, which packages/brand/src/tokens.css names as the
+									    --text-ui-xl role — the rung this drawer wrote as Tailwind's 18px
+									    text-lg. The slot override takes the rung; the tag and the layout
+									    come from the shared component. */}
+									<SectionHeading
+										level={3}
+										title={value.label}
+										className="[&_[data-slot=section-heading-title]]:text-ui-xl [&_[data-slot=section-heading-title]]:font-semibold"
+									/>
+									<div className="mt-1.5 text-ui-sm text-text-secondary">
 										{isPending
 											? "Loading…"
 											: isError
@@ -84,27 +91,21 @@ export function ValueDrillDrawer({
 							) : isError ? (
 								// A fetch failure must not read as "no resources use this value" — that would
 								// wrongly invite deleting a value that may be in use.
-								<div className="px-4 py-9 text-center">
-									<div className="mb-1.5 text-[13px] text-text-secondary">
-										Couldn&apos;t load which resources use this value.
-									</div>
-									<button
-										type="button"
-										onClick={() => void refetch()}
-										className="text-[11.5px] text-text-primary underline-offset-2 hover:underline"
-									>
-										Retry
-									</button>
-								</div>
+								<EmptyState
+									className="px-4 py-9 md:p-9"
+									title="Couldn't load which resources use this value."
+									action={
+										<Button variant="outline" size="sm" onClick={() => void refetch()}>
+											Retry
+										</Button>
+									}
+								/>
 							) : total === 0 ? (
-								<div className="px-4 py-9 text-center">
-									<div className="mb-1.5 text-[13px] text-text-secondary">
-										No resources use this value.
-									</div>
-									<div className="text-[11.5px] text-text-tertiary">
-										Unused values are safe to delete or repurpose.
-									</div>
-								</div>
+								<EmptyState
+									className="px-4 py-9 md:p-9"
+									title="No resources use this value."
+									description="Unused values are safe to delete or repurpose."
+								/>
 							) : (
 								(data ?? []).map((r) => (
 									<div
@@ -115,14 +116,14 @@ export function ValueDrillDrawer({
 											<Boxes className="size-3.5" />
 										</span>
 										<div className="min-w-0 flex-1">
-											<div className="text-[13px] font-medium text-text-primary">
+											<div className="text-ui-md font-medium text-text-primary">
 												{kindLabel(r.resource_kind)}
 											</div>
-											<div className="font-mono text-[10.5px] text-text-tertiary">
+											<div className="font-mono text-ui-2xs text-text-tertiary">
 												{r.resource_kind}
 											</div>
 										</div>
-										<span className="font-mono text-[13px] text-text-secondary">
+										<span className="font-mono text-ui-md text-text-secondary">
 											{r.count}
 										</span>
 									</div>

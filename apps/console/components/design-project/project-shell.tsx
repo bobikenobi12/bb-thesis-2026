@@ -17,6 +17,7 @@ import {
 	CanvasDock,
 	useDockState,
 } from "@/components/design-project/canvas/canvas-dock";
+import { CONTENT_FRAME } from "@/components/shell/content-frame";
 import { EMPTY_ENVIRONMENT_STATUS } from "@/lib/canvas/component-status";
 import { EnvironmentStatusProvider } from "@/lib/canvas/environment-status-context";
 import { useEnvironmentStatusQuery } from "@/lib/query/use-environment-status-query";
@@ -78,12 +79,15 @@ export function ProjectShell({
 						dock && "border-r border-border",
 					)}
 				>
-					{/* Architecture fills the board full-bleed; other views scroll with padding. */}
+					{/* Architecture fills the board full-bleed — a pan/zoom canvas has no document
+					    width, and centring it inside CONTENT_FRAME would leave gutters the board is
+					    meant to use. Every other project view is a document and gets the console's
+					    one content frame, the same 1200px SettingsShell and SupportShell own. */}
 					{onArchitecture ? (
 						<div className="h-full">{children}</div>
 					) : (
 						<div className="h-full overflow-y-auto p-4 sm:p-6 lg:p-8 xl:p-10">
-							{children}
+							<div className={CONTENT_FRAME}>{children}</div>
 						</div>
 					)}
 				</div>

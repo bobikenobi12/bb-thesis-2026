@@ -91,7 +91,7 @@ export function orgRenderToolPart({
 							<Button
 								variant="outline"
 								size="sm"
-								className="h-6 gap-1.5 rounded-none px-2 text-[11px]"
+								className="h-6 gap-1.5 rounded-none px-2 text-ui-xs"
 								nativeButton={false}
 								render={<Link href={parsed.data.openInCanvasUrl} />}
 							>
@@ -130,7 +130,7 @@ export function orgRenderToolPart({
 						<Button
 							variant="outline"
 							size="sm"
-							className="h-6 gap-1.5 rounded-none px-2 text-[11px]"
+							className="h-6 gap-1.5 rounded-none px-2 text-ui-xs"
 							onClick={onOpen}
 						>
 							<PanelRight className="h-3 w-3" />

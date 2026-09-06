@@ -11,14 +11,16 @@ import (
 var opsOrphanDetectCmd = &cobra.Command{
 	Use:   "orphan-detect",
 	Short: "List orphan candidates for a single project (read-only, run-scoped; blast: none)",
+	Long: "List cached cloud resources for one project's run scope whose environment is gone or\n" +
+		"destroyed. Read-only and run-scoped — never account-wide.",
+	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		reason, _ := cmd.Flags().GetString("reason")
-		project, _ := cmd.Flags().GetString("project")
-		if project == "" {
-			failf("--project <id> is required (orphan detection is run-scoped, never account-wide)")
-		}
-		input := &api.BreakglassActionInput{ProjectID: project}
-		runOpsAction("orphan_detect", "", reason, "", input, true)
+		reason := opsReason(cmd)
+		project := opsResolveProjectID(cmd)
+		runOpsAction(opsRequest{
+			Cmd: cmd, Reason: reason,
+			Input: &api.BreakglassActionInput{ProjectID: project},
+		})
 	},
 }
 
@@ -28,28 +30,22 @@ var opsOrphanCleanCmd = &cobra.Command{
 	Long: "Cross-cloud force-destroy — the most dangerous action. Ships INERT: it refuses unless the\n" +
 		"deployment is separately armed (ALETHIA_BREAKGLASS_ORPHAN_CLEAN_ENABLED), and even then is\n" +
 		"unimplemented rather than performing an unscoped delete. Requires a two-person --approval.",
+	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		reason, _ := cmd.Flags().GetString("reason")
-		project, _ := cmd.Flags().GetString("project")
-		approval, _ := cmd.Flags().GetString("approval")
-		if project == "" {
-			failf("--project <id> is required (run-scoped, never account-wide)")
-		}
-		if approval == "" {
-			failf("--approval <id> is required (high-blast, two-person).")
-		}
-		input := &api.BreakglassActionInput{ProjectID: project}
+		reason := opsReason(cmd)
+		project := opsResolveProjectID(cmd)
+		approval := opsApproval(cmd)
 		// Bind the approval + audit to the project scope (resourceId == project).
-		runOpsAction("orphan_clean", project, reason, approval, input, false)
+		runOpsAction(opsRequest{
+			Cmd: cmd, ResourceID: project, Reason: reason, ApprovalID: approval,
+			Input:       &api.BreakglassActionInput{ProjectID: project},
+			Resource:    "project " + project,
+			Consequence: "Every orphan detected in this project is force-destroyed across clouds; the resources do not come back",
+		})
 	},
 }
 
 func init() {
-	for _, c := range []*cobra.Command{opsOrphanDetectCmd, opsOrphanCleanCmd} {
-		c.Flags().String("reason", "", "Incident reason recorded in the immutable audit (required)")
-		c.Flags().String("project", "", "Project id to scope the scan/clean to (required)")
-	}
-	opsOrphanCleanCmd.Flags().String("approval", "", "Two-person approval token id (required)")
-	opsCmd.AddCommand(opsOrphanDetectCmd)
-	opsCmd.AddCommand(opsOrphanCleanCmd)
+	registerOpsVerb(opsOrphanDetectCmd)
+	registerOpsVerb(opsOrphanCleanCmd)
 }

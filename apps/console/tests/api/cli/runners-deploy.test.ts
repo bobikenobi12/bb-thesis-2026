@@ -17,6 +17,7 @@ vi.mock("@/lib/scaler", () => ({ notifyScaler: vi.fn() }));
 
 import { POST } from "@/app/api/cli/runners/deploy/route";
 import { authorizeCli } from "@/lib/authz/guard";
+import { assertRunnerInOrg } from "@/lib/authz/runner-org";
 import { assertJobQuotaAllowed } from "@/lib/billing/job-quota";
 import { getServiceDb } from "@/lib/db";
 import { notifyScaler } from "@/lib/scaler";
@@ -86,6 +87,55 @@ describe("POST /api/cli/runners/deploy", () => {
 			region: "us-east-1",
 		});
 		expect(notifyScaler).toHaveBeenCalledTimes(1);
+	});
+
+	// ── #3874: both inserts carry the ACTOR's org, explicitly ──────────────────────────────
+	//
+	// Both run on getServiceDb() — a role that bypasses RLS and sets no `app.current_org` —
+	// so the set_org_id triggers fell through to `NEW.user_id` and put a Teams member's runner
+	// AND its job in their personal org. They matched each other, which is why the pair worked:
+	// both were wrong in the same direction. `claim_next_job` compares `j.org_id =
+	// v_runner_org_id` as a hard equality, so the two stamps must agree — and the point of
+	// stamping them in one request is that they agree BY CONSTRUCTION rather than by both
+	// falling through the same branch.
+	it("stamps the runners row and the jobs row with the SAME actor org", async () => {
+		mock.queue.push(
+			[{ id: "ci-1", provider: "aws", org_id: "org-1" }], // identity lookup
+			[{ version: "1.4.0" }], // latest release
+			[{ id: "r-dep", name: "Cloud" }], // runner insert
+			[{ id: "job-1", status: "QUEUED", created_at: new Date() }], // job insert
+		);
+		expect((await POST(req(DEPLOY))).status).toBe(201);
+
+		const runnerValues = mock.valuesSpy.mock.calls[0][0];
+		const jobValues = mock.valuesSpy.mock.calls[1][0];
+		expect(runnerValues.org_id).toBe("org-1");
+		expect(jobValues.org_id).toBe("org-1");
+		// The pair, asserted as a pair — the equality claim_next_job evaluates.
+		expect(jobValues.org_id).toBe(runnerValues.org_id);
+		// And NOT the personal org the trigger would otherwise have chosen.
+		expect(jobValues.org_id).not.toBe("user-1");
+		expect(runnerValues.org_id).not.toBe("user-1");
+	});
+
+	// The caller-owned legacy admission pairs with claim_next_job's lifecycle-only compatibility.
+	it("admits the caller's pre-#3874 assigned runner", async () => {
+		mock.queue.push(
+			[{ id: "ci-1", provider: "aws", org_id: "org-1" }],
+			[{ version: "1.4.0" }],
+			[{ id: "r-dep", name: "Cloud" }],
+			[{ id: "job-1", status: "QUEUED", created_at: new Date() }],
+		);
+		expect(
+			(await POST(req({ ...DEPLOY, assigned_runner_id: "runner-x" }))).status,
+		).toBe(201);
+
+		expect(assertRunnerInOrg).toHaveBeenCalledWith(
+			expect.anything(),
+			"runner-x",
+			"org-1",
+			"user-1",
+		);
 	});
 
 	it("400s a cloud with no runner template, before inserting anything", async () => {

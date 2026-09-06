@@ -9,11 +9,20 @@ import { and, desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { authorizeCli } from "@/lib/authz/guard";
+import {
+	type CursorScope,
+	MAX_PAGE_SIZE,
+	cursorKey,
+	paginate,
+	parsePageOpts,
+} from "@/lib/cli/paging";
 import { resolveCliEnvironment, resolveCliProject } from "@/lib/cli/resolve-project";
 import { cliJson } from "@/lib/cli/respond";
 import { getServiceDb } from "@/lib/db";
 import { environmentPromotions, projectEnvironments, projects } from "@/lib/db/schema";
 import { cliPromotionsResponse } from "@/lib/validations/cli-contract";
+
+const PROMOTIONS_LIST = "project-promotions";
 
 export async function GET(
 	req: Request,
@@ -23,7 +32,19 @@ export async function GET(
 	if ("error" in auth) return auth.error;
 	const { actor } = auth;
 	const { id } = await params;
-	const envParam = new URL(req.url).searchParams.get("env");
+	const { searchParams } = new URL(req.url);
+	const envParam = searchParams.get("env");
+	const cursorScope: CursorScope = { orgId: actor.orgId, list: PROMOTIONS_LIST };
+	const parsed = parsePageOpts(searchParams, cursorScope);
+	if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+	const asked = (key: string) => {
+		const raw = searchParams.get(key);
+		return raw !== null && raw !== "";
+	};
+	const opts =
+		!asked("limit") && !asked("cursor")
+			? { ...parsed.opts, limit: MAX_PAGE_SIZE }
+			: parsed.opts;
 
 	try {
 		const project = await resolveCliProject(actor.orgId, id);
@@ -46,33 +67,43 @@ export async function GET(
 		const srcEnv = alias(projectEnvironments, "src_env");
 		const tgtEnv = alias(projectEnvironments, "tgt_env");
 		const db = getServiceDb();
-		const rows = await db
-			.select({
-				id: environmentPromotions.id,
-				source: srcEnv.name,
-				target: tgtEnv.name,
-				status: environmentPromotions.status,
-				error_message: environmentPromotions.error_message,
-				created_at: environmentPromotions.created_at,
-				completed_at: environmentPromotions.completed_at,
-			})
-			.from(environmentPromotions)
-			.innerJoin(projects, eq(environmentPromotions.project_id, projects.id))
-			.leftJoin(srcEnv, eq(environmentPromotions.source_environment_id, srcEnv.id))
-			.leftJoin(tgtEnv, eq(environmentPromotions.target_environment_id, tgtEnv.id))
-			.where(
-				and(
-					eq(environmentPromotions.project_id, project.id),
-					eq(projects.org_id, actor.orgId),
-					...(targetEnvId
-						? [eq(environmentPromotions.target_environment_id, targetEnvId)]
-						: []),
-				),
-			)
-			.orderBy(desc(environmentPromotions.created_at));
+		const { items, page } = await paginate({
+			db,
+			table: environmentPromotions,
+			createdAt: environmentPromotions.created_at,
+			id: environmentPromotions.id,
+			scope: [
+				eq(environmentPromotions.project_id, project.id),
+				...(targetEnvId
+					? [eq(environmentPromotions.target_environment_id, targetEnvId)]
+					: []),
+			],
+			cursor: cursorScope,
+			opts,
+			rows: (query) =>
+				db
+					.select({
+						id: environmentPromotions.id,
+						source: srcEnv.name,
+						target: tgtEnv.name,
+						status: environmentPromotions.status,
+						error_message: environmentPromotions.error_message,
+						created_at: environmentPromotions.created_at,
+						completed_at: environmentPromotions.completed_at,
+						cursor_key: cursorKey(environmentPromotions.created_at),
+					})
+					.from(environmentPromotions)
+					.innerJoin(projects, eq(environmentPromotions.project_id, projects.id))
+					.leftJoin(srcEnv, eq(environmentPromotions.source_environment_id, srcEnv.id))
+					.leftJoin(tgtEnv, eq(environmentPromotions.target_environment_id, tgtEnv.id))
+					.where(and(query.where, eq(projects.org_id, actor.orgId)))
+					.orderBy(...query.orderBy)
+					.limit(query.limit),
+			positionOf: (row) => ({ createdAt: row.cursor_key, id: row.id }),
+		});
 
 		return cliJson(cliPromotionsResponse, {
-			promotions: rows.map((r) => ({
+			promotions: items.map(({ cursor_key: _cursor, ...r }) => ({
 				id: r.id,
 				source: r.source ?? "—",
 				target: r.target ?? "—",
@@ -81,6 +112,7 @@ export async function GET(
 				created_at: r.created_at.toISOString(),
 				completed_at: r.completed_at?.toISOString() ?? null,
 			})),
+			page,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : "Internal Server Error";

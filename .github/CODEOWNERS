@@ -20,6 +20,11 @@
 # DB schema / migrations — linear-chain sensitive.
 /apps/console/lib/db/       @bobikenobi12
 
+# The cross-surface formatter contract. Regenerating format-cases.json rewrites an
+# EXPECTATION that packages/core/format (Go) is held to — and `--write` is exactly what
+# somebody runs when the Go test is red. A review request on every such change.
+/packages/format/conformance/ @bobikenobi12
+
 # Open-core and legal boundary — changes alter rights or paid-feature isolation.
 /ee/                        @bobikenobi12
 /LICENSE                    @bobikenobi12

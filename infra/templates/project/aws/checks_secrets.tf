@@ -10,7 +10,7 @@
 # the AWS ClusterSecretStore is (correctly) not rendered and ExternalSecrets can never sync.
 check "eks_irsa_external_secrets_arn_present" {
   assert {
-    condition     = !var.provision_eks || length(trimspace(try(module.eks[0].eks_irsa_external_secrets_arn, ""))) > 0
+    condition     = !var.provision_eks || length(trimspace(try(module.eks[0].eks_irsa_external_secrets_arn, null) != null ? module.eks[0].eks_irsa_external_secrets_arn : "")) > 0
     error_message = "provision_eks is true but the external-secrets IRSA role reported no ARN — the ESO ClusterSecretStore cannot authenticate."
   }
 }

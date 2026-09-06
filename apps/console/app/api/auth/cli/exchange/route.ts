@@ -1,27 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import * as jose from "jose";
 import { env } from "next-runtime-env";
 import {
 	CLI_DEVICE_RATE_LIMIT,
-	cliDeviceRateLimitKey,
+	DEVICE_ACCESS_DENIED,
+	deviceCodeFail,
 	isDeviceCodeExpired,
 	isValidDeviceCode,
 } from "@/lib/auth/cli-device-code";
+import { cliDeviceRateLimitKey } from "@/lib/auth/trusted-ip";
 import { getServiceDb } from "@/lib/db";
 import { cliLogins, profiles } from "@/lib/db/schema";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
-
-/** JSON error helper — every failure arm answers in the same shape. */
-function fail(error: string, status: number) {
-	return new Response(JSON.stringify({ error }), {
-		status,
-		headers: { "Content-Type": "application/json" },
-	});
-}
 
 /**
  * Redeems an approved device code for a CLI token pair. Single-use: the row is claimed
@@ -37,7 +31,7 @@ export async function POST(req: Request) {
 	const jwtSecret = env("CLI_JWT_SECRET");
 	if (!jwtSecret) {
 		console.error("CLI_JWT_SECRET is not set in environment variables.");
-		return fail("Internal server configuration error", 500);
+		return deviceCodeFail("Internal server configuration error", 500);
 	}
 
 	const limitKey = cliDeviceRateLimitKey("exchange", req.headers);
@@ -49,25 +43,39 @@ export async function POST(req: Request) {
 			CLI_DEVICE_RATE_LIMIT.windowMs,
 		).ok
 	) {
-		return fail("Too many requests", 429);
+		return deviceCodeFail("Too many requests", 429);
 	}
 
 	const body = await req.json().catch(() => null);
 	const device_code = body?.device_code;
 
 	if (!isValidDeviceCode(device_code)) {
-		return fail("Missing or malformed device_code", 400);
+		return deviceCodeFail("Missing or malformed device_code", 400);
 	}
 
 	const db = getServiceDb();
 
 	// 2. Claim the approved login record atomically. The previous select-then-delete let
 	// two concurrent POSTs both read the row and BOTH mint a full token pair; a DELETE …
-	// RETURNING can only succeed once. Rows exist only once /cli/login has approved them,
-	// so a claim that returns nothing means "not approved yet".
+	// RETURNING can only succeed once.
+	//
+	// The predicate is narrowed to APPROVED, UNREFUSED rows, and both halves are load-
+	// bearing now that a row can exist before anybody has pressed anything:
+	//
+	//   profile_id IS NOT NULL — a pending registration is what the consent screen renders
+	//   from. An unnarrowed DELETE would remove it on the CLI's very first poll, two seconds
+	//   after the browser opened, and the screen would lose its contents mid-decision.
+	//   denied_at IS NULL — a refusal has to SURVIVE being polled, or the terminal would see
+	//   it once and every later poll would read as "pending" again.
 	const [claimed] = await db
 		.delete(cliLogins)
-		.where(eq(cliLogins.device_code, device_code))
+		.where(
+			and(
+				eq(cliLogins.device_code, device_code),
+				isNotNull(cliLogins.profile_id),
+				isNull(cliLogins.denied_at),
+			),
+		)
 		.returning({
 			profile_id: cliLogins.profile_id,
 			verification_code: cliLogins.verification_code,
@@ -76,13 +84,30 @@ export async function POST(req: Request) {
 		});
 
 	if (!claimed?.profile_id) {
-		return fail("Authentication pending or not found", 404);
+		// Nothing was claimable, and that is TWO different answers: "still pending" or "the
+		// user refused". RFC 8628 §3.5 makes `access_denied` terminal, so the CLI can stop
+		// instead of spinning to its own ten-minute timeout while the person who pressed
+		// "This isn't me" believes their refusal did something.
+		const [state] = await db
+			.select({ denied_at: cliLogins.denied_at })
+			.from(cliLogins)
+			.where(eq(cliLogins.device_code, device_code))
+			.limit(1);
+
+		if (state?.denied_at) {
+			return deviceCodeFail(
+				DEVICE_ACCESS_DENIED,
+				403,
+				"The sign-in was refused in the browser.",
+			);
+		}
+		return deviceCodeFail("Authentication pending or not found", 404);
 	}
 
 	// 3. An expired code is unusable — and already consumed above. 410 (not 404), because
 	// the CLI treats 404 as "still pending" and would spin on it forever.
 	if (isDeviceCodeExpired(claimed)) {
-		return fail("This device code has expired — run `alethia login` again", 410);
+		return deviceCodeFail("This device code has expired — run `alethia login` again", 410);
 	}
 
 	// A DELETE … RETURNING cannot join, so resolve the email in its own query.

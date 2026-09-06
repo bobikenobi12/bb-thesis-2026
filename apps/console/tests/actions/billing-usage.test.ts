@@ -248,9 +248,9 @@ describe("subscription guards", () => {
 
 	it("createSubscriptionIntent refuses the personal scope", async () => {
 		authz.mockResolvedValue({ orgId: "user-1", userId: "user-1" } as never);
-		await expect(createSubscriptionIntent("team")).rejects.toThrow(
-			/Create an organization/,
-		);
+		await expect(createSubscriptionIntent("team")).resolves.toEqual({
+			error: "Create an organization before subscribing to a plan.",
+		});
 	});
 
 	it("createSubscriptionIntent refuses an org with a live subscription", async () => {
@@ -258,9 +258,9 @@ describe("subscription guards", () => {
 		orgBilling.mockResolvedValue(
 			billing({ status: "active", stripeSubscriptionId: "sub_live" }),
 		);
-		await expect(createSubscriptionIntent("team")).rejects.toThrow(
-			/already has an active subscription/,
-		);
+		await expect(createSubscriptionIntent("team")).resolves.toEqual({
+			error: "This organization already has an active subscription — change the plan instead.",
+		});
 	});
 
 	it("startProTrial refuses the personal scope", async () => {

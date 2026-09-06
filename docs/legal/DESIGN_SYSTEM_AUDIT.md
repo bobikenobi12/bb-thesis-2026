@@ -66,6 +66,36 @@ common geometry mean the current symbol may be weak and difficult to own
 broadly. Required action: keep the wordmark usable, prepare a non-bracket
 replacement concept, and obtain a professional figurative search before filing.
 
+## Connector marks record
+
+Added 2 September 2026 (issue #3802). The connector catalog
+(`packages/core/categories/catalog.json`) named 18 icon slugs while
+`packages/assets/static/icons/` held 9, so 19 catalog rows asserted a path with
+no file behind it. Eighteen of them now declare `icon_url: null`, which the
+console renders as a monogram tile; one (`docr`) was repointed to
+`/digitalocean/favicon_64x64.png`. `apps/console/scripts/gen-connectors.mjs`
+refuses a path that does not resolve. No third-party mark was added, because an
+engineering review on 2 September 2026 could not establish permissive terms for
+any of them:
+
+| Slug(s) | Owner | Finding |
+|---|---|---|
+| `ecr-xacct`, `oci-ecr`, `oci-public-ecr`, `aws-sm-xacct` / `gar-xacct`, `gcp-sm-xacct` / `acr-xacct`, `azure-kv-xacct` | AWS · Google · Microsoft | Hyperscaler marks carry materially stricter terms than the OSS ones. Held for a maintainer/counsel decision, not a lane's. Note that `/aws`, `/gcp` and `/azure/favicon_64x64.png` already ship and already render for the built-in cloud rows, and `alibaba-kms-xacct` already reuses `/alibaba/favicon_64x64.png` — so a decision to reuse those files would add no new asset. |
+| `harbor` | CNCF / Linux Foundation | `cncf/artwork` carries no LICENSE file. The Linux Foundation trademark usage policy forbids using a Foundation logo "on posters, brochures, signs, websites, or other marketing materials to promote your events, products or services without written permission", and forbids displaying a logo "with colour variations" — the console renders connector marks grayscale by default. Not established as permissive. |
+| `quay` | Red Hat, Inc. | Red Hat logo use requires written permission. |
+| `infisical` | Infisical Inc. | Repository is MIT, which grants no trademark rights; no separate brand grant found. |
+| `doppler`, `onepassword`, `scaleway-cr` | Doppler · 1Password · Scaleway | No public grant found permitting a third party to embed the mark in a commercial product UI. |
+| `generic-cr`, `oci-generic-cr`, `helm-https` | none | Not a brand at all — a neutral in-house glyph would carry no trademark question. Not authored here. |
+| `docr` | DigitalOcean, LLC | Repointed to the already-committed `/digitalocean/favicon_64x64.png` that the built-in `digitalocean` cloud row already renders. No new asset. |
+
+Two open items for the maintainer. First, the nine marks that already ship
+(`bitbucket`, `cloudflare`, `datadog`, `dockerhub`, `github`, `gitlab`,
+`grafana`, `prometheus`, `vault`) predate this record and were not cleared
+against the same test; `prometheus` and `vault` in particular sit under the
+Linux Foundation policy quoted above, and the grayscale rendering applies to all
+nine. Second, whether reusing an already-committed hyperscaler favicon for the
+cross-account rows is acceptable is the decision held above.
+
 ## Release and change controls
 
 1. Every new asset records creator, date, source, tools, licence, and assignment.

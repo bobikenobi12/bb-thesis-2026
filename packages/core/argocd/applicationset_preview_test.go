@@ -36,20 +36,20 @@ func TestRenderPreviewApplicationSet_Namespace(t *testing.T) {
 		"goTemplate: true",
 		"- pullRequest:",
 		"github:",
-		"owner: acme",
-		"repo: shop",
-		"secretName: preview-scm-token",
+		"owner: 'acme'",
+		"repo: 'shop'",
+		"secretName: 'preview-scm-token'",
 		"requeueAfterSeconds: 60",
 		"name: 'preview-demo-{{ .number }}'", // ArgoCD placeholder, NOT Alethia-resolved
-		"repoURL: https://github.com/acme/shop",
+		`repoURL: "https://github.com/acme/shop"`,
 		"targetRevision: '{{ .head_sha }}'", // deploys the PR's head_sha
 		"path: 'deploy'",
-		"server: https://kubernetes.default.svc",
+		"server: 'https://kubernetes.default.svc'",
 		"namespace: 'preview-{{ .number }}'",
 		"project: preview-apps-demo", // #887: hardened project, NOT the wide-open "apps"
 		"CreateNamespace=false",      // #887: the guardrails ApplicationSet owns the namespace
 		"prune: true",
-		"alethia.io/project: \"demo\"", // label propagated
+		`"alethia.io/project": "demo"`, // label propagated
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered ApplicationSet missing %q\n---\n%s", want, out)
@@ -78,13 +78,13 @@ func TestRenderPreviewApplicationSet_Vcluster(t *testing.T) {
 	}
 	for _, want := range []string{
 		"name: 'preview-host-{{ .number }}'", // vcluster destination is by cluster name, per-PR
-		"namespace: preview",
+		"namespace: 'preview'",               // quoted, like the namespace arm — an unquoted `-` was not even valid YAML
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("vcluster ApplicationSet missing %q\n---\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "server: https://kubernetes.default.svc") {
+	if strings.Contains(out, "server: 'https://kubernetes.default.svc'") {
 		t.Errorf("vcluster placement should not emit a server destination:\n%s", out)
 	}
 }

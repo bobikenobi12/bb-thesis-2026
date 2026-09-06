@@ -6,7 +6,7 @@
 // (lib/query/README.md → "Server-side filters"): a URL-synced zustand store → debounce →
 // `normalizeTeamsQuery` → `qk.teams(org, q)` → TanStack Query. Replaces the page's own
 // fetch-into-useState + un-debounced `.includes()` filter and its banned stat-card strip; the
-// result count now lives in the PageHeader's count pill, which is where the standard puts it.
+// result count now lives in the page toolbar's count pill, which is where the standard puts it.
 //
 // Wired to the real backend: getTeams (name + members) + better-auth createTeam/removeTeam +
 // ManageTeamDialog (add/remove members). The design's per-team description, stored slug and
@@ -43,7 +43,7 @@ import { EmptyState } from "@repo/ui/empty";
 import { FacetFilter } from "@repo/ui/facet-filter";
 import { FilterBar, FilterBarReset } from "@repo/ui/filter-bar";
 import { FilterSearch } from "@repo/ui/filter-search";
-import { PageHeader } from "@repo/ui/page-header";
+import { PageToolbar } from "@repo/ui/page-toolbar";
 import { Skeleton } from "@repo/ui/skeleton";
 import { useEntitlement } from "@/components/settings/enterprise-gate";
 import { FeatureUpsell } from "@/components/settings/upgrade/feature-upsell";
@@ -52,7 +52,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFilterUrlSync } from "@/hooks/use-filter-url-sync";
 import { authClient } from "@/lib/auth/client";
 import { qk } from "@/lib/query/keys";
-import { slugify } from "@/lib/slug";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { countActiveFilters } from "@/lib/stores/create-filter-store";
 import { useTeamsFilters } from "@/lib/stores/use-settings-filters";
 import { cn } from "@repo/ui/utils";
@@ -148,15 +148,15 @@ export function TeamsList() {
 				const t = row.original;
 				return (
 					<div className="flex min-w-0 items-center gap-3">
-						<span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink font-display text-[12px] font-semibold text-ink-foreground">
+						<span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-ink font-display text-ui-sm font-semibold text-ink-foreground">
 							{monogram(t.name)}
 						</span>
 						<div className="flex min-w-0 flex-col">
-							<span className="truncate text-[13px] font-medium text-text-primary">
+							<span className="truncate text-ui-md font-medium text-text-primary">
 								{t.name}
 							</span>
-							<span className="font-mono text-[10.5px] text-text-tertiary">
-								{slugify(t.name)}
+							<span className="font-mono text-ui-2xs text-text-tertiary">
+								{slugifyOrEmpty(t.name)}
 							</span>
 						</div>
 					</div>
@@ -175,19 +175,19 @@ export function TeamsList() {
 								{t.members.slice(0, 4).map((m) => (
 									<span
 										key={m.userId}
-										className="flex size-6 items-center justify-center rounded-full border-2 border-surface bg-surface-muted font-mono text-[9.5px] text-text-secondary"
+										className="flex size-6 items-center justify-center rounded-full border-2 border-surface bg-surface-muted font-mono text-ui-3xs text-text-secondary"
 									>
 										{m.initials}
 									</span>
 								))}
 								{t.members.length > 4 && (
-									<span className="flex size-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken font-mono text-[9.5px] text-text-tertiary">
+									<span className="flex size-6 items-center justify-center rounded-full border-2 border-surface bg-surface-sunken font-mono text-ui-3xs text-text-tertiary">
 										+{t.members.length - 4}
 									</span>
 								)}
 							</div>
 						)}
-						<span className="whitespace-nowrap font-mono text-[11px] text-text-tertiary">
+						<span className="whitespace-nowrap font-mono text-ui-xs text-text-tertiary">
 							{t.memberCount} member{t.memberCount === 1 ? "" : "s"}
 						</span>
 					</div>
@@ -265,9 +265,8 @@ export function TeamsList() {
 
 	return (
 		<div>
-			<PageHeader
+			<PageToolbar
 				className="mb-4"
-				title="Teams"
 				description="Grant access to a group of members at once."
 				count={rows.length}
 				actions={createAction}
@@ -299,12 +298,12 @@ export function TeamsList() {
 			{/* inline create panel */}
 			{entitled && creating && (
 				<div className="mb-4 rounded-lg border border-border bg-surface p-4 shadow-sm">
-					<p className="mb-3 text-[13px] font-medium text-text-primary">New team</p>
+					<p className="mb-3 text-ui-md font-medium text-text-primary">New team</p>
 					<div className="flex flex-col gap-3 sm:flex-row sm:items-end">
 						<div className="flex-1">
 							<label
 								htmlFor="team-name"
-								className="mb-1.5 block text-[11.5px] text-text-tertiary"
+								className="mb-1.5 block text-ui-xs text-text-tertiary"
 							>
 								Team name
 							</label>

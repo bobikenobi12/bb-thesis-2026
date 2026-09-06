@@ -42,3 +42,9 @@ ALETHIA_E2E_B6_REQUIRE
 ALETHIA_E2E_HCLOUD_REGION
 # The workflow's `region` input already reaches hetzner; a second name for the same thing would let
 # a dispatch set one and the harness read the other.
+
+# The cli-demo connector beat's lift. The beat drives `connector <cloud>`, whose success depends on the
+# e2e console's OIDC issuer being trusted by that cloud — and this console runs at localhost:3000 with no
+# signing key, so the beat cannot complete in the nightly at any price. Left unwired ON PURPOSE: wiring it
+# would make a paid connector dispatch reachable from CI before the identity it depends on exists.
+ALETHIA_E2E_CLI_DEMO_ISSUER_TRUSTED

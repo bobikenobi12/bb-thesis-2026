@@ -6,7 +6,7 @@
 // (lib/config/ai `getExecutorModel()` → `@ai-sdk/anthropic` → api.anthropic.com, no
 // Vercel AI Gateway). Gated behind ELENCH_LIVE=1 and a direct Anthropic key so it is
 // SKIPPED in normal CI (it makes a non-deterministic, credit-spending network call).
-// Run explicitly: ELENCH_LIVE=1 ANTHROPIC_API_KEY=sk-ant-… pnpm -F console \
+// Run explicitly: ELENCH_LIVE=1 ANTHROPIC_API_KEY=sk-ant-… pnpm -C apps/console \
 //   exec vitest run tests/lib/agent/llm-live.test.ts
 
 import { generateText } from "ai";

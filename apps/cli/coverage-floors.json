@@ -17,16 +17,16 @@
       "total": 1
     },
     "cmd": {
-      "covered": 3096,
-      "total": 3115
+      "covered": 3782,
+      "total": 3814
     },
     "internal/cloudshell": {
       "covered": 135,
       "total": 138
     },
     "internal/update": {
-      "covered": 63,
-      "total": 90
+      "covered": 256,
+      "total": 357
     },
     "pkg/utils/ui": {
       "covered": 290,

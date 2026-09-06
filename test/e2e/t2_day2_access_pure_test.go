@@ -373,16 +373,35 @@ func TestDay2AccessIsReservedInTheLadder(t *testing.T) {
 	if got, want := withURL.Ctx-on.Ctx, Day2URLTimeout(); got != want {
 		t.Errorf("a run that WILL probe the URL reserved %s for it, want %s", got, want)
 	}
+	if !t2BudgetHasTerm(withURL, "day2-url") {
+		t.Error("a run that WILL probe the URL has no `day2-url` term in the ladder")
+	}
 
 	t.Setenv("ALETHIA_E2E_MAX_CONFIG", "1")
 	maxCfg, err := ResolveT2Budget("aws", "ladder")
 	if err != nil {
 		t.Fatalf("acm on, max-config on: %v", err)
 	}
-	if maxCfg.Ctx >= withURL.Ctx {
-		t.Errorf("max-config reserved the URL probe (ctx %s) even though it empties ALETHIA_E2E_ACM_CERT "+
-			"and therefore renders no ArgoCD URL for the probe to check", maxCfg.Ctx)
+	// The TERM, not the total. This used to assert `maxCfg.Ctx < withURL.Ctx`, which reads the
+	// aggregate and therefore asks the question only as long as nothing else differs between the two
+	// ladders. #2652 added a `max-config-probe` term that happens to be the same 10m as the URL probe,
+	// so the totals came out equal and a passing arrangement looked like a failing one — with the
+	// error message confidently naming the wrong cause. Naming the term answers the actual question
+	// and cannot be masked by an unrelated one.
+	if t2BudgetHasTerm(maxCfg, "day2-url") {
+		t.Errorf("max-config reserved the URL probe even though it empties ALETHIA_E2E_ACM_CERT and "+
+			"therefore renders no ArgoCD URL for the probe to check: %s", maxCfg.Describe())
 	}
+}
+
+// t2BudgetHasTerm reports whether the ladder reserves a named scenario.
+func t2BudgetHasTerm(b T2Budget, scenario string) bool {
+	for _, term := range b.Terms {
+		if term.Scenario == scenario {
+			return true
+		}
+	}
+	return false
 }
 
 // #2591's ambiguity, made decidable. The three outcomes point at three different places, and the
@@ -447,5 +466,48 @@ func TestReadIngressAddressUnreachableIsAnError(t *testing.T) {
 	// And it must flow into the verdict as "could not look", not as a finding.
 	if v := ingressAddressVerdict(addr, err); !strings.Contains(v, "UNKNOWN") {
 		t.Errorf("a failed read must render as UNKNOWN; got %q", v)
+	}
+}
+
+// The max-config cluster probes must be RESERVED, not spent against someone else's headroom.
+//
+// `argocd-converge` pays for AssertArgoAppsHealthy and nothing else. The probes are a second,
+// independent wait, and before #2652 they had no ladder term at all — the same defect this file
+// already documents for the day-2 probes. It mattered little while only hetzner declared a probe;
+// it matters on the four managed clouds, which are precisely the ones where the store is the thing
+// hypothesised to be missing and the poll therefore runs to its ceiling.
+//
+// The size is asserted from the grid rather than against a literal, so adding a probed cell moves
+// the reservation without anyone remembering to.
+func TestMaxConfigProbesAreReservedInTheLadder(t *testing.T) {
+	t.Setenv("ALETHIA_E2E_SOAK", "")
+	t.Setenv("ALETHIA_E2E_DAY2_ACCESS", "")
+	t.Setenv(envAcmCert, "")
+
+	t.Setenv("ALETHIA_E2E_MAX_CONFIG", "")
+	off, err := ResolveT2Budget("aws", "ladder")
+	if err != nil {
+		t.Fatalf("max-config off: %v", err)
+	}
+	if t2BudgetHasTerm(off, "max-config-probe") {
+		t.Error("a run with no max-config reserved the probe budget it will never spend")
+	}
+
+	t.Setenv("ALETHIA_E2E_MAX_CONFIG", "1")
+	on, err := ResolveT2Budget("aws", "ladder")
+	if err != nil {
+		t.Fatalf("max-config on: %v", err)
+	}
+	if !t2BudgetHasTerm(on, "max-config-probe") {
+		t.Fatalf("max-config did not reserve the cluster probes; ladder = %s", on.Describe())
+	}
+	want := MaxConfigProbeBudget("aws")
+	if want <= 0 {
+		t.Fatal("aws declares no probed max-config cell, so this guard would pass vacuously")
+	}
+	if got := on.Ctx - off.Ctx; got != want {
+		t.Errorf("max-config widened the ctx by %s, want %s — the probes would poll to their ceiling "+
+			"against headroom the ladder never reserved, and a store that is genuinely absent would "+
+			"surface as `context deadline exceeded` with the Ready condition thrown away", got, want)
 	}
 }

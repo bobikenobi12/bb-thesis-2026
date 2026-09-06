@@ -39,6 +39,11 @@ const allowedPackageReference = new Set([
   // whole import list is `node:fs` and `node:path`, and its occurrences are comments plus a
   // property lookup on parsed JSON.
   "scripts/check-floors-reproducible.mjs",
+  // Declares `@alethia/ee` as the one pnpm filter allowed to select NOTHING, because the
+  // community application must build with ee/ absent (ee/README.md). Imports nothing: the name
+  // is a Map key in an EXCEPTIONS ledger and a self-test fixture. Same shape as the entry above
+  // — a guard reasoning ABOUT the package rather than reaching for it.
+  "scripts/ci/check-pnpm-script-refs.mjs",
 ]);
 const violations = [];
 

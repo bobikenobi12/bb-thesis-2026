@@ -6,31 +6,56 @@ import { cn } from "./utils";
 /**
  * Grayscale status tiers. State is read through dot fill/shape + a mono
  * label — never hue. Five resting tiers plus `live` (blinking).
+ *
+ * A VALUE, not just a type, because the CLI's half of this vocabulary is generated from it
+ * (`apps/console/scripts/gen-go-vocab.ts` → `packages/core/types/vocab_gen.go`) and a generator
+ * cannot iterate a type. The `as const` keeps `StatusTier` exactly the union it always was, so a
+ * tier added here is a compile error at every exhaustive `Record<StatusTier, …>` — including the
+ * generator's terminal-glyph table, which is how a new tier gets a CLI answer instead of silently
+ * getting none.
  */
-export type StatusTier =
-	| "active"
-	| "pending"
-	| "idle"
-	| "failed"
-	| "disabled"
-	| "live";
+export const STATUS_TIERS = [
+	"active",
+	"pending",
+	"idle",
+	"failed",
+	"disabled",
+	"live",
+] as const;
+
+export type StatusTier = (typeof STATUS_TIERS)[number];
 
 /**
  * Maps product status strings (any casing) onto the five grayscale visual
  * tiers. Unknown statuses fall back to `idle`.
+ *
+ * EXPORTED because it is the source of truth for both surfaces: the CLI's status glyphs are
+ * generated from this object, so a word added here reaches the terminal and a word that is only
+ * in the terminal has nowhere to come from. Key order is meaningful — it is the order the
+ * generated Go vocabulary is emitted in, so a reordering is a diff somebody has to look at.
+ *
+ * The promotion words (`approved`, `rejected`, `blocked`, `pending_approval`, `pending_plan`) are
+ * the five this map was missing entirely: six values of `promotion_status` and `approval_status`
+ * fell to the `idle` fallback, so an approved promotion and a blocked one drew the same hollow
+ * dot as a runner sitting there doing nothing. `apps/console/scripts/lib/status-vocab.ts` records
+ * why each takes the tier it does; `StatusVocabularyGaps` in the generated Go file counts what is
+ * STILL unmapped, so the next hole of this shape is a number rather than a silence.
  */
-const STATUS_TIER: Record<string, StatusTier> = {
+export const STATUS_TIER: Record<string, StatusTier> = {
 	// active — running / healthy / done well
 	active: "active",
 	online: "active",
 	success: "active",
 	succeeded: "active",
+	approved: "active",
 	ready: "active",
 	connected: "active",
 	running: "active",
 	// pending — in flight / waiting
 	queued: "pending",
 	pending: "pending",
+	pending_plan: "pending",
+	pending_approval: "pending",
 	processing: "pending",
 	claimed: "pending",
 	provisioning: "pending",
@@ -49,6 +74,8 @@ const STATUS_TIER: Record<string, StatusTier> = {
 	failed: "failed",
 	error: "failed",
 	errored: "failed",
+	rejected: "failed",
+	blocked: "failed",
 	// disabled — gone / inert / skipped
 	disabled: "disabled",
 	destroyed: "disabled",

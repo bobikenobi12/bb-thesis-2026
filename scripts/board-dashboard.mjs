@@ -20,17 +20,20 @@
 //   node scripts/board-dashboard.mjs --out board.html     # write to a path
 //   node scripts/board-dashboard.mjs --open               # write, then `open` it (macOS)
 //   node scripts/board-dashboard.mjs --json               # ALSO print the raw board model to stdout
+//   node scripts/board-dashboard.mjs --self-test          # offline board-body parser fixtures
 //
 // Env: ALETHIA_LEASE_TTL (seconds, default 3600) — a lease older than this is flagged stale (matches
 //      coordinate.sh). Pure Node (built-ins only) + the `gh` CLI on PATH; no npm installs.
 
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { readScope, scopeGapReason, scopeListsOverlap } from "./lib/scope-overlap.mjs";
 
 const LEASE_TTL = Number(process.env.ALETHIA_LEASE_TTL || "3600");
 const args = process.argv.slice(2);
 const DUMP_JSON = args.includes("--json");
 const OPEN_AFTER = args.includes("--open");
+const SELF_TEST = args.includes("--self-test");
 const outIdx = args.indexOf("--out");
 const OUT = outIdx >= 0 && args[outIdx + 1] ? args[outIdx + 1] : "/tmp/alethia-board.html";
 
@@ -85,21 +88,101 @@ function stateOf(o) {
 	return "READY";
 }
 
-/** Parse the `scope:` glob line from an issue body (the files a unit owns). */
-function scopeGlobs(body) {
-	const m = (body || "").match(/^\s*scope:\s*(.+)$/im);
-	if (!m) return [];
-	return m[1]
-		.trim()
-		.split(/\s+/)
-		.filter(Boolean);
+/**
+ * The reason a unit's `scope:` could not be (fully) compared, or "" when it could.
+ *
+ * A unit whose scope cannot be read is NOT a unit with a disjoint scope. Before #4115 this file
+ * simply filtered those out (`u.scope.length > 0`) and reported "no collisions detected" over
+ * whatever was left, which is the same silence the terminal report was filed for.
+ */
+function scopeGapOf(body) {
+	const scope = readScope(body);
+	if (scope.globs.length > 0 && scope.unusable.length === 0) return "";
+	return scopeGapReason(scope);
 }
 
-/** Parse the `blocked-by: #12 #14` line from an issue body → array of numbers. */
+
+/**
+ * The body's lines with every CLOSED fenced block (``` or ~~~, delimiters included) removed.
+ *
+ * A line inside a fence genuinely starts at column 0, so the start-of-line anchor cannot tell a
+ * declaration from a quoted one. That is the #3639 symptom: the seeding snippet in
+ * `.claude/skills/decompose/SKILL.md` prints `blocked-by: #$SEAMS` at column 0 inside a ```bash
+ * fence, so a body pasting it with a real number acquires a phantom dependency.
+ *
+ * CLOSED only. An unterminated fence leaves the rest of the body in play, because dropping it
+ * would fail OPEN — the coordinator removes the `blocked` label when `deps` is empty — and one
+ * stray backtick run would silently mark a lane READY. Over-reporting fails closed and is visible.
+ * Mirrors the awk pre-pass in `blocked_by_from_body`.
+ */
+function unfencedLines(body) {
+	const lines = (body || "").split("\n");
+	const drop = new Array(lines.length).fill(false);
+	let open = -1;
+	for (let i = 0; i < lines.length; i++) {
+		if (!/^[ \t]*(```|~~~)/.test(lines[i])) continue;
+		if (open >= 0) {
+			for (let j = open; j <= i; j++) drop[j] = true;
+			open = -1;
+		} else {
+			open = i;
+		}
+	}
+	return lines.filter((_, i) => !drop[i]);
+}
+
+/**
+ * Parse the `blocked-by: #12 #14` declarations from an issue body → ascending, de-duplicated numbers.
+ *
+ * EVERY declaration line, not the first. This used to be a single `.match(/…/m)`, which takes ONE
+ * match: a body carrying `blocked-by: #10` and `blocked-by: #11` on separate lines yielded `[10]`
+ * here while `blocked_by_from_body` in coordinate.sh unioned both and returned `10 11`. The
+ * dashboard then rendered `◂ #10` for an issue the coordinator was blocking on two things — and the
+ * shared fixture file could not catch it, because no fixture carried a multi-line body. The two
+ * parsers are a contract; the fixture set only proves it where it has a case.
+ *
+ * The normalisation mirrors the shell exactly: closed fenced blocks come out, a leading list marker
+ * and any `**` come off, the declaration must still start its line, and the result is sorted
+ * ascending and de-duplicated the way `sort -nu` does. Matching that ordering is what lets one
+ * fixture file express both sides.
+ */
 function blockedBy(body) {
-	const m = (body || "").match(/[Bb]locked-by:\s*([^\n]*)/);
-	if (!m) return [];
-	return [...m[1].matchAll(/#(\d+)/g)].map((x) => Number(x[1]));
+	const numbers = new Set();
+	for (const line of unfencedLines(body)) {
+		const bare = line.replace(/^[ \t]*[-*+][ \t]+/, " ").replace(/\*\*/g, "");
+		const m = bare.match(/^[ \t]*[Bb]locked-by:[ \t]*(.*)$/);
+		if (!m) continue;
+		for (const x of m[1].matchAll(/#(\d+)/g)) numbers.add(Number(x[1]));
+	}
+	return [...numbers].sort((a, b) => a - b);
+}
+
+/** Exercise the dashboard parser against the contract shared with the coordinator. */
+function runBoardBodySelfTest() {
+	const fixtures = JSON.parse(readFileSync(new URL("./lib/board-body-fixtures.json", import.meta.url), "utf8"));
+	// An empty or absent `cases` array ran zero checks and printed "all passed" — the same
+	// nothing-found-reads-as-nothing-wrong shape the shell half had. Refuse it here too, so the two
+	// self-tests cannot disagree about what an empty suite means.
+	if (!Array.isArray(fixtures.cases) || fixtures.cases.length === 0) {
+		die("self-test: board-body-fixtures.json contains no cases — asserting nothing is not passing.");
+	}
+	let failures = 0;
+	for (const fixture of fixtures.cases) {
+		const actual = blockedBy(fixture.body);
+		if (JSON.stringify(actual) === JSON.stringify(fixture.blockedBy)) {
+			console.log(`ok   - ${fixture.name}`);
+		} else {
+			console.error(`FAIL - ${fixture.name}: want ${JSON.stringify(fixture.blockedBy)} got ${JSON.stringify(actual)}`);
+			failures++;
+		}
+	}
+	if (failures > 0) die(`self-test: ${failures} check(s) FAILED`);
+	console.log("self-test: all passed");
+}
+
+if (SELF_TEST) {
+	runBoardBodySelfTest();
+	process.exit(0);
 }
 
 /** ISO-8601 → epoch seconds (0 if unparseable). */
@@ -117,28 +200,6 @@ function humanAge(sec) {
 	if (d > 0) return `${d}d ${h}h`;
 	if (h > 0) return `${h}h ${m}m`;
 	return `${m}m`;
-}
-
-/**
- * Do two scope-glob lists overlap? A conservative reuse of the disjoint-scope invariant: two units
- * collide if any glob from one is a prefix-or-equal of a glob from the other (ignoring `**`/`*`
- * suffixes). It's the same "no two claimable units in a wave share a scope glob" rule coordinate.sh
- * relies on — surfaced visually so the maintainer can eyeball a tangle before it happens.
- */
-function scopesOverlap(a, b) {
-	const norm = (g) => g.replace(/\*+$/g, "").replace(/\/+$/g, "");
-	for (const x of a) {
-		const nx = norm(x);
-		if (!nx) continue;
-		for (const y of b) {
-			const ny = norm(y);
-			if (!ny) continue;
-			if (nx === ny || nx.startsWith(ny + "/") || ny.startsWith(nx + "/") || nx.startsWith(ny) || ny.startsWith(nx)) {
-				return true;
-			}
-		}
-	}
-	return false;
 }
 
 /** Roll a PR's statusCheckRollup into one of: green / red / pending / none. */
@@ -227,7 +288,12 @@ const unitModel = boardUnits.map((i) => {
 		needsDesign: labels.has("needs:design"),
 		mutexMigration: labels.has("mutex:migration"),
 		blockedBy: blockedBy(i.body),
-		scope: scopeGlobs(i.body),
+		// `readScope` is the shared parser (scripts/lib/scope-overlap.mjs). It separates "declares no
+		// scope" from "declares one this parser cannot read" — a backtick-wrapped `scope:` line reads
+		// as scoped to a human and as unscoped to every parser — so the panel below can say which
+		// units it could NOT compare instead of quietly dropping them out of the comparison.
+		scope: readScope(i.body).globs,
+		scopeGap: scopeGapOf(i.body),
 	};
 });
 
@@ -267,19 +333,28 @@ if (claimedMigrations.length > 1) {
 		units: claimedMigrations.map((u) => u.number),
 	});
 }
-// (2) overlapping scope: globs among the claimable/claimed set (the disjoint-scope invariant).
-const active = unitModel.filter((u) => (u.state === "READY" || u.state === "CLAIMED") && u.scope.length > 0);
+// (2) overlapping scope: globs among the claimable/claimed set (the disjoint-scope invariant),
+// decided by the SHARED matcher so this panel and coordinate.sh's report cannot disagree.
+const workable = unitModel.filter((u) => u.state === "READY" || u.state === "CLAIMED");
+const active = workable.filter((u) => u.scope.length > 0);
 for (let x = 0; x < active.length; x++) {
 	for (let y = x + 1; y < active.length; y++) {
-		if (scopesOverlap(active[x].scope, active[y].scope)) {
+		const hit = scopeListsOverlap(active[x].scope, active[y].scope);
+		if (hit) {
 			collisions.push({
 				kind: "scope-overlap",
-				text: `#${active[x].number} and #${active[y].number} share a scope glob (${active[x].state.toLowerCase()} ∩ ${active[y].state.toLowerCase()})`,
+				text: `#${active[x].number} "${hit.g1}" overlaps #${active[y].number} "${hit.g2}" (${active[x].state.toLowerCase()} ∩ ${active[y].state.toLowerCase()})`,
 				units: [active[x].number, active[y].number],
 			});
 		}
 	}
 }
+// The units this panel could NOT compare. Kept OUT of `collisions` — an unread scope is not a
+// disjoint one — and rendered separately, because "no collisions found" over a set that silently
+// excluded half the board is the failure #4115 was filed for.
+const scopeUnchecked = workable.filter((u) => u.scopeGap).map((u) => ({ number: u.number, why: u.scopeGap }));
+const scopeWorkable = workable.length;
+const scopeCompared = active.length;
 
 // ── the NEEDS-YOU set ───────────────────────────────────────────────────────
 const needsHumanUnits = unitModel.filter((u) => u.needsHuman);
@@ -299,7 +374,7 @@ const totals = {
 	prsGreen: prModel.filter((p) => !p.draft && p.checks.state === "green").length,
 };
 
-const model = { generatedAt: new Date().toISOString(), leaseTtlSec: LEASE_TTL, totals, byWave, prs: prModel, collisions, needsYou: { units: needsYouUnits, redPRs } };
+const model = { generatedAt: new Date().toISOString(), leaseTtlSec: LEASE_TTL, totals, byWave, prs: prModel, collisions, scopeUnchecked, scopeCompared, scopeWorkable, needsYou: { units: needsYouUnits, redPRs } };
 
 if (DUMP_JSON) console.log(JSON.stringify(model, null, 2));
 
@@ -402,12 +477,23 @@ function needsYouSection() {
 	return `<ul class="needs-list">${parts.join("\n")}</ul>`;
 }
 
-/** The collisions-to-eyeball panel. */
+/**
+ * The collisions-to-eyeball panel — collisions AND the units whose scope could not be read.
+ * Three outcomes, never two: found / checked-and-clean / could-not-check.
+ */
 function collisionSection() {
-	if (collisions.length === 0) return '<p class="dim">No scope/migration collisions detected.</p>';
+	const checked = `<p class="dim">Compared ${scopeCompared} of ${scopeWorkable} claimed-or-ready unit(s) for overlapping scope globs.</p>`;
+	const gaps = scopeUnchecked.length
+		? `<p class="dim">⚠ NOT compared — ${scopeUnchecked.length} unit(s) whose <code>scope:</code> could not be read: ${scopeUnchecked
+				.map((u) => esc(`#${u.number} (${u.why})`))
+				.join(" · ")}</p>`
+		: "";
+	if (collisions.length === 0) {
+		return `<p class="dim">No scope/migration collisions detected.</p>${checked}${gaps}`;
+	}
 	return `<ul class="coll-list">${collisions
 		.map((c) => `<li><span class="pill warn">${esc(c.kind)}</span> ${esc(c.text)}</li>`)
-		.join("\n")}</ul>`;
+		.join("\n")}</ul>${checked}${gaps}`;
 }
 
 const html = `<!doctype html>

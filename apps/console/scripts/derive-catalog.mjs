@@ -42,7 +42,7 @@
 //   --dry-run             print what would be written/filed without side effects.
 //
 // Pure Node (global fetch, Node 20+), no deps. Run from the console package:
-//   pnpm -F console derive:catalog [-- <flags>]
+//   pnpm -C apps/console run derive:catalog [-- <flags>]
 // This script single-quotes its jq-free JSON fixtures and templates on purpose — SC2016 does not apply.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -590,7 +590,7 @@ function renderIssue(rep) {
 		"### Remediation",
 		"Prune the stale entries, review the diff, and open a PR into `dev`:",
 		"```",
-		"pnpm -F console derive:catalog -- --write",
+		"pnpm -C apps/console run derive:catalog -- --write",
 		"```",
 		"`--write` only ever REMOVES. Adopting a newer major, or changing a `default_version`, is a",
 		"deliberate decision with template blast radius and is never written automatically.",

@@ -80,7 +80,7 @@ if (typeof Element !== "undefined") {
   // animations settle (ScrollAreaViewport.js:259). When that macrotask fires — which happens
   // whenever a test yields to the event loop (`await` / `waitFor` / `userEvent`) while a
   // ScrollArea is mounted — the missing method throws INSIDE the timer, before base-ui's
-  // `.catch()`, surfacing as an "Unhandled Error" that flips `pnpm -F console test` to exit 1
+  // `.catch()`, surfacing as an "Unhandled Error" that flips `pnpm -C apps/console run test` to exit 1
   // even though every test passes (intermittent, because it races the test's unmount/cleanup).
   // Returning [] makes the callback a harmless `Promise.all([]).then(...)`, killing the flake at
   // the root for every ScrollArea-rendering test — no per-test workaround, no error swallowing.

@@ -246,7 +246,7 @@ test.describe("Navigation shell — project switcher", () => {
 	test("shows 'All projects' at org scope and opens a project list", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
-		const trigger = owner.page.getByRole("combobox", { name: /all projects/i });
+		const trigger = owner.page.getByRole("button", { name: /switch project: all projects/i });
 		await expect(trigger).toBeVisible();
 		await trigger.click();
 		await expect(owner.page.getByPlaceholder(/find project/i)).toBeVisible();
@@ -258,7 +258,7 @@ test.describe("Navigation shell — project switcher", () => {
 	test("selecting a project navigates into it", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
-		await owner.page.getByRole("combobox", { name: /all projects/i }).click();
+		await owner.page.getByRole("button", { name: /switch project: all projects/i }).click();
 		await owner.page.getByRole("option", { name: project.name }).click();
 		// Bare project URL resolves to its Architecture canvas.
 		await owner.page.waitForURL(
@@ -271,7 +271,7 @@ test.describe("Navigation shell — project switcher", () => {
 	test("searching for a nonexistent project shows the empty message", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
-		await owner.page.getByRole("combobox", { name: /all projects/i }).click();
+		await owner.page.getByRole("button", { name: /switch project: all projects/i }).click();
 		await owner.page.getByPlaceholder(/find project/i).fill(`zz-no-proj-${Date.now()}`);
 		await expect(owner.page.getByText(/no project found/i)).toBeVisible();
 	});
@@ -279,7 +279,7 @@ test.describe("Navigation shell — project switcher", () => {
 	test("Create project routes to the new-project surface", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
-		await owner.page.getByRole("combobox", { name: /all projects/i }).click();
+		await owner.page.getByRole("button", { name: /switch project: all projects/i }).click();
 		await owner.page.getByRole("button", { name: /create project/i }).click();
 		await owner.page.waitForURL(new RegExp(`/${owner.orgSlug}/~/new`), { timeout: 20_000 });
 	});
@@ -294,13 +294,13 @@ test.describe("Navigation shell — env switcher", () => {
 
 	test("renders on a project route with the default environment", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}/${project.slug}/jobs`);
-		const env = owner.page.getByRole("combobox", { name: /production/i });
+		const env = owner.page.getByRole("button", { name: /switch environment: production/i });
 		await expect(env).toBeVisible({ timeout: 20_000 });
 	});
 
 	test("opening the switcher lists environments and a New Environment action", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}/${project.slug}/jobs`);
-		await owner.page.getByRole("combobox", { name: /production/i }).click({ timeout: 20_000 });
+		await owner.page.getByRole("button", { name: /switch environment: production/i }).click({ timeout: 20_000 });
 		await expect(owner.page.getByPlaceholder(/find environment/i)).toBeVisible();
 		await expect(owner.page.getByRole("option", { name: "production" })).toBeVisible();
 		await expect(owner.page.getByRole("option", { name: /new environment/i })).toBeVisible();
@@ -308,13 +308,13 @@ test.describe("Navigation shell — env switcher", () => {
 
 	test("selecting an environment pins it via the ?environment_id query", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}/${project.slug}/jobs`);
-		await owner.page.getByRole("combobox", { name: /production/i }).click({ timeout: 20_000 });
+		await owner.page.getByRole("button", { name: /switch environment: production/i }).click({ timeout: 20_000 });
 		await owner.page.getByRole("option", { name: "production" }).click();
 		await owner.page.waitForURL(/environment_id=/, { timeout: 15_000 });
 		await expect(owner.page).toHaveURL(/environment_id=/);
 	});
 
-	test("is hidden at org scope (no environment combobox on the overview)", async ({ owner }) => {
+	test("is hidden at org scope (no environment switcher on the overview)", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
 		// The env switcher only mounts on a project drilldown route.
@@ -368,7 +368,7 @@ test.describe("Navigation shell — topbar", () => {
 	test("the topbar carries the project switcher and CLI download", async ({ owner }) => {
 		await owner.page.goto(`/${owner.orgSlug}`);
 		await waitForShell(owner.page);
-		await expect(owner.page.getByRole("combobox", { name: /all projects/i })).toBeVisible();
+		await expect(owner.page.getByRole("button", { name: /switch project: all projects/i })).toBeVisible();
 		await expect(
 			owner.page.getByRole("button", { name: /download.*(cli|alethia)/i }),
 		).toBeVisible();

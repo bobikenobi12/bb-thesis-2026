@@ -30,7 +30,7 @@ var addonListCmd = &cobra.Command{
 		if err != nil {
 			fail(err)
 		}
-		project, err := currentProject(cmd)
+		project, err := projectFromFlag(cmd, token)
 		if err != nil {
 			fail(err)
 		}
@@ -38,7 +38,7 @@ var addonListCmd = &cobra.Command{
 		client := api.NewClient(token)
 		if interactiveTable(cmd) {
 			var view *api.ProjectAddons
-			ui.RunSpinner("Fetching add-ons...", func() {
+			runSpinner("Fetching add-ons...", func() {
 				view, err = client.GetProjectAddons(project, env)
 			})
 			if err != nil {
@@ -48,7 +48,7 @@ var addonListCmd = &cobra.Command{
 				ui.Muted("No add-ons installed.")
 				return
 			}
-			_ = ui.ShowTable(addonColumns, addonRows(view.Addons), "add-ons")
+			_ = ui.ShowTable(addonColumns, addonRows(view.Addons, ui.FormatTable), "add-ons")
 			return
 		}
 		if err := runAddonList(client, os.Stdout, outputFormat(cmd), project, env); err != nil {
@@ -57,30 +57,35 @@ var addonListCmd = &cobra.Command{
 	},
 }
 
-var addonColumns = []string{"Add-on", "Enabled", "Mode", "Version", "Status", "Health"}
+// addonColumns are the table's columns. SYNC is here and was not, and that is the one change
+// worth stating: the wire has carried `sync` and `last_synced_at` since the endpoint was written
+// and the table rendered neither, so the CLI showed an ArgoCD add-on's HEALTH as the only signal.
+//
+// Those two say different things. Health is the workload's own report — a chart with no readiness
+// probe is "Healthy" the moment its pods schedule. Sync is whether ArgoCD has applied the manifest
+// the control plane asked for at all, and an add-on stuck OutOfSync is the failure an operator is
+// actually looking for: it renders, it says Healthy, and the change never reached the cluster.
+var addonColumns = []string{"Add-on", "Enabled", "Mode", "Version", "Status", "Sync", "Health", "Last synced"}
 
 // addonRows projects installed add-ons into plain table cells.
-func addonRows(addons []api.Addon) [][]string {
+func addonRows(addons []api.Addon, outFmt string) [][]string {
 	rows := make([][]string, len(addons))
 	for i, a := range addons {
 		rows[i] = []string{
 			a.AddonID,
-			gateGlyph(a.Enabled),
-			a.Mode,
-			strOrDash(a.Version),
-			a.Status,
-			strOrDash(a.Health),
+			ui.Cell(outFmt, ui.WireBool(a.Enabled), ui.GateGlyph(a.Enabled)),
+			ui.Cell(outFmt, a.Mode, ui.OrDash(a.Mode)),
+			ui.Cell(outFmt, ui.Wire(a.Version), ui.StrOrDash(a.Version)),
+			ui.Cell(outFmt, a.Status, ui.OrDash(a.Status)),
+			ui.Cell(outFmt, ui.Wire(a.Sync), ui.StrOrDash(a.Sync)),
+			ui.Cell(outFmt, ui.Wire(a.Health), ui.StrOrDash(a.Health)),
+			// "never" and not a dash: an add-on that has never synced is a DIFFERENT statement
+			// from one whose last sync we failed to read, and it is the one that explains an
+			// Application sitting Progressing since it was enabled.
+			ui.Cell(outFmt, ui.Wire(a.LastSyncedAt), ui.StampOrNever(a.LastSyncedAt)),
 		}
 	}
 	return rows
-}
-
-// strOrDash renders a nullable string, or the dash glyph when nil/empty.
-func strOrDash(s *string) string {
-	if s == nil || *s == "" {
-		return ui.SymbolDash
-	}
-	return *s
 }
 
 // runAddonList fetches and renders a project environment's installed add-ons. json emits the
@@ -103,7 +108,7 @@ func runAddonList(c apiClient, out io.Writer, format, project, env string) error
 	}
 	return ui.Render(out, format, ui.TableSpec{
 		Columns: addonColumns,
-		Rows:    addonRows(addons),
+		Rows:    addonRows(addons, format),
 	}, addons)
 }
 

@@ -529,7 +529,7 @@ func TestTail_PruneHelmRepoRefreshersFailureArms(t *testing.T) {
 func TestTail_ReadSecretRefReturnsEmptyOnKubectlFailure(t *testing.T) {
 	newKubectlStub(t, 1)
 	var stderr bytes.Buffer
-	if got := readSecretRef("rel", "ns", &stderr); got != "" {
+	if got := readSecretRef("rel", "ns", "db-rel", &stderr); got != "" {
 		t.Fatalf("readSecretRef = %q, want \"\" when kubectl fails", got)
 	}
 }

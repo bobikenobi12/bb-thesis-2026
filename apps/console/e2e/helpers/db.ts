@@ -47,11 +47,20 @@ export async function orgIdBySlug(slug: string): Promise<string | null> {
 	return rows[0]?.id ?? null;
 }
 
-/** The pending invitation id (used as the accept token) for an email into an org, newest first. */
+/**
+ * The pending invitation id (used as the accept token) for an email into an org, newest first.
+ *
+ * `organization_id` / `created_at`, NOT the quoted camelCase they are declared with in
+ * `lib/db/schema/organizations.ts`: the drizzle instance is built with `casing: "snake_case"`, so
+ * the camelCase keys there are column NAMES only after that mapping. Quoting them here — outside
+ * drizzle, on a raw `postgres` client — asked for columns that do not exist, and this helper threw
+ * `42703` on every call it had ever been given (the audit's T7 spec inlined its own copy of the
+ * query rather than use it, and flagged this).
+ */
 export async function pendingInvitationId(orgId: string, email: string): Promise<string | null> {
 	const rows = await db()<{ id: string }[]>`
 		select id from invitation
-		where "organizationId" = ${orgId} and email = ${email} and status = 'pending'
-		order by "createdAt" desc limit 1`;
+		where organization_id = ${orgId} and email = ${email} and status = 'pending'
+		order by created_at desc limit 1`;
 	return rows[0]?.id ?? null;
 }

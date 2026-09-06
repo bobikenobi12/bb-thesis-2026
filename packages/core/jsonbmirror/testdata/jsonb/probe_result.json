@@ -1,0 +1,14 @@
+{
+  "reachable": true,
+  "message": "cluster reachable; 2 of 3 nodes Ready",
+  "detail": {
+    "endpoint": "https://10.0.3.14:6443",
+    "method": "apiserver-readyz",
+    "statusCode": 200,
+    "serverVersion": "v1.31.4",
+    "nodeCount": 3,
+    "readyNodeCount": 2,
+    "latencyMs": 84,
+    "error": "1 node NotReady: worker-2 (KubeletNotReady)"
+  }
+}

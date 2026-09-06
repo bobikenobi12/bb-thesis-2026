@@ -194,9 +194,10 @@ DECLARE
     v_providers public.cloud_provider[];
     v_status public.runner_status;
     v_runner_org_id UUID;
+    v_runner_user_id UUID;
 BEGIN
-    SELECT operator, supported_providers, status, org_id
-      INTO v_operator, v_providers, v_status, v_runner_org_id
+    SELECT operator, supported_providers, status, org_id, user_id
+      INTO v_operator, v_providers, v_status, v_runner_org_id, v_runner_user_id
       FROM public.runners
       WHERE id = p_runner_id AND token_hash = p_runner_token_hash;
     IF v_operator IS NULL THEN
@@ -223,7 +224,20 @@ BEGIN
     WHERE id = (
         SELECT j.id FROM public.jobs j
         WHERE j.status = 'QUEUED' AND j.assigned_runner_id = p_runner_id
-          AND (v_operator = 'managed' OR j.org_id = v_runner_org_id)
+          AND (
+            v_operator = 'managed'
+            OR j.org_id = v_runner_org_id
+            -- Pre-#3874 CLI runners were stamped into their owner's personal org.
+            -- Admit only that exact legacy shape, only for lifecycle work created by
+            -- the owner. The job remains in its active tenant for quota, visibility,
+            -- evidence and serialization; arbitrary cross-tenant work stays closed.
+            OR (
+              v_operator = 'self'
+              AND v_runner_org_id = v_runner_user_id
+              AND j.user_id = v_runner_user_id
+              AND j.job_type IN ('DEPLOY_RUNNER', 'UPDATE_RUNNER', 'DESTROY_RUNNER')
+            )
+          )
           -- Never open a state file another job is actively writing (see state_object_busy).
           AND NOT public.state_object_busy(j.project_id, j.environment_id, j.id)
         ORDER BY j.priority DESC, j.created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
@@ -308,7 +322,14 @@ BEGIN
             WHERE id = (
                 SELECT j.id FROM public.jobs j
                 WHERE j.status = 'QUEUED' AND j.assigned_runner_id IS NULL
-                  AND j.org_id = v_runner_org_id
+                  AND (
+                    j.org_id = v_runner_org_id
+                    OR (
+                      v_runner_org_id = v_runner_user_id
+                      AND j.user_id = v_runner_user_id
+                      AND j.job_type IN ('DEPLOY_RUNNER', 'UPDATE_RUNNER', 'DESTROY_RUNNER')
+                    )
+                  )
                   AND (p_cloud_identity_id IS NULL OR j.cloud_identity_id = p_cloud_identity_id)
                   AND (v_providers IS NULL OR j.provider IS NULL OR j.provider = ANY(v_providers))
                   -- Never open a state file another job is actively writing (see state_object_busy).
@@ -1008,6 +1029,186 @@ BEGIN
                    OR org_id = current_setting(''app.current_org'', true)::uuid))', tbl);
   END LOOP;
 END $$;
+
+-- ── project_environments: EXACTLY one default, enforced at COMMIT (#4127) ────────────────────────
+--
+-- `project_environments_one_default` (the partial unique index in the drizzle schema) says "no two
+-- rows with is_default = true". It says nothing about ZERO — so a project whose environments carry
+-- no default was legal, and three readers carried a silent fallback for it
+-- (`envs.find(is_default) ?? envs[0]` in lib/queries/cli-config.ts, the `desc(is_default)` sort in
+-- lib/cli/resolve-project.ts, and the same `?? environments[0]` in server/actions/projects.ts).
+-- Each is an arbitrary pick presented as an answer. The index gives at-most-one; this gives
+-- at-least-one, and together they are the "exactly one" the schema header has claimed all along.
+--
+-- ── WHY A CONSTRAINT TRIGGER, AND WHY DEFERRED ──
+--
+-- Every legitimate write reaches the correct state only at COMMIT, never statement by statement:
+--
+--   * `insertProjectWithDefaultFabric` inserts the `projects` row FIRST and its environments in a
+--     later statement of the same transaction. Between them the project has zero environments —
+--     legitimately.
+--   * `projects → project_environments` is ON DELETE CASCADE. An immediate AFTER DELETE check would
+--     fire while a project is being deleted, see its environments gone, and block every project
+--     deletion. Deferred, the parent row is gone too by the time the check runs, and the
+--     `NOT EXISTS (SELECT 1 FROM projects …)` probe below skips.
+--   * A future "make this env the default" flow must clear the old flag before setting the new one;
+--     the partial unique index forbids doing it in the other order.
+--
+-- A CHECK constraint cannot express a cross-row predicate, and a plain (non-constraint) trigger
+-- cannot be deferred. `CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED` is the only shape that
+-- judges the END STATE. drizzle-kit does not model constraint triggers, which is why this lives
+-- here rather than in a generated migration — scripts/migrate.mjs re-applies this file after the
+-- DDL on every migrate, so it is re-asserted on every deploy.
+--
+-- ── THE PROBE RUNS UNDER THE INVOKING ROLE UNLESS WE SAY OTHERWISE ──
+--
+-- Every console write arrives on the least-privileged `alethia_app` connection, and both `projects`
+-- and `project_environments` are RLS-protected. A SECURITY INVOKER check would ask its two
+-- questions through those policies: "does the parent exist" and "how many defaults does it have".
+-- If a policy hid either answer the check would silently SKIP — the invariant becomes decorative,
+-- and a fail-open invariant is worse than none, because the readers above will have been rewritten
+-- to trust it. So the function is SECURITY DEFINER (owned by the migration role, which owns these
+-- tables and is not subject to their policies) and it measures the real rows.
+--
+-- Today an invoker-rights version would happen to agree — `project_environments`'s `owner_all`
+-- policy is derived from `projects` visibility, so a caller who may write a child can always see
+-- the parent. That equivalence is a property of one policy pair, not of the design, and this
+-- function must not depend on it.
+--
+-- `SET row_security = off` is the belt: for the owner it is a NO-OP (no policy applies to them),
+-- but should this file ever be applied by a role that IS subject to RLS — or should these tables
+-- gain FORCE ROW LEVEL SECURITY — Postgres raises rather than quietly filtering. That asymmetry is
+-- the point: it converts the exact fail-open described above into a loud error.
+--
+-- Definer rights read across tenants, so the OTHER direction was checked too: the RAISE below puts a
+-- project id and two counts into a message the caller sees. It can only ever be the caller's OWN
+-- project. To make this fire for project P a caller must INSERT, UPDATE or DELETE a
+-- project_environments row carrying P — and `owner_all`'s WITH CHECK/USING resolve P through
+-- `projects` visibility first, so a write naming someone else's project is rejected before the
+-- trigger is ever queued. That includes the move case (`SET project_id = <other tenant>`), where
+-- WITH CHECK tests the NEW row. So the definer rights widen what the CHECK can see, never what the
+-- caller can learn.
+--
+-- ── SCOPE: this does NOT require a project to have any environments ──
+--
+-- The predicate is "a project's environments, IF IT HAS ANY, contain exactly one default". A
+-- project with no environments at all never fires this trigger (it only fires on
+-- project_environments DML) and is deliberately left alone: "every project has at least one
+-- environment" is a strictly larger invariant — 33 call sites create a bare project today, and the
+-- readers this issue is about already treat "no environments" as its own distinct, reported outcome
+-- (`CliEnvTarget.no-environments`), never as a guess. Enforcing it belongs to its own unit, with a
+-- trigger on `projects` and the fixtures to match.
+
+-- Trigger first, then the function: DROP FUNCTION refuses while a trigger depends on it, and this
+-- file's convention (see the 42P13 note in .claude/skills/db-pipeline/SKILL.md) is an explicit drop
+-- rather than CREATE OR REPLACE, so a changed signature does not fail the whole migrate.
+--
+-- AND BOTH DROPS PRECEDE THE REPAIR BELOW, which is not cosmetic ordering. The trigger is
+-- DEFERRABLE INITIALLY DEFERRED and `migrate.mjs:114` applies this whole file through one
+-- `sql.unsafe()` — a single implicit transaction. On a RE-APPLY over a database that already holds
+-- the trigger AND a violating project, a repair written after this point queues deferred
+-- after-trigger events, the DROP then removes the trigger those queued events name, and Postgres
+-- raises at COMMIT — failing the programmables phase and the deploy. That is exactly the recovery
+-- case the repair exists to serve, so the repair must run with no trigger present at all.
+DROP TRIGGER IF EXISTS project_environments_one_default_check ON public.project_environments;
+DROP FUNCTION IF EXISTS public.project_environments_require_one_default();
+
+-- The repair, re-asserted. This is the SAME expression migration 0150 ran (Step 3), kept here for
+-- the same reason 0150 duplicated the org_id backfill from this file: a constraint trigger does NOT
+-- validate existing rows, so creating it over a database holding a violation enforces nothing until
+-- something next touches that project — and then it raises on an unrelated write. Idempotent: after
+-- 0150 (and after the trigger below exists) it matches nothing. It runs AFTER both DROPs and BEFORE
+-- the CREATE, so no trigger exists while it runs — see the note above the drops for why "before the
+-- CREATE" alone was not enough.
+WITH needing AS (
+  SELECT project_id
+    FROM public.project_environments
+   GROUP BY project_id
+  HAVING bool_or(is_default) IS NOT TRUE
+), pick AS (
+  SELECT DISTINCT ON (e.project_id) e.id
+    FROM public.project_environments e
+    JOIN needing n ON n.project_id = e.project_id
+   ORDER BY e.project_id, e.created_at, e.id
+)
+UPDATE public.project_environments
+   SET is_default = true,
+       updated_at = now()
+ WHERE id IN (SELECT id FROM pick);
+
+CREATE FUNCTION public.project_environments_require_one_default()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+SET row_security = off
+AS $$
+DECLARE
+  pids     uuid[];
+  pid      uuid;
+  total    integer;
+  defaults integer;
+BEGIN
+  -- An UPDATE that MOVES an environment between projects can break the invariant at both ends, so
+  -- both are checked. NEW is unassigned on DELETE and OLD on INSERT — referencing the wrong one
+  -- raises inside plpgsql, hence the explicit TG_OP branch rather than a COALESCE.
+  IF TG_OP = 'INSERT' THEN
+    pids := ARRAY[NEW.project_id];
+  ELSIF TG_OP = 'DELETE' THEN
+    pids := ARRAY[OLD.project_id];
+  ELSIF NEW.project_id IS DISTINCT FROM OLD.project_id THEN
+    pids := ARRAY[OLD.project_id, NEW.project_id];
+  ELSE
+    pids := ARRAY[NEW.project_id];
+  END IF;
+
+  FOREACH pid IN ARRAY pids LOOP
+    CONTINUE WHEN pid IS NULL;
+
+    -- The parent is gone: a cascade delete, or the whole project rolled away in this transaction.
+    -- There is nothing left to hold a default, so the invariant is vacuous. THIS is the branch that
+    -- keeps project deletion working, and the reason the check has to be deferred to see it.
+    CONTINUE WHEN NOT EXISTS (SELECT 1 FROM public.projects WHERE id = pid);
+
+    SELECT count(*), count(*) FILTER (WHERE is_default)
+      INTO total, defaults
+      FROM public.project_environments
+     WHERE project_id = pid;
+
+    -- total = 0 → the project has no environments; see the SCOPE note above.
+    -- defaults > 1 is already impossible (project_environments_one_default), but it is reported
+    -- rather than assumed away, so dropping that index degrades this check instead of blinding it.
+    IF total > 0 AND defaults <> 1 THEN
+      RAISE EXCEPTION
+        'project % has % environment(s) but % default: exactly one must have is_default = true',
+        pid, total, defaults
+        USING ERRCODE = 'integrity_constraint_violation',
+              HINT = 'Set is_default = true on exactly one project_environments row for this project.';
+    END IF;
+  END LOOP;
+
+  RETURN NULL;
+END;
+$$;
+
+-- NO `REVOKE ... FROM PUBLIC` on this function, deliberately — the usual SECURITY DEFINER hygiene
+-- would be a risk here with nothing to buy. `RETURNS TRIGGER` already forbids an ordinary call
+-- ("trigger functions can only be called as triggers", 0A000), so PUBLIC's default EXECUTE grant is
+-- not a definer-rights entry point; and every other trigger function in this file relies on that
+-- same default, because the EXECUTE check happens at CREATE TRIGGER against the CREATOR, not on the
+-- role whose write fires it. Revoking here would be the only place in the file betting on that.
+--
+-- What the app role cannot do is turn the check off: `ALTER TABLE … DISABLE TRIGGER` needs table
+-- ownership and `session_replication_role` needs superuser, and alethia_app is neither. It can call
+-- SET CONSTRAINTS, which only moves the check EARLIER (to the statement) — never away.
+
+-- `UPDATE OF is_default, project_id` and not a bare UPDATE: (total, defaults) can only move when one
+-- of those two columns is written, and environment `status` is updated on every job transition. The
+-- narrow event list keeps the hot path free of a per-row count at commit.
+CREATE CONSTRAINT TRIGGER project_environments_one_default_check
+  AFTER INSERT OR DELETE OR UPDATE OF is_default, project_id ON public.project_environments
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION public.project_environments_require_one_default();
 
 -- topic_subscriptions: normalized child of project_topics (no direct project_id), so tenancy flows
 -- through the parent topic → project — the same join-through shape as the support-case child tables.

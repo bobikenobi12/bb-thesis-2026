@@ -130,7 +130,7 @@ function ProviderButton({
 			aria-label={
 				lastUsed ? `${lookup(PROVIDER_LABELS, provider)} (last used)` : undefined
 			}
-			className="h-[46px] w-full gap-[9px] border-border-strong text-[13.5px] hover:border-ring hover:bg-surface-muted"
+			className="h-[46px] w-full gap-[9px] border-border-strong text-ui-md hover:border-ring hover:bg-surface-muted"
 		>
 			{loadingProvider === provider ? (
 				<Loader2 className="size-[17px] animate-spin" />
@@ -459,7 +459,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 					<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 						Enter your code
 					</h1>
-					<p className="text-[14.5px] leading-[1.55] text-text-secondary">
+					<p className="text-ui-lg leading-[1.55] text-text-secondary">
 						We sent a 6-digit code to{" "}
 						<span className="font-medium text-text-primary">{email}</span>.{" "}
 						<button
@@ -517,7 +517,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 						{copy.verifyCta}
 					</PrimaryButton>
 
-					<div className="flex items-center justify-between text-[13px]">
+					<div className="flex items-center justify-between text-ui-md">
 						<button
 							type="button"
 							onClick={backToEmail}
@@ -558,7 +558,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 					<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 						No account for this email
 					</h1>
-					<p className="text-[14.5px] leading-[1.55] text-text-secondary">
+					<p className="text-ui-lg leading-[1.55] text-text-secondary">
 						We couldn’t find an Alethia account for{" "}
 						<span className="font-medium text-text-primary">{email}</span>. We’ve
 						emailed you a link to create one.
@@ -580,7 +580,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 							setStep("email");
 							setError(null);
 						}}
-						className="mx-auto block text-[13px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="mx-auto block text-ui-md text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						← Use a different email
 					</button>
@@ -606,7 +606,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 					<div className="flex flex-col gap-2">
 						<label
 							htmlFor="email"
-							className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-text-tertiary"
+							className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-text-tertiary"
 						>
 							Work email
 						</label>
@@ -644,7 +644,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 							setStep("providers");
 							setError(null);
 						}}
-						className="mx-auto mt-2 block text-[13px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="mx-auto mt-2 block text-ui-md text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						← Other sign-in options
 					</button>
@@ -661,7 +661,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 				<h1 className="font-grotesk text-display-sm font-semibold leading-[1.05] tracking-display text-text-primary">
 					{copy.title}
 				</h1>
-				<p className="text-[14.5px] leading-[1.55] text-text-secondary">
+				<p className="text-ui-lg leading-[1.55] text-text-secondary">
 					{copy.sub}
 				</p>
 			</div>
@@ -695,7 +695,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
 				<div className="flex items-center gap-3.5 py-2">
 					<span className="h-px flex-1 bg-border" />
-					<span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-disabled">
+					<span className="font-mono text-ui-2xs uppercase tracking-[0.18em] text-text-disabled">
 						or
 					</span>
 					<span className="h-px flex-1 bg-border" />
@@ -709,7 +709,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 						setError(null);
 					}}
 					disabled={isLoading}
-					className="group h-[46px] w-full gap-[9px] border-border-strong text-[13.5px] hover:border-ring hover:bg-surface-muted"
+					className="group h-[46px] w-full gap-[9px] border-border-strong text-ui-md hover:border-ring hover:bg-surface-muted"
 				>
 					<KeyRound className="size-4 opacity-80" />
 					Continue with email
@@ -740,7 +740,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 					disabled
 					title="SSO is coming soon"
 					aria-label="Continue with SSO (coming soon)"
-					className="h-[46px] w-full cursor-not-allowed gap-[9px] border-border-strong text-[13.5px] opacity-55"
+					className="h-[46px] w-full cursor-not-allowed gap-[9px] border-border-strong text-ui-md opacity-55"
 				>
 					<Lock className="size-4 opacity-80" />
 					Continue with SSO

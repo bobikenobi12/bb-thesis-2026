@@ -63,17 +63,3 @@ hetzner-service.registry-app-images.POSTGRES_PASSWORD
 # `changeit`, harbor's INTERNAL database — the same constant, the same chart, the same reason as
 # `harbor.POSTGRES*` above: the chart exposes `existingSecret` for the EXTERNAL database only, so
 # setting it would put the credential into Helm values and therefore into `config_snapshot`. #2848.
-
-hetzner-service.registry-app-images.secretKey
-hetzner-service.registry-app-images.REGISTRY_CREDENTIAL_PASSWORD
-# THESE TWO ARE THE DEFECT, not a tolerated default. `not-a-secure-key` is Harbor's data-encryption
-# key and `harbor_registry_password` is its internal registry credential — both constants in
-# goharbor's values.yaml on GitHub. The marketplace `harbor` add-on stopped shipping them in #2846
-# and #2823 by minting them into the add-on Secret and pointing the chart at it with
-# `existingSecretSecretKey` / `registry.credentials.existingSecret`. The `registry` NODE KIND takes
-# a different route — the runner's EnsureHarborAdminSecret seeds one key, HARBOR_ADMIN_PASSWORD —
-# and never got either fix.
-#
-# Declared here rather than fixed in the same change as the guard that found them: the fix is on the
-# runner's credential-seeding path and wants its own review. #3299 tracks it, and these two lines
-# leave this file when it lands — the ratchet is what makes that unavoidable rather than optional.

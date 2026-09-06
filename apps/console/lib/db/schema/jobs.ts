@@ -119,6 +119,25 @@ export const jobs = pgTable(
 	(t) => [
 		index("idx_jobs_user").on(t.user_id),
 		index("idx_jobs_org").on(t.org_id),
+		// Cursor paging (lib/cli/paging.ts). The keyset page query is
+		//   WHERE org_id = $1 AND (created_at, id) < ($2, $3)
+		//   ORDER BY created_at DESC NULLS LAST, id DESC NULLS LAST LIMIT n
+		// and this is the index that CAN answer it as one range scan with NO sort node. Two things
+		// have to line up for that. The tiebreak column must be IN the index, which is why
+		// idx_jobs_org (a prefix of this one) plus a sort is not equivalent. And the NULLS LAST is
+		// not decoration: drizzle emits `DESC` here as DESC NULLS LAST, while Postgres defaults an
+		// ORDER BY DESC to NULLS FIRST — pair this index with a plain `DESC` order and the planner
+		// adds the sort back. Asserted, not assumed: the integration suite's SMALL-fixture guard
+		// EXPLAINs the real query with seqscan disabled, fails on a Sort node, and carries the
+		// plain `DESC` form as a control that must still plan one.
+		//
+		// Which plan Postgres then CHOOSES is a different question, and a cardinality-dependent
+		// one — the composite index orders the rows for free, the narrower idx_jobs_org plus a
+		// top-N sort is cheaper to walk, and the winner moves with the statistics. A second
+		// integration guard seeds a large fixture and EXPLAINs with the planner UNCONSTRAINED,
+		// asserting only that the page is still reached through an org index rather than a seq
+		// scan. It pins neither index over the other, because neither is a defect.
+		index("idx_jobs_org_cursor").on(t.org_id, t.created_at.desc(), t.id.desc()),
 		// Serves the free-tier daily job quota's trailing-24h COUNT (lib/billing/job-quota.ts):
 		// WHERE org_id=? AND initiated_by='user' AND created_at >= now()-interval '24h'. Partial on
 		// the only value the quota counts, so the index stays small and the count is a single probe.

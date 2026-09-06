@@ -71,7 +71,12 @@ CMD ["node", "scripts/migrate.mjs"]
 # ---- runner: slim standalone runtime ----
 FROM node:22-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production ALETHIA_EDITION=enterprise
+# Build args are scoped per stage. Redeclare VERSION here so the running container carries the
+# commit that produced its standalone bundle, rather than leaving provenance behind in `build`.
+ARG VERSION=dev
+ENV NODE_ENV=production \
+    ALETHIA_EDITION=enterprise \
+    ALETHIA_SOURCE_COMMIT=$VERSION
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=build --chown=nextjs:nodejs /app/apps/console/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/apps/console/.next/static ./apps/console/.next/static

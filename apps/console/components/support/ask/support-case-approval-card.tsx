@@ -75,21 +75,21 @@ export function SupportCaseApprovalCard({
 					<LifeBuoy className="h-3.5 w-3.5" />
 				</span>
 				<div className="min-w-0">
-					<div className="truncate text-[13px] font-medium">{proposal.subject}</div>
-					<div className="vx-eyebrow text-[9px]">
+					<div className="truncate text-ui-md font-medium">{proposal.subject}</div>
+					<div className="vx-eyebrow text-ui-3xs">
 						{proposal.type} · {proposal.category} · {proposal.severity}
 					</div>
 				</div>
 			</div>
 
 			<div className="space-y-3 px-3.5 py-3">
-				<p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+				<p className="whitespace-pre-wrap text-ui-sm leading-relaxed text-muted-foreground">
 					{proposal.description}
 				</p>
 
 				{phase === "done" ? (
 					<div className="flex items-center justify-between gap-3">
-						<div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+						<div className="flex items-center gap-2 font-mono text-ui-xs text-muted-foreground">
 							<span className="h-1.5 w-1.5 rounded-full bg-foreground" />
 							Case {caseNumber != null ? `#${caseNumber}` : ""} opened.
 						</div>
@@ -107,7 +107,7 @@ export function SupportCaseApprovalCard({
 						)}
 					</div>
 				) : phase === "rejected" ? (
-					<div className="font-mono text-[11px] text-muted-foreground">
+					<div className="font-mono text-ui-xs text-muted-foreground">
 						Dismissed.
 					</div>
 				) : phase === "denied" ? (
@@ -115,7 +115,7 @@ export function SupportCaseApprovalCard({
 						<span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center border border-foreground">
 							<X className="h-3 w-3" />
 						</span>
-						<div className="text-[12px] leading-relaxed text-muted-foreground">
+						<div className="text-ui-sm leading-relaxed text-muted-foreground">
 							<span className="font-medium text-foreground">
 								Case not opened.
 							</span>{" "}
@@ -124,7 +124,7 @@ export function SupportCaseApprovalCard({
 					</div>
 				) : (
 					<div className="flex items-center justify-between gap-3">
-						<span className="text-[11px] text-muted-foreground">
+						<span className="text-ui-xs text-muted-foreground">
 							Review the details, then submit this case to support.
 						</span>
 						<div className="flex flex-none gap-2">

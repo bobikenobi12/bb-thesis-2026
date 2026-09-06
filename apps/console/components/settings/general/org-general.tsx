@@ -44,7 +44,7 @@ import {
 import { Button } from "@repo/ui/button";
 import { Skeleton } from "@repo/ui/skeleton";
 import { authClient } from "@/lib/auth/client";
-import { slugify } from "@/lib/slug";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { useWorkspaceStore } from "@/lib/stores/use-workspace-store";
 import { cn } from "@repo/ui/utils";
 
@@ -171,17 +171,17 @@ export function OrgGeneral() {
                 hint="The slug for your organization's URL."
               >
                 <div className="flex h-[38px] items-center overflow-hidden rounded-sm border border-border-strong bg-surface-sunken">
-                  <span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-[12px] text-text-tertiary">
+                  <span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-ui-sm text-text-tertiary">
                     {orgHost()}/
                   </span>
                   <input
-                    className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-[12px] text-text-primary outline-none"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-ui-sm text-text-primary outline-none"
                     value={s.slug}
-                    onChange={(e) => set("slug", slugify(e.target.value))}
+                    onChange={(e) => set("slug", slugifyOrEmpty(e.target.value))}
                     autoComplete="off"
                   />
                 </div>
-                <span className="font-mono text-[10.5px] text-text-tertiary">
+                <span className="font-mono text-ui-2xs text-text-tertiary">
                   Lowercase, numbers and hyphens.
                 </span>
               </SettingsField>
@@ -204,11 +204,11 @@ export function OrgGeneral() {
                 hint="Set from billing checkout when you opt to reuse the billing address."
               >
                 {s.primaryAddress ? (
-                  <address className="rounded-sm border border-border-strong bg-surface-sunken px-3 py-2.5 text-[12.5px] not-italic leading-relaxed text-text-secondary">
+                  <address className="rounded-sm border border-border-strong bg-surface-sunken px-3 py-2.5 text-ui-sm not-italic leading-relaxed text-text-secondary">
                     {formatPrimaryAddress(s.primaryAddress)}
                   </address>
                 ) : (
-                  <span className="font-mono text-[11px] text-text-tertiary">
+                  <span className="font-mono text-ui-xs text-text-tertiary">
                     Not set — check &ldquo;use as primary address&rdquo; during
                     checkout.
                   </span>
@@ -236,7 +236,7 @@ export function OrgGeneral() {
                     label: r,
                   }))}
                 />
-                <span className="font-mono text-[10.5px] text-text-tertiary">
+                <span className="font-mono text-ui-2xs text-text-tertiary">
                   Region migration requires a support request.
                 </span>
               </SettingsField>
@@ -258,7 +258,7 @@ export function OrgGeneral() {
                   className={cn(
                     settingsControl,
                     settingsControlSize,
-                    "font-mono text-[12.5px]",
+                    "font-mono text-ui-sm",
                   )}
                   value={s.terraformVersion}
                   onChange={(e) => set("terraformVersion", e.target.value)}

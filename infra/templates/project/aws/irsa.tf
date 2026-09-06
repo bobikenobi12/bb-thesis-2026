@@ -36,10 +36,16 @@ locals {
   # the policy after the cluster. Empty only when no RDS cluster exists, which the precondition below
   # rejects rather than letting it degrade back into a wildcard.
   #
-  # NOT `try(one(...), "")`: try() rescues ERRORS, and `one([])` is not an error — it returns NULL. The
-  # fallback therefore never fired, and the null reached the policy's string template, which fails with
-  # "Invalid template interpolation value" instead of the precondition's explanation.
-  rds_iam_cluster_resource_id_raw = one(module.rds_maindb[*].rds_cluster_resource_id)
+  # The null is collapsed on the NEXT line, not by a `try()` fallback around this one: try() rescues
+  # ERRORS, and an absent module yields NULL here, not an error. A `try(…, "")` fallback therefore
+  # never fired, and the null reached the policy's string template, which fails with "Invalid
+  # template interpolation value" instead of the precondition's explanation.
+  #
+  # The probe replaced `one(module.rds_maindb[*]…)` (#3509): a splat reads the module AS A WHOLE,
+  # and this local feeds an IAM policy the RDS module must not have to wait on. Probing one output
+  # of one instance keeps the edge as fine as a bare index, and repeating the traversal outside the
+  # `try()` keeps a renamed output a validation error.
+  rds_iam_cluster_resource_id_raw = try(module.rds_maindb[0].rds_cluster_resource_id, null) != null ? module.rds_maindb[0].rds_cluster_resource_id : null
   rds_iam_cluster_resource_id     = local.rds_iam_cluster_resource_id_raw == null ? "" : local.rds_iam_cluster_resource_id_raw
 }
 module "rds_iam_auth" {
@@ -61,7 +67,7 @@ module "rds_iam_auth" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["default:alethia-app"]
     }
   }
@@ -131,7 +137,7 @@ module "irsa_alethia_agent" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["*:*"]
     }
   }
@@ -179,7 +185,7 @@ module "irsa_fluentbit_cloudwatch" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["fluent-bit:fluent-bit"]
     }
   }
@@ -314,7 +320,7 @@ module "irsa_karpenter" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["${local.karpenter_namespace}:karpenter"]
     }
   }
@@ -341,7 +347,7 @@ module "irsa_ai_bedrock" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["*:*"]
     }
   }
@@ -467,7 +473,7 @@ module "irsa_ecr_build" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["${local.ecr_build_namespace}:${local.ecr_build_service_account}"]
     }
   }
@@ -491,7 +497,7 @@ module "s3_bucket_irsa_role" {
   }
   oidc_providers = {
     main = {
-      provider_arn               = module.eks[0].oidc_provider_arn
+      provider_arn               = try(module.eks[0].oidc_provider_arn, null) != null ? module.eks[0].oidc_provider_arn : ""
       namespace_service_accounts = ["*:*"]
     }
   }

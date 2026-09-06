@@ -37,6 +37,42 @@ variable "talos_version" {
   default     = "v1.13.6"
 }
 
+# ── The Talos snapshot cache (#3027). Three modes, because an operator needs three different
+#    things from it and a bare on/off cannot give them all.
+#
+# The snapshot `imager_image` builds is a pure function of (talos_version × architecture × location ×
+# extension set). Rebuilding it per cluster cost 5–15 minutes on the critical path of every apply and
+# was the dominant flake of the Hetzner floor — it blew its tofu deadline twice (#2458, run
+# 33080748841) on the one resource that runs before any cluster exists, so losing it lost the run.
+#
+#   "enabled"  (default) look the cache up; a hit skips the build entirely; a miss builds and stamps
+#              a persistent cache entry so the next apply hits. The entry carries NO `cluster` label,
+#              which is what makes it invisible to the per-run teardown sweep — see image.tf.
+#   "refresh"  skip the lookup; always build; stamp a NEWER entry, which wins the `most_recent`
+#              lookup from then on. THE INVALIDATION LEVER: it supersedes a poisoned or suspect
+#              cached snapshot without deleting anything, so a rollback is one more `refresh` away.
+#   "disabled" skip the lookup; always build; stamp NO cache entry. Exactly the pre-#3027 behaviour:
+#              a per-cluster image labelled `cluster=<name>`, reclaimed by the run's own teardown.
+#              This is also the escape hatch from the lookup's trustworthiness gate — see image.tf.
+#
+# Cache entries are RETAINED INDEFINITELY and nothing deletes them on a timer. Reclaiming is a
+# deliberate, human-invoked operation: `scripts/e2e/hcloud-image-cache.sh`. The reasoning (cost,
+# rollback, and blast radius in an account shared with prod) is in image.tf's header.
+variable "talos_image_cache" {
+  description = "Talos snapshot cache mode: enabled (reuse a matching cached snapshot), refresh (rebuild and supersede the cached entry), disabled (rebuild per cluster, no cache entry — pre-#3027 behaviour)."
+  type        = string
+  default     = "enabled"
+
+  validation {
+    # A typo must be a REFUSAL, not a silent fallback. `var.talos_image_cache == "enabled"` decides
+    # whether the lookup runs at all, so a misspelling that fell through to the default branch would
+    # quietly restore the unconditional rebuild this variable exists to remove — green, slower, and
+    # with nothing in the plan saying why.
+    condition     = contains(["enabled", "refresh", "disabled"], var.talos_image_cache)
+    error_message = "talos_image_cache must be exactly one of \"enabled\", \"refresh\" or \"disabled\"."
+  }
+}
+
 variable "kubernetes_version" {
   # MUST be a concrete PATCH (e.g. 1.35.6), not a bare minor: Talos installs this verbatim as
   # the control-plane component image tag (registry.k8s.io/kube-apiserver:v<this>), and upstream

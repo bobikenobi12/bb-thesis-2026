@@ -16,12 +16,18 @@ The runner copies this template verbatim, feeds it a `.tfvars.json`, then runs
 
 ## How it works
 
-1. **Image (in-apply):** a Talos [Image Factory](https://factory.talos.dev/)
-   schematic is built with the `siderolabs/qemu-guest-agent` extension; the
-   `hcloud` disk image (`raw.xz`) URL is derived per architecture and uploaded +
-   snapshotted into Hetzner via the `hcloud-talos/imager` provider
-   (`imager_image`). Only the architecture(s) actually referenced by
-   `control_plane_arch` / `worker_arch` are built.
+1. **Image (cached; built in-apply only on a miss):** the snapshot is a pure
+   function of `talos_version` × architecture × `region` × the requested
+   extension set, so it is looked up before it is built. On a **hit**
+   (`data "hcloud_images"`, selector `alethia.io/cache==talos-image` plus the
+   four key dimensions) nothing is built at all. On a **miss** a Talos
+   [Image Factory](https://factory.talos.dev/) schematic is built with the
+   `siderolabs/qemu-guest-agent` extension; the `hcloud` disk image (`raw.xz`)
+   URL is derived per architecture and uploaded + snapshotted into Hetzner via
+   the `hcloud-talos/imager` provider (`imager_image`), and the result is stamped
+   with the cache labels so the next apply is a hit. Only the architecture(s)
+   actually referenced by `control_plane_arch` / `worker_arch` are considered.
+   See [The Talos snapshot cache](#the-talos-snapshot-cache).
 2. **Network:** one `hcloud_network` + `/24` node subnet carved from
    `network_cidr`, plus a firewall allowing Talos apid (50000/50001), the
    Kubernetes API (6443), and all intra-cluster traffic. With
@@ -47,6 +53,84 @@ The runner copies this template verbatim, feeds it a `.tfvars.json`, then runs
    — that made `tofu plan -out` (the runner's path) unresolvable, so the runner
    could never deploy this template.
 
+## The Talos snapshot cache
+
+Building the Talos snapshot takes about **five minutes** on a good day. It runs
+before anything else exists, so losing it loses the whole apply — and it has blown
+its OpenTofu `create` deadline twice (`failed to create snapshot: context deadline
+exceeded: remaining running actions: […]`, which is Hetzner still working when the
+provider gave up). Nothing about the snapshot varies per cluster, so it is cached
+per Hetzner project (#3027).
+
+### The cache key
+
+Four dimensions, each stamped as a label on the snapshot:
+
+| Label | Value |
+| --- | --- |
+| `alethia.io/cache` | `talos-image` — the marker every tool keys on |
+| `alethia.io/talos-version` | `talos_version` |
+| `alethia.io/talos-arch` | `x86` / `arm` |
+| `alethia.io/talos-location` | `region` |
+| `alethia.io/talos-schematic` | 32 hex chars of `sha256(requested extension list)` |
+
+The last one is the dimension it is dangerous to omit: the snapshot's content is
+(version × extensions), so adding or renaming an extension produces different bytes
+at the same Talos version. Changing the extension list therefore supersedes every
+cached entry automatically.
+
+### Why it survives a teardown
+
+A cache entry carries **no `cluster` label**. `scripts/e2e/hcloud-cleanup.sh`
+deletes exactly what is labelled `cluster=<this run>` in an account shared with
+production, so a cache entry is outside its selector *by construction* — nothing
+in the sweeper was weakened to allow it, and the per-cluster image built under
+`talos_image_cache = "disabled"` is still reclaimed exactly as before. The sweeper
+reports the cache entries it is skipping on every run.
+
+### A miss is a miss, not a blip
+
+The lookup uses `data "hcloud_images"` (plural), not `hcloud_image` (singular).
+The singular one raises `Resource not found` on a zero-match selector, so it
+cannot express a miss at all. The plural one returns an empty list **only** when
+the API answered successfully with nothing; every failure — a rotated token, a
+throttle, a 5xx — is a Terraform error instead. On top of that, an unfiltered
+image listing runs as a positive control: if the cache selector matched nothing
+*and* the unfiltered listing also matched nothing, the plan fails rather than
+rebuilding on a lookup that could not see. Set `talos_image_cache = "disabled"`
+to proceed anyway.
+
+A **hit** is validated too: every label the key asks for, plus the architecture,
+is re-asserted against the image Hetzner actually returned, so a selector that
+silently stopped filtering fails the plan instead of booting a cluster from the
+wrong snapshot.
+
+### Retention and invalidation
+
+Cached snapshots are **retained indefinitely**. Nothing deletes them on a timer —
+an image costs roughly EUR 0.02/month against 5–15 minutes of critical-path wall
+clock per apply, rolling `talos_version` back is an ordinary debugging move, and
+an automatic time-based delete in an account shared with prod is not a risk worth
+taking for two cents.
+
+To invalidate **without deleting anything**, set `talos_image_cache = "refresh"`:
+it rebuilds and stamps a newer entry, which wins the lookup from that apply
+onward. To reclaim:
+
+```bash
+scripts/e2e/hcloud-image-cache.sh                                   # list (read-only)
+scripts/e2e/hcloud-image-cache.sh --prune-superseded --yes-delete   # duplicates only
+scripts/e2e/hcloud-image-cache.sh --prune-version v1.12.4 --yes-delete
+```
+
+`--prune-superseded` never removes the newest entry of a key, so it cannot delete
+an image the current configuration would hit; every delete re-describes the image
+first and refuses it if it has acquired a `cluster` label. Neither prune mode
+deletes anything without `--yes-delete`.
+
+`scripts/check-hetzner-image-cache.mjs` (CI) fails if the label, the `count` gate,
+the key dimensions or the sweeper's skip-list ever stop agreeing.
+
 ## Verification
 
 `tofu validate` checks the configuration; a **real `tofu apply` is the true
@@ -62,6 +146,7 @@ variable). Agents must never run `tofu plan` / `tofu apply`.
 | `environment` | _(required)_ | Environment name (dev/staging/prod). |
 | `region` | `fsn1` | Hetzner location. |
 | `talos_version` | `v1.13.6` | Talos Linux version. |
+| `talos_image_cache` | `enabled` | Talos snapshot cache: `enabled` (reuse a matching cached snapshot), `refresh` (rebuild and supersede it), `disabled` (rebuild per cluster, no cache entry). See [The Talos snapshot cache](#the-talos-snapshot-cache). |
 | `kubernetes_version` | `1.35.6` | Kubernetes version — concrete **patch** (Talos uses it as the component image tag); coupled to `talos_version`. Empty → Talos default (1.36). |
 | `control_plane_count` | `1` | Number of control-plane nodes. |
 | `control_plane_server_type` | `cpx22` | CP server type (2 vCPU / 4 GB, amd64; orderable). `cax11` ARM is capacity-unreliable, `cpx11` retired. |

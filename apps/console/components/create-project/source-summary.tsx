@@ -105,7 +105,7 @@ export function SourceSummary({
 	return (
 		<div className="flex flex-col gap-[18px]">
 			<div className="flex flex-col gap-2.5">
-				<span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-muted-foreground">
+				<span className="font-mono text-ui-2xs uppercase tracking-[0.22em] text-muted-foreground">
 					Source
 				</span>
 				<div className="flex items-center gap-3 rounded-xl border border-border bg-card p-[13px]">
@@ -117,10 +117,10 @@ export function SourceSummary({
 						)}
 					</span>
 					<div className="min-w-0 flex-1">
-						<div className="truncate font-mono text-[13px] text-foreground">
+						<div className="truncate font-mono text-ui-md text-foreground">
 							{mode === "import" ? repo : scratchLabel}
 						</div>
-						<div className="font-mono text-[10.5px] text-muted-foreground">
+						<div className="font-mono text-ui-2xs text-muted-foreground">
 							{mode === "import" ? `branch · ${branch}` : scratchDesc}
 						</div>
 					</div>
@@ -131,13 +131,13 @@ export function SourceSummary({
 			</div>
 
 			<div className="flex flex-col gap-2.5">
-				<span className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-muted-foreground">
+				<span className="font-mono text-ui-2xs uppercase tracking-[0.22em] text-muted-foreground">
 					{mode === "scratch" ? "Starting point" : "Inferred stack"}
 				</span>
 
 				{mode === "import" && scanning && !proposal ? (
 					<div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
-						<div className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
+						<div className="flex items-center gap-2.5 text-ui-sm text-muted-foreground">
 							<Loader2 className="size-4 animate-spin" />
 							Scanning {repo}…
 						</div>
@@ -159,15 +159,15 @@ export function SourceSummary({
 										<Icon className="size-3.5" />
 									</span>
 									<div className="min-w-0 flex-1">
-										<div className="truncate text-[12.5px] font-medium text-foreground">
+										<div className="truncate text-ui-sm font-medium text-foreground">
 											{it.name}
 										</div>
-										<div className="truncate text-[10.5px] text-muted-foreground">
+										<div className="truncate text-ui-2xs text-muted-foreground">
 											{it.detail}
 										</div>
 									</div>
 									{c && (
-										<span className="flex shrink-0 items-center gap-1.5 font-mono text-[8.5px] uppercase tracking-wide text-muted-foreground">
+										<span className="flex shrink-0 items-center gap-1.5 font-mono text-ui-3xs uppercase tracking-wide text-muted-foreground">
 											<span className={cn("size-1.5 rounded-full", c.cls)} />
 											{c.label}
 										</span>
@@ -175,7 +175,7 @@ export function SourceSummary({
 								</div>
 							);
 						})}
-						<div className="bg-muted/30 px-[13px] py-2.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+						<div className="bg-muted/30 px-[13px] py-2.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 							scanned · {items.length} components
 						</div>
 					</div>
@@ -186,10 +186,10 @@ export function SourceSummary({
 								<Box className="size-3.5" />
 							</span>
 							<div>
-								<div className="text-[12.5px] font-medium text-foreground">
+								<div className="text-ui-sm font-medium text-foreground">
 									Cluster
 								</div>
-								<div className="text-[10.5px] text-muted-foreground">
+								<div className="text-ui-2xs text-muted-foreground">
 									standard preset · add the rest on the canvas
 								</div>
 							</div>
@@ -198,7 +198,7 @@ export function SourceSummary({
 				)}
 			</div>
 
-			<p className="border-l-2 border-border pl-[11px] text-[11.5px] leading-relaxed text-muted-foreground">
+			<p className="border-l-2 border-border pl-[11px] text-ui-xs leading-relaxed text-muted-foreground">
 				Nothing is provisioned yet. Creating the project saves a draft; you
 				review and deploy the full design on the canvas.
 			</p>

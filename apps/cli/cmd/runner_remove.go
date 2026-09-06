@@ -11,31 +11,49 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// runnerRemoveYes is the --yes opt-in: skip the confirmation prompt (and make the
-// command usable with --no-input).
-var runnerRemoveYes bool
+var (
+	// runnerRemoveRef is --runner: the runner to remove, by NAME or id.
+	runnerRemoveRef string
+	// runnerRemoveYes is the --yes opt-in: skip the confirmation prompt (and make the
+	// command usable with --no-input).
+	runnerRemoveYes bool
+)
 
 var runnerRemoveCmd = &cobra.Command{
-	Use:   "remove [runner_id]",
+	Use:   "remove [runner-id]",
 	Short: "Remove a runner record (no cloud teardown)",
-	Long:  `Removes the runner's database record only. Use 'alethia runner destroy' to tear down cloud resources first.`,
+	Args:  cobra.MaximumNArgs(1),
+	Long: `Removes the runner's database record only. Use 'alethia runner destroy' to tear down cloud resources first.
+
+Name the runner with --runner, which takes its NAME as shown by "alethia runner list" — no id
+has to be copied between commands. The positional argument still takes the raw id for scripts
+that already pass one; passing both is refused rather than resolved by precedence.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
 		}
+		apiClient := api.NewClient(token)
 
-		runnerID := ""
+		positional := ""
 		if len(args) > 0 {
-			runnerID = args[0]
-		} else {
+			positional = args[0]
+		}
+		runnerID, err := runnerIDFrom(apiClient, runnerRemoveRef, positional, "--runner", "the runner-id argument")
+		if err != nil {
+			fail(err)
+		}
+
+		if runnerID == "" {
+			if !canPromptForm() {
+				failf("no runner given: pass --runner (its name or its id), or the runner id as the argument")
+			}
 			runnerID, err = selectRunner(token, "")
 			if err != nil {
 				fail(err)
 			}
 			if runnerID == "" {
-				fmt.Println("Please select a specific runner, not 'Any available'.")
-				exitFunc(1)
+				failf("Select a specific runner to remove, not %q.", "Any available")
 			}
 		}
 
@@ -47,9 +65,7 @@ var runnerRemoveCmd = &cobra.Command{
 			return
 		}
 
-		apiClient := api.NewClient(token)
-
-		ui.RunSpinner("Removing runner...", func() {
+		runSpinner("Removing runner...", func() {
 			err = apiClient.RemoveRunner(runnerID)
 		})
 
@@ -64,4 +80,6 @@ var runnerRemoveCmd = &cobra.Command{
 func init() {
 	addYesFlag(runnerRemoveCmd, &runnerRemoveYes)
 	runnerCmd.AddCommand(runnerRemoveCmd)
+	runnerRemoveCmd.Flags().StringVar(&runnerRemoveRef, "runner", "",
+		"Runner to remove, by NAME or id (asked for on a terminal when omitted)")
 }

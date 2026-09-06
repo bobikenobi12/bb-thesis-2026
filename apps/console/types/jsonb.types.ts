@@ -2,6 +2,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Typed JSONB shapes for the Drizzle schema's `.$type<>()` columns (lib/db/schema).
+//
+// A `Mirrors the Go X` comment below is a LOCK, not a note.
+// `packages/core/jsonbmirror/jsonb_mirror_test.go` holds one committed fixture per mirrored
+// interface and requires three sets to be equal: the interface's properties, the fixture's keys,
+// and the Go struct's json tags. Adding, removing or renaming a property on either side alone
+// turns that test red. The fixtures are hand-written — fix a failure by bringing the three into
+// agreement, not by regenerating.
+//
+// Exactly three things in this file that name a Go type are NOT locked, and the test file lists
+// the same three:
+//   - the VALUES of `ArgocdHealthStatus` / `ArgocdSyncStatus` — ArgoCD's vocabulary is bare
+//     string literals on the Go side, with no constant set to compare against;
+//   - the VALUES of `GitopsStatusReport.mode` — `argocd.GitopsStatus.Mode` is a bare `string`;
+//   - `HelmRegistryProviderConfig`, whose claim is about what the Go providers READ, not about a
+//     struct's tags.
+// Their FIELDS are still locked where an interface carries them. Every other string union here is
+// checked against the Go constant block that defines it.
 
 import type {
 	AlertSeverity,
@@ -271,6 +288,9 @@ export * from "@repo/support/types";
 /** How a resource diverged from state (mirrors the Go `drift.Kind`). */
 export type DriftResourceKind = "modified" | "deleted" | "other";
 
+// Mirrors the Go `drift.ResourceDrift` (packages/core/drift). This is the shape on the live
+// path: `environment_drift.details` and `fabric_drift.details` are typed with it, and the canvas,
+// evidence and drift readers all go through it.
 export interface DriftDetail {
 	/** Terraform address of the drifted resource. */
 	address: string;
@@ -278,11 +298,23 @@ export interface DriftDetail {
 	type: string;
 	/** "modified" | "deleted" | "other" — how it diverged. */
 	kind: DriftResourceKind;
+	/**
+	 * The attribute PATHS that differed — never VALUES, same rule as
+	 * DriftNormalizedResource.attributes and for the same reason.
+	 *
+	 * Optional because it is genuinely absent for verdicts reached before the leaf diff
+	 * runs (a non-update action, or a change whose sides do not parse as objects). Empty
+	 * therefore means "not computed", never "nothing differed".
+	 *
+	 * This field was missing here while a second, near-identical `DriftResource` interface
+	 * carried it — the duplicate is gone and this one is locked, so they cannot diverge again.
+	 */
+	attributes?: string[];
 }
 
 /**
  * Honest structured result of a cluster-alive probe (BYOC B2) — mirrors the Go
- * `provisioner.ProbeResult` (packages/core/provisioner, built in B2.2). Stored on
+ * `provisioner.ProbeDetail` (packages/core/provisioner, built in B2.2). Stored on
  * `environment_probes.detail`; produced by a PROBE_CLUSTER job that dials the env's
  * cluster API server. Every field is optional because a probe records only what it
  * could observe: an unreachable cluster fills `error` and little else; a reachable one
@@ -746,7 +778,7 @@ export interface ExecutionMetadata {
 	// deploy finalizer. Mirrors the Go `argocd.AddOnHealth`.
 	addon_status?: Record<string, AddOnStatusEntry>;
 	// DEPLOY jobs: the cluster's aggregated Trivy-Operator vulnerability posture (L9), written
-	// back to environment_security by the deploy finalizer. Mirrors Go `argocd.SecurityPosture`.
+	// back to environment_security by the deploy finalizer. Mirrors the Go `argocd.SecurityPosture`.
 	security_report?: SecurityReport;
 	// IAC_SCAN jobs: the BYO IaC module scan result — finalizeIacScan writes it back onto the
 	// project_iac_sources row (scan_report + pinned commit_sha).
@@ -851,22 +883,6 @@ export interface SecurityReport {
 	scanned: boolean;
 }
 
-// Mirrors the Go `drift.Posture` (packages/core/drift). `unmanaged_known` is false
-// for a refresh-only plan — it cannot see resources that exist in the cloud but
-// not in state.
-export interface DriftResource {
-	address: string;
-	type: string;
-	kind: DriftResourceKind;
-	// The attribute PATHS that differed — never VALUES, same rule as
-	// DriftNormalizedResource.attributes and for the same reason.
-	//
-	// Optional because it is genuinely absent for verdicts reached before the leaf diff
-	// runs (a non-update action, or a change whose sides do not parse as objects). Empty
-	// therefore means "not computed", never "nothing differed".
-	attributes?: string[];
-}
-
 // Why a refresh delta was dismissed as representational rather than counted as drift.
 // Mirrors the Go `drift.NormalizedReason` (packages/core/drift/normalize.go).
 export type DriftNormalizedReason =
@@ -886,10 +902,12 @@ export interface DriftNormalizedResource {
 	reason: DriftNormalizedReason;
 }
 
+// Mirrors the Go `drift.Posture` (packages/core/drift). `unmanaged_known` is false for a
+// refresh-only plan — it cannot see resources that exist in the cloud but not in state.
 export interface DriftPosture {
 	in_sync: boolean;
 	drifted: number;
-	details?: DriftResource[];
+	details?: DriftDetail[];
 	// What the detector examined and dismissed. Kept rather than dropped so the
 	// dismissal is auditable — "0 drifted" with no trace is a control that cannot be
 	// shown to have operated.
@@ -1033,7 +1051,8 @@ export interface RekorAnchor {
 	anchor_public_key: string;
 }
 
-// One captured (truncated) file from a scanned repo. Mirrors packages/core/types RepoFile.
+// One captured (truncated) file from a scanned repo. Mirrors the Go `types.RepoFile`
+// (packages/core/types/repo_digest.go).
 export interface RepoFile {
 	path: string;
 	content: string;
@@ -1515,4 +1534,26 @@ export interface PrivacyExportManifest {
 	signature: string | null;
 	/** The key that signed it, so the signature can be checked later. Null when unsigned. */
 	signingKeyId: string | null;
+}
+
+/**
+ * What the client that ran `alethia login` said about itself, on `cli_logins.client_metadata`.
+ *
+ * Every field here is **attacker-controllable** — it arrives on the unauthenticated
+ * `/api/auth/cli/start` request, from a process nobody has authenticated yet. That is exactly
+ * why the three of them live together in one column instead of being spread across the table
+ * next to `request_ip`: `request_ip` is read from the deployment's trusted proxy header and is
+ * server-derived, these are not, and a reader of the schema must not have to guess which is
+ * which. Render them as a claim the user is being asked to weigh ("this device says it is
+ * alethia-cli v0.42 on macOS"), never as a fact the control plane is asserting.
+ *
+ * Null on any row written before the client registered, and on any field the client omitted.
+ */
+export interface CliDeviceClientMetadata {
+	/** The product name the client reported, e.g. `alethia-cli`. */
+	client_name: string | null;
+	/** The version the client reported, e.g. `0.42.1`. */
+	client_version: string | null;
+	/** The `user-agent` header on the registration request. */
+	user_agent: string | null;
 }

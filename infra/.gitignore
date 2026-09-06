@@ -7,7 +7,7 @@
 # customer infrastructure from, and leaving them unpinned meant every `tofu init` resolved live: the
 # e2e nightly died at 47s on a registry 500 (2026-07-27), and — quieter — it resolved a different
 # provider set than the runner image had baked, so the run meant to prove production works exercised
-# another dependency graph (#1259). Enforced by `pnpm -F console check:tofu-lockfiles`.
+# another dependency graph (#1259). Enforced by `pnpm -C apps/console run check:tofu-lockfiles`.
 **/.terraform.lock.hcl
 !templates/project/*/.terraform.lock.hcl
 **/terraform.tfvars

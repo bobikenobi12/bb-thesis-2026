@@ -31,10 +31,10 @@ import {
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex items-baseline justify-between gap-4 py-1.5">
-			<span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-tertiary">
+			<span className="font-mono text-ui-2xs uppercase tracking-[0.1em] text-text-tertiary">
 				{label}
 			</span>
-			<span className="min-w-0 truncate text-right text-[13px] text-text-secondary">
+			<span className="min-w-0 truncate text-right text-ui-md text-text-secondary">
 				{children}
 			</span>
 		</div>

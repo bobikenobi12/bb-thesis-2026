@@ -128,7 +128,7 @@ if (errors.length > 0) {
 				"  Do NOT hand-resolve meta/_journal.json or the snapshot. Instead:\n" +
 				"    1. delete your migration's .sql AND its meta/<idx>_snapshot.json\n" +
 				"    2. take dev's meta/_journal.json + snapshot, then rebase onto origin/dev\n" +
-				"    3. re-run `pnpm -F console db:generate` — it re-emits your change at the next\n" +
+				"    3. re-run `pnpm -C apps/console run db:generate` — it re-emits your change at the next\n" +
 				"       free index, chained off dev's latest snapshot\n",
 		);
 	} else {

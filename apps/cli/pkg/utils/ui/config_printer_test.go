@@ -72,7 +72,8 @@ func TestPrintConfigurationFullyPopulated(t *testing.T) {
 	for _, want := range []string{
 		"Configuration Details",
 		"atlas", "production", "eks",
-		"2026-03-04 05:06:07",
+		// #3659: `format.Date(DateTime)`, not the `2006-01-02 15:04:05` literal. Seconds go with it.
+		"4 Mar 2026, 05:06",
 		"123456789012", "eu-central-1",
 		"Network CIDR:", "10.0.0.0/16",
 		"DNS Zone:", "Z123",
@@ -114,8 +115,12 @@ func TestPrintConfigurationOmitsOptionalSections(t *testing.T) {
 	if strings.Count(out, "Disabled") != 3 {
 		t.Errorf("expected three Disabled flags, got %d:\n%s", strings.Count(out, "Disabled"), out)
 	}
-	if strings.Count(out, "N/A") != 2 {
-		t.Errorf("both nil capacities must render N/A, got %d:\n%s", strings.Count(out, "N/A"), out)
+	// SymbolDash, not "N/A". This printer was the third spelling of "nothing to show" — the other two
+	// were ui.SymbolDash everywhere else and a hardcoded em dash in token.go — so the same absence
+	// rendered differently depending on which command you ran. One glyph now, and asserted through
+	// the constant rather than a literal so the next change reaches both.
+	if strings.Count(out, SymbolDash) != 2 {
+		t.Errorf("both nil capacities must render the dash, got %d:\n%s", strings.Count(out, SymbolDash), out)
 	}
 }
 

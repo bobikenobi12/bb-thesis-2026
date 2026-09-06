@@ -53,7 +53,7 @@ export function RegionSelect({
 							<SelectItem key={r.value} value={r.value}>
 								<span className="flex items-center gap-2">
 									{r.label}
-									<span className="font-mono text-[11px] text-muted-foreground">
+									<span className="font-mono text-ui-xs text-muted-foreground">
 										{r.value}
 									</span>
 								</span>

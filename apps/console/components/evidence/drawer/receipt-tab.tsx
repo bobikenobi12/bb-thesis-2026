@@ -26,10 +26,10 @@ function Field({
 }) {
 	return (
 		<div className="flex items-baseline gap-3.5 border-b border-border-faint px-0.5 py-2.5">
-			<span className="w-[130px] shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-text-tertiary">
+			<span className="w-[130px] shrink-0 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 				{label}
 			</span>
-			<span className="min-w-0 flex-1 break-all font-mono text-[11px] leading-relaxed text-text-primary">
+			<span className="min-w-0 flex-1 break-all font-mono text-ui-xs leading-relaxed text-text-primary">
 				{value}
 			</span>
 			{copy && <CopyButton text={copy} className="shrink-0" />}
@@ -83,17 +83,17 @@ export function ReceiptTab({
 					className="text-text-secondary"
 				/>
 				<div className="flex-1">
-					<div className="font-display text-[14px] font-semibold text-text-primary">
+					<div className="font-display text-ui-lg font-semibold text-text-primary">
 						{signed ? "Signed receipt" : "Unsigned receipt"}
 					</div>
-					<div className="mt-0.5 font-mono text-[10px] text-text-tertiary">
+					<div className="mt-0.5 font-mono text-ui-2xs text-text-tertiary">
 						{receipt.key_id ?? receipt.algorithm}
 					</div>
 				</div>
 				<button
 					type="button"
 					onClick={() => onDownload(row)}
-					className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-ink px-3 text-[12px] font-medium text-ink-foreground transition-colors hover:bg-ink-hover"
+					className="inline-flex h-8 items-center gap-1.5 rounded-sm bg-ink px-3 text-ui-sm font-medium text-ink-foreground transition-colors hover:bg-ink-hover"
 				>
 					<EvIcon name="download" size={14} />
 					Download
@@ -135,11 +135,11 @@ export function ReceiptTab({
 				<div className="rounded-md border border-dashed border-border-strong bg-surface-sunken px-3.5 py-3">
 					<div className="mb-1 flex items-center gap-1.5">
 						<EvIcon name="shield-check" size={14} className="text-text-secondary" />
-						<span className="font-display text-[13px] font-semibold text-text-primary">
+						<span className="font-display text-ui-md font-semibold text-text-primary">
 							Anchored in a transparency log
 						</span>
 					</div>
-					<div className="text-[11.5px] leading-relaxed text-text-tertiary">
+					<div className="text-ui-xs leading-relaxed text-text-tertiary">
 						This receipt’s digest was entered into an append-only Rekor log (entry{" "}
 						<span className="font-mono">#{anchor.log_index}</span>), so any third party can
 						confirm offline that it existed and was not altered — no callback to Alethia.
@@ -148,7 +148,7 @@ export function ReceiptTab({
 						href={rekorEntryUrl(anchor.log_url, anchor.log_index)}
 						target="_blank"
 						rel="noopener noreferrer"
-						className="mt-2.5 inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-[11px] text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
+						className="mt-2.5 inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-ui-xs text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
 					>
 						View log entry
 						<ArrowUpRight className="size-3" />
@@ -157,23 +157,23 @@ export function ReceiptTab({
 			)}
 			{body.exception && (
 				<div className="rounded-md border border-dashed border-border-strong bg-surface-sunken px-3.5 py-3">
-					<div className="mb-2 font-mono text-[9px] uppercase tracking-[0.13em] text-text-tertiary">
+					<div className="mb-2 font-mono text-ui-3xs uppercase tracking-[0.13em] text-text-tertiary">
 						Sealed exception
 					</div>
 					<div className="mb-2 flex flex-wrap gap-1">
 						{body.exception.controls.map((c) => (
 							<span
 								key={c}
-								className="rounded-xs border px-1.5 py-0.5 font-mono text-[10px] text-text-secondary"
+								className="rounded-xs border px-1.5 py-0.5 font-mono text-ui-2xs text-text-secondary"
 							>
 								{c}
 							</span>
 						))}
 					</div>
-					<div className="text-[12px] leading-relaxed text-text-secondary">
+					<div className="text-ui-sm leading-relaxed text-text-secondary">
 						{body.exception.reason}
 					</div>
-					<div className="mt-2 font-mono text-[10px] text-text-tertiary">
+					<div className="mt-2 font-mono text-ui-2xs text-text-tertiary">
 						{body.exception.by}
 					</div>
 				</div>
@@ -182,18 +182,18 @@ export function ReceiptTab({
 				<div className="rounded-md border border-dashed border-border-strong bg-surface-sunken px-3.5 py-3">
 					<div className="mb-1 flex items-center gap-1.5">
 						<EvIcon name="file-check" size={14} className="text-text-secondary" />
-						<span className="font-display text-[13px] font-semibold text-text-primary">
+						<span className="font-display text-ui-md font-semibold text-text-primary">
 							Enable signed receipts
 						</span>
 					</div>
-					<div className="text-[11.5px] leading-relaxed text-text-tertiary">
+					<div className="text-ui-xs leading-relaxed text-text-tertiary">
 						Set an ed25519 signing key on the runner and every future receipt becomes
 						tamper-evident and verifiable offline — even the platform key upgrades
 						“trust the database row” to “cryptographically bound to this plan”.
 					</div>
 					<a
 						href={EVIDENCE_HELP.receipt.docsHref}
-						className="mt-2.5 inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-[11px] text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
+						className="mt-2.5 inline-flex items-center gap-1 border-b border-border-strong pb-0.5 font-mono text-ui-xs text-text-secondary transition-colors hover:border-text-primary hover:text-text-primary"
 					>
 						How to enable signing
 						<ArrowUpRight className="size-3" />
@@ -206,7 +206,7 @@ export function ReceiptTab({
 					size={14}
 					className="mt-px shrink-0 text-text-tertiary"
 				/>
-				<span className="text-[11.5px] leading-relaxed text-text-tertiary">
+				<span className="text-ui-xs leading-relaxed text-text-tertiary">
 					A receipt attests that this verdict is reproducible given the same plan
 					— not a proof of compliance. The signing key is held by the runner that
 					executed the job; anchor it with a customer-controlled key or a

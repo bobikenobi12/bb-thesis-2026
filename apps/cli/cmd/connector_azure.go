@@ -17,6 +17,8 @@ import (
 
 var (
 	connectorAzureSubscription string
+	connectorAzureTenantID     string
+	connectorAzureClientID     string
 	connectorAzureManual       bool
 )
 
@@ -31,8 +33,19 @@ Alethia's OIDC issuer, and grants it a least-privilege role. There is no platfor
 app: Alethia authenticates AS your managed identity, whose client id the setup prints.
 
 By default the setup runs with your local az CLI. Use --manual to run it in
-Azure Cloud Shell and paste back the tenant, client, and subscription IDs.`,
+Azure Cloud Shell and paste back the tenant, client, and subscription IDs, or pass
+--tenant-id and --client-id for a managed identity you already created — the flag
+form of that same paste, so the command works under --no-input with no az CLI on the
+machine.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := refuseMultipleModes(
+			modeFlag{"--tenant-id/--client-id", strings.TrimSpace(connectorAzureTenantID) != "" ||
+				strings.TrimSpace(connectorAzureClientID) != ""},
+			modeFlag{"--manual", connectorAzureManual},
+		); err != nil {
+			fail(err)
+		}
+
 		token, err := getAuthToken()
 		if err != nil {
 			fail(err)
@@ -42,6 +55,9 @@ Azure Cloud Shell and paste back the tenant, client, and subscription IDs.`,
 
 		ui.PrintStepper(steps, 0)
 		if connectorAzureSubscription == "" {
+			if err := requireInteractiveForm(); err != nil {
+				failf("no subscription given: pass --subscription (%v)", err)
+			}
 			if err := runHuhForm(huh.NewGroup(
 				huh.NewInput().
 					Title("Azure Subscription ID").
@@ -63,9 +79,15 @@ Azure Cloud Shell and paste back the tenant, client, and subscription IDs.`,
 
 		ui.PrintStepper(steps, 1)
 		var ids *cloudshell.AzureIDs
-		if connectorAzureManual {
+		switch {
+		case connectorAzureTenantID != "" || connectorAzureClientID != "":
+			// The flag half of the manual flow: the managed identity already exists, so there
+			// is nothing to create and nothing to paste. Both ids are required together — a
+			// half-given pair is a mistake, not a partial instruction.
+			ids, err = azureFlagIDs(connectorAzureTenantID, connectorAzureClientID, connectorAzureSubscription)
+		case connectorAzureManual:
 			ids, err = azureManualFlow(connectorAzureSubscription)
-		} else {
+		default:
 			ids, err = azureLocalFlow(connectorAzureSubscription)
 		}
 		if err != nil {
@@ -112,6 +134,10 @@ func azureManualFlow(subscriptionID string) (*cloudshell.AzureIDs, error) {
 	)
 	fmt.Println("  Then paste the values it prints below.")
 
+	if err := requireInteractiveForm(); err != nil {
+		return nil, fmt.Errorf("no identity ids given: pass --tenant-id and --client-id (%w)", err)
+	}
+
 	ids := &cloudshell.AzureIDs{SubscriptionID: subscriptionID}
 	if err := runHuhForm(huh.NewGroup(
 		huh.NewInput().Title("Tenant ID").Value(&ids.TenantID),
@@ -130,8 +156,36 @@ func azureManualFlow(subscriptionID string) (*cloudshell.AzureIDs, error) {
 	return ids, nil
 }
 
+// azureFlagIDs validates the flag-supplied triple. It requires the tenant and client ids
+// TOGETHER: a connection made with one of them missing would be stored and then fail its
+// health probe with an Azure-side message, which reads as a cloud fault rather than as the
+// missing flag it is.
+func azureFlagIDs(tenantID, clientID, subscriptionID string) (*cloudshell.AzureIDs, error) {
+	ids := &cloudshell.AzureIDs{
+		TenantID:       strings.TrimSpace(tenantID),
+		ClientID:       strings.TrimSpace(clientID),
+		SubscriptionID: strings.TrimSpace(subscriptionID),
+	}
+	var missing []string
+	if ids.TenantID == "" {
+		missing = append(missing, "--tenant-id")
+	}
+	if ids.ClientID == "" {
+		missing = append(missing, "--client-id")
+	}
+	if ids.SubscriptionID == "" {
+		missing = append(missing, "--subscription")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing %s — the tenant, client and subscription ids are required together", strings.Join(missing, " and "))
+	}
+	return ids, nil
+}
+
 func init() {
 	connectorCmd.AddCommand(connectorAzureCmd)
 	connectorAzureCmd.Flags().StringVar(&connectorAzureSubscription, "subscription", "", "Azure subscription ID")
+	connectorAzureCmd.Flags().StringVar(&connectorAzureTenantID, "tenant-id", "", "Azure tenant ID of a managed identity you already created (with --client-id)")
+	connectorAzureCmd.Flags().StringVar(&connectorAzureClientID, "client-id", "", "Client (application) ID of a managed identity you already created (with --tenant-id)")
 	connectorAzureCmd.Flags().BoolVar(&connectorAzureManual, "manual", false, "Run setup in Azure Cloud Shell and paste the result")
 }

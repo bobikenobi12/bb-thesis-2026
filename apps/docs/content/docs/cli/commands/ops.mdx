@@ -19,30 +19,72 @@ endpoints are cross-tenant and bypass row-level security, so the operator allowl
 
 ## The break-glass model
 
-Three rules hold for every action, enforced server-side:
+Four rules hold for every action.
 
-- **Audited.** An append-only audit record is written *before* the act. Every verb requires
-  `--reason`, which is recorded in the immutable audit.
-- **Typed-confirm.** A mutating action must echo the exact resource id back to the server; a
-  mismatch is refused. The CLI sends this confirmation for you.
+- **Audited.** An append-only audit record is written *before* the act. Every verb requires a
+  `--reason` of at least eight characters, and it is what the next person reading the audit has to
+  go on.
+- **Typed-confirm.** A mutating action echoes the exact resource id back to the server; a mismatch
+  is refused. The CLI sends this confirmation for you.
+- **Confirmed at the terminal.** Every action that changes something names the resource and the
+  consequence and waits for you. `--yes` opts in ahead of time, which is what a runbook or a
+  pipeline passes. With prompts unavailable and no `--yes`, the command exits non-zero having
+  changed nothing — it never exits `0` having done nothing.
 - **Two-person approval for high-blast actions.** `force-release-lock`, `state-surgery`, and
-  `orphan-clean` require an `--approval` token minted by a **different** operator via
+  `orphan-clean` require an `--approval` token minted by a **different** operator through
   [`alethia ops approve`](#alethia-ops-approve). The server enforces that the approver and the actor
   are different people.
 
 Each action opens a fresh time-boxed break-glass session before it runs, records the reason, then
-executes against the single audited execute endpoint.
+executes against the single audited execute endpoint. The session opens **after** you confirm, so a
+declined action leaves no trace.
+
+## Nothing is copied between commands
+
+Every id in this group is an optional positional or an optional flag. Give one and it is passed
+through exactly as typed, with no listing request made for it. Give none on a terminal and the
+command asks:
+
+- `inspect-job`, `retry-job` and `cancel-job` offer your organization's recent jobs, rendered by
+  the [`jobs`](/cli/commands/jobs) group's own line renderer so a job reads the same in both.
+- `drain-runner` and `restart-runner` offer every runner, including the offline ones — a drain is
+  aimed at the runner that is wrong.
+- `unstick-env` offers a project, then its environments, and starts the compare-and-swap
+  precondition at the status the environment is actually in.
+- `orphan-detect` and `orphan-clean` offer your projects.
+- `approve` offers the actions that take an approval, read from the same catalog the server
+  enforces.
+
+The one value you still type from elsewhere is `--approval`, and that is the point of it: a
+two-person token is minted by another operator on another terminal and handed to you. A token this
+CLI could fetch for you would not be two-person.
+
+A state key and a Stripe event id have no listing anywhere, so those two are asked as questions
+rather than offered as menus.
 
 ## Blast radius
 
-Each verb is labelled with its blast radius in its help text.
+Each verb is labelled with its blast radius in its help text. The labels come from the server's
+break-glass catalog, so they are the same ones the dispatcher enforces.
 
-| Blast | Verbs |
-|-------|-------|
-| none (read-only) | `inspect-job`, `orphan-detect` |
-| low | `retry-job`, `cancel-job`, `drain-runner`, `replay-webhook` |
-| medium | `unstick-env`, `restart-runner` |
-| HIGH (two-person) | `force-release-lock`, `state-surgery`, `orphan-clean` |
+| Blast | Verbs | Confirms |
+|-------|-------|----------|
+| none (read-only) | `inspect-job`, `orphan-detect` | no — nothing changes |
+| low | `retry-job`, `cancel-job`, `drain-runner`, `replay-webhook` | yes |
+| medium | `unstick-env`, `restart-runner` | yes |
+| HIGH (two-person) | `force-release-lock`, `state-surgery`, `orphan-clean` | yes, plus `--approval` |
+
+## `alethia ops`
+
+The group itself is runnable and prints the verb list with each one's blast radius, which is the
+fastest way to see what break-glass can do without reading this page.
+
+```bash
+alethia ops
+```
+
+It takes no flags and performs no action — listing the surface is not itself a privileged act, so
+it needs neither a `--reason` nor an audit record.
 
 ## `alethia ops session`
 
@@ -50,12 +92,14 @@ Open a standalone time-boxed break-glass session. The action verbs open their ow
 for inspecting or warming a session, or for scripts that reuse one.
 
 ```bash
-alethia ops session --reason "incident-1234 triage"
+alethia ops session --reason incident-1234-triage
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops session */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 Prints the session id, the resolved operator, and the session's expiry.
 
@@ -65,98 +109,157 @@ Mint a single-use, TTL'd, two-person approval bound to a high-blast action and r
 the **second** operator; the acting operator then passes the printed id as `--approval`.
 
 ```bash
-alethia ops approve <action> <resource_id> --reason "incident-1234 sign-off"
+alethia ops approve --reason incident-1234-signoff
+alethia ops approve state_surgery projects/acme/prod.tfstate --reason incident-1234-signoff
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<action>` | Yes | The action to approve: `force_release_state_lock`, `state_surgery`, or `orphan_clean`. |
-| `<resource_id>` | Yes | The resource the approval is bound to. |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops approve */}
 
-Prints the approval id, its expiry, and a note.
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Action | Which high-blast action this approval lets the other operator perform | `[action]` |
+| Resource | The exact resource the approval is bound to; a different one is refused | `[resource-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
+
+The action must be one that takes an approval: `force_release_state_lock`, `state_surgery`, or
+`orphan_clean`. The server answers `400` for any other one, so the CLI refuses it first and names
+the three.
+
+Prints the approval id, the action and resource it is bound to, the approver, and its expiry.
 
 ## `alethia ops inspect-job`
 
-Read a job's full row cross-tenant. Read-only (blast: none).
+Read a job's full row cross-tenant. Read-only (blast: none), so it asks for no confirmation and
+carries no `--yes`.
 
 ```bash
-alethia ops inspect-job <job_id> --reason "why did DEPLOY hang"
+alethia ops inspect-job --reason incident-1234-deploy-hung
+alethia ops inspect-job 8f3c2a1b-77de-4c05-9a41-2b8e6a1d40f7 --reason incident-1234-deploy-hung
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<job_id>` | Yes | Job id (positional). |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops inspect-job */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Job | The job to read; pick one, or pass an id an alert gave you | `[job-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
+
+The picker lists your own organization's recent jobs. Break-glass reaches jobs that listing does
+not, which is why an id given on the command line skips it entirely.
 
 ## `alethia ops retry-job`
 
-Re-enqueue a fresh job from a stuck or failed one (blast: low).
+Re-enqueue a fresh job from a stuck or failed one (blast: low). The poison counter resets and the
+work runs again.
 
 ```bash
-alethia ops retry-job <job_id> --reason "runner crash, safe to retry"
+alethia ops retry-job --reason incident-1234-runner-crash
+alethia ops retry-job 8f3c2a1b-77de-4c05-9a41-2b8e6a1d40f7 --reason incident-1234-runner-crash --yes
 ```
+
+{/* fieldspec: alethia ops retry-job */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Job | The job to re-enqueue; a fresh job is created and the poison counter resets | `[job-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops cancel-job`
 
-Cancel a job and signal its Runner to stop mid-flight (blast: low).
+Cancel a job and signal its Runner to stop mid-flight (blast: low). Work already applied is not
+rolled back.
 
 ```bash
-alethia ops cancel-job <job_id> --reason "wrong project targeted"
+alethia ops cancel-job --reason incident-1234-wrong-project
+alethia ops cancel-job 8f3c2a1b-77de-4c05-9a41-2b8e6a1d40f7 --reason incident-1234-wrong-project --yes
 ```
+
+{/* fieldspec: alethia ops cancel-job */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Job | The job to cancel; its runner is signalled to stop mid-flight | `[job-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops unstick-env`
 
 Move a stuck environment to a target status through the `set_env_status` compare-and-swap primitive —
-never a raw `UPDATE` (blast: medium). You must pass the explicit expected-from set and the target; a
-CAS miss is refused.
+never a raw `UPDATE` (blast: medium). A compare-and-swap miss is refused, which is what makes this
+safe to run against an environment that is moving under you.
 
 ```bash
-alethia ops unstick-env <environment_id> \
-  --from PROVISIONING,DEPLOYING --to READY \
-  --reason "stuck after runner crash"
+alethia ops unstick-env --reason incident-1234-stuck-after-crash
+alethia ops unstick-env 5c1f0a92-3d77-4a10-b8e2-7f9d4c6b1a03 --from PROVISIONING,QUEUED --to FAILED --reason incident-1234-stuck-after-crash --yes
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<environment_id>` | Yes | Environment id (positional). |
-| `--from` | Yes | Comma-separated expected current statuses (the CAS precondition). |
-| `--to` | Yes | Target status to move the environment to. |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops unstick-env */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Environment | The environment to move; pick one, or pass its id | `[environment-id]` |
+| Expected from | The statuses the move is allowed to start from; a compare-and-swap miss is refused | `--from` |
+| Move to | The status to move the environment to | `--to` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
+
+Both sides are project statuses: `DRAFT`, `QUEUED`, `PROVISIONING`, `ACTIVE`, `FAILED`,
+`DESTROYING`, `DESTROYED`. Anything else is refused before the request is made, because the server
+refuses it too.
+
+Picked from the list, `--from` starts at the status the environment is in. Given an id on the
+command line the CLI has not looked the environment up, so `--from` is required — inventing a
+precondition is the one thing a compare-and-swap exists to prevent.
 
 ## `alethia ops drain-runner`
 
-Mark an online Runner `DRAINING` so it stops claiming jobs (blast: low).
+Mark an online Runner `DRAINING` so it stops claiming jobs (blast: low). It finishes the jobs it
+already holds.
 
 ```bash
-alethia ops drain-runner <runner_id> --reason "node degraded"
+alethia ops drain-runner --reason incident-1234-node-degraded
+alethia ops drain-runner e77b1c40-9a2f-4d61-8c33-5b0e2a7f9d41 --reason incident-1234-node-degraded --yes
 ```
+
+{/* fieldspec: alethia ops drain-runner */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Runner | The runner to drain; it finishes what it holds and claims nothing new | `[runner-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops restart-runner`
 
-Drain a Runner and wake the scaler to roll a replacement (blast: medium).
+Drain a Runner and wake the scaler to roll a replacement (blast: medium). This runner does not come
+back.
 
 ```bash
-alethia ops restart-runner <runner_id> --reason "wedged runner"
+alethia ops restart-runner --reason incident-1234-wedged-runner
+alethia ops restart-runner e77b1c40-9a2f-4d61-8c33-5b0e2a7f9d41 --reason incident-1234-wedged-runner --yes
 ```
+
+{/* fieldspec: alethia ops restart-runner */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Runner | The runner to roll; it is drained and the scaler wakes to replace it | `[runner-id]` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops force-release-lock`
 
 Force-release a stranded [OpenTofu](/concepts/glossary) state lock (blast: HIGH, two-person). It
-rotates the fencing token and bumps the generation — never a naive delete — so a zombie writer is
-fenced out.
+rotates the fencing token and bumps the generation — never a naive delete — so a writer still
+holding the lock is fenced out mid-apply.
 
 ```bash
-alethia ops force-release-lock <state_key> \
-  --approval <approval_id> \
-  --reason "runner died holding the lock"
+alethia ops force-release-lock projects/acme/prod.tfstate --approval 6b21d8f4-0c5e-4a93-9f27-3d81b6e5c704 --reason incident-1234-runner-died-holding-lock --yes
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<state_key>` | Yes | State key of the locked object (positional). |
-| `--approval` | Yes | Two-person approval token id (mint one with `alethia ops approve`). |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops force-release-lock */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| State key | The locked state object; the fencing token rotates so a zombie writer is fenced out | `[state-key]` |
+| Approval | The approval id a second operator read out to you from their own ops approve run | `--approval` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops state-surgery`
 
@@ -164,18 +267,21 @@ Queue a privileged `STATE_SURGERY` job through the normal Runner/state pipeline,
 (blast: HIGH, two-person).
 
 ```bash
-alethia ops state-surgery <state_key> \
-  --approval <approval_id> \
-  --note "import orphaned RDS instance" \
-  --reason "failed apply orphaned a resource"
+alethia ops state-surgery projects/acme/prod.tfstate --approval 6b21d8f4-0c5e-4a93-9f27-3d81b6e5c704 --note import-orphaned-rds --reason incident-1234-failed-apply --yes
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<state_key>` | Yes | State key to operate on (positional). |
-| `--approval` | Yes | Two-person approval token id. |
-| `--note` | No | Free-form description of the intended repair (audit only). |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops state-surgery */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| State key | The state object the surgery job will operate on | `[state-key]` |
+| Approval | The approval id a second operator read out to you from their own ops approve run | `--approval` |
+| Repair note | What the repair is meant to do; recorded in the audit and read by whoever reviews it | `--note` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
+
+The note is the only optional field in the group. It is still asked for on a terminal, because the
+person who reads the audit is not the person running this, and "state surgery, no note" is the row
+that gets escalated.
 
 <Callout type="info">
 The runner-side executor ships **inert** (fail-closed): the queued job fails cleanly without
@@ -185,33 +291,36 @@ mutating state. See the `STATE_SURGERY` job type in [Job Commands](/cli/commands
 ## `alethia ops orphan-detect`
 
 List orphan candidates for a single project. Read-only and run-scoped — never account-wide
-(blast: none).
+(blast: none), so it asks for no confirmation and carries no `--yes`.
 
 ```bash
-alethia ops orphan-detect --project <project_id> --reason "post-incident sweep"
+alethia ops orphan-detect --reason incident-1234-post-incident-sweep
+alethia ops orphan-detect --project 1d4e7c30-8b62-4f95-a70d-9c2e5b1a3f88 --reason incident-1234-post-incident-sweep
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project` | Yes | Project id to scope the scan to. |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops orphan-detect */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Project | The project to scan; detection is run-scoped and never account-wide | `--project` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 ## `alethia ops orphan-clean`
 
 Force-destroy detected orphans across clouds (blast: HIGH, two-person) — the most dangerous action.
+The resources do not come back.
 
 ```bash
-alethia ops orphan-clean \
-  --project <project_id> \
-  --approval <approval_id> \
-  --reason "cleanup approved"
+alethia ops orphan-clean --project 1d4e7c30-8b62-4f95-a70d-9c2e5b1a3f88 --approval 6b21d8f4-0c5e-4a93-9f27-3d81b6e5c704 --reason incident-1234-cleanup-approved --yes
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project` | Yes | Project id to scope the clean to. |
-| `--approval` | Yes | Two-person approval token id. |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops orphan-clean */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Project | The project whose detected orphans are force-destroyed | `--project` |
+| Approval | The approval id a second operator read out to you from their own ops approve run | `--approval` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
 
 <Callout type="warn">
 `orphan-clean` ships **inert**. It refuses unless the deployment is separately armed with
@@ -225,14 +334,50 @@ Re-dispatch a stored Stripe webhook event through the same idempotent handler th
 (blast: low).
 
 ```bash
-alethia ops replay-webhook <stripe_event_id> --reason "missed invoice.paid"
+alethia ops replay-webhook --reason incident-1234-missed-invoice
+alethia ops replay-webhook evt_1P9xKjLkdIwHu7ix --reason incident-1234-missed-invoice --yes
+alethia ops replay-webhook evt_1P9xKjLkdIwHu7ix --send-emails --reason incident-1234-missed-invoice --yes
 ```
 
-| Argument / Flag | Required | Description |
-|------|----------|-------------|
-| `<stripe_event_id>` | Yes | Stripe event id (positional). |
-| `--send-emails` | No | Re-send the branded emails on replay. Suppressed by default — the emails are the one non-idempotent side effect. |
-| `--reason` | Yes | Reason recorded in the immutable audit. |
+{/* fieldspec: alethia ops replay-webhook */}
+
+| Field | What it is | Set without the form |
+| --- | --- | --- |
+| Stripe event | The stored event to re-dispatch through the live idempotent handler | `[stripe-event-id]` |
+| Re-send emails | Branded emails are the one non-idempotent side effect, so they are suppressed unless you ask | `--send-emails` |
+| Reason | Why you are breaking glass; it is written to the immutable audit before the act | `--reason` |
+
+The confirmation says which of the two it is about to do. The handler is idempotent; the emails are
+not, so the run that re-sends them is named as such.
+
+## Scripting the group
+
+Every field above is settable from the command line, so the whole group works with `--no-input`.
+The rule is one line: **a value you did not supply is asked for, and if it cannot be asked for the
+command tells you which flag or positional would have answered it, and exits non-zero.** The one
+exception is `state-surgery`'s `--note`, which is optional: an unattended run gets no note rather
+than a refusal.
+
+Two things a script needs to know:
+
+- `--yes` is required on every mutating verb when prompts are unavailable. Without it the command
+  exits non-zero and changes nothing, which is the safe answer for a pipeline that reached a
+  destructive verb it did not mean to.
+- `-o json` prints the payload alone. The styled success line is only rendered for the table
+  format, so a break-glass result pipes into `jq` without a sentence in front of it.
+
+  <Callout type="warn">
+  One thing still writes to `stdout` ahead of the payload: the loading spinner, which draws its
+  frames there rather than on `stderr`. A redirected or piped `-o json` result can therefore begin
+  with terminal escape sequences, and `jq` reports `Invalid numeric literal at line 1, column 2`.
+  Until [#3838](https://github.com/alethialabs-io/alethialabs/issues/3838) lands, parse from the
+  first `{` or `[` rather than from byte zero. This affects every command with a spinner, not only
+  `ops`.
+  </Callout>
+
+```bash
+alethia ops inspect-job 8f3c2a1b-77de-4c05-9a41-2b8e6a1d40f7 --reason incident-1234-triage --no-input -o json
+```
 
 ## See also
 

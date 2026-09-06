@@ -26,12 +26,13 @@ check "existing_network_id_present" {
 }
 
 # A brownfield deploy must resolve exactly one subnetwork — either from the user's explicit
-# var.subnet_ids selection or by auto-discovering the subnetwork in var.region. WARN companion to
+# var.subnet_ids selection or by auto-discovering the subnetwork in the region derived from
+# var.region. WARN companion to
 # the fail-closed guard below; surfaces the "no subnet in region" case at plan instead of apply.
 check "brownfield_subnet_resolved_warn" {
   assert {
     condition     = var.provision_network || length(trimspace(local.existing_subnet_self_link)) > 0
-    error_message = "provision_network is false but no subnetwork resolved for region '${var.region}' — select subnet_ids or ensure the existing network has a subnetwork in this region."
+    error_message = "provision_network is false but no subnetwork resolved for region '${local.gcp_region_key}' — select subnet_ids or ensure the existing network has a subnetwork in this region."
   }
 }
 
@@ -63,14 +64,14 @@ check "cloud_dns_fields_present_when_enabled" {
 }
 
 # Fail-closed brownfield-subnet gate (#1352): on an existing network a subnetwork MUST resolve —
-# from the user's var.subnet_ids selection or auto-discovery in var.region. Previously an
+# from the user's var.subnet_ids selection or auto-discovery in the region derived from var.region. Previously an
 # unresolved subnet fell through to an empty self-link and failed deep inside `tofu apply`; this
 # lifecycle precondition moves it to a hard plan-time block.
 resource "terraform_data" "brownfield_subnet_guard" {
   lifecycle {
     precondition {
       condition     = var.provision_network || length(trimspace(local.existing_subnet_self_link)) > 0
-      error_message = "provision_network is false but no subnetwork resolved for region '${var.region}'. Select subnet_ids, or ensure the existing network (${var.network_id}) has a subnetwork in this region. Apply blocked fail-closed."
+      error_message = "provision_network is false but no subnetwork resolved for region '${local.gcp_region_key}'. Select subnet_ids, or ensure the existing network (${var.network_id}) has a subnetwork in this region. Apply blocked fail-closed."
     }
   }
 }

@@ -42,7 +42,7 @@
 // hand-written marker per cell, which is the drift this guard exists to stop. Two derived legs that
 // cannot rot beat three where one is a hand-list.
 //
-// Run from apps/console (`pnpm -F console check:keyless-cells`).
+// Run from apps/console (`pnpm -C apps/console run check:keyless-cells`).
 
 import { readFileSync } from "node:fs";
 
@@ -162,7 +162,7 @@ The table in packages/core/manifests/keyless.go is a claim about what is built. 
                        surfaces (canvas toggle, deploy error, offer-parity matrix), not a TODO.
   · [reasoned-live-cell] drop the reason; a live cell never refuses, so nothing would ever print it.
 
-Then run \`pnpm -F console gen:keyless-cells\` — the TypeScript mirror the canvas reads is generated
+Then run \`pnpm -C apps/console run gen:keyless-cells\` — the TypeScript mirror the canvas reads is generated
 from this table, and CI diff-checks it.
 `);
 process.exit(1);

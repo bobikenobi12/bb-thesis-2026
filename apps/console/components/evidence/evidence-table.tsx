@@ -108,7 +108,7 @@ function PostureCell({ mark }: { mark: Mark }) {
 			)}
 		>
 			<EvIcon name={mark.iconKey} size={14} className="shrink-0" />
-			<span className="truncate text-[12.5px]">{mark.label}</span>
+			<span className="truncate text-ui-sm">{mark.label}</span>
 		</div>
 	);
 }
@@ -140,7 +140,7 @@ function HeaderCol({
 /** The header cell treatment — mono micro-caps, shared by all seven columns. */
 const HEAD = cn(
 	CELL,
-	"h-auto font-mono text-[9px] font-normal uppercase tracking-[0.13em] text-text-tertiary",
+	"h-auto font-mono text-ui-3xs font-normal uppercase tracking-[0.13em] text-text-tertiary",
 );
 
 /**
@@ -171,11 +171,11 @@ function EnvRow({
 								e.stopPropagation();
 								onOpen(row);
 							}}
-							className="block max-w-full truncate text-left text-[13px] font-medium text-text-primary outline-none focus-visible:underline focus-visible:underline-offset-2"
+							className="block max-w-full truncate text-left text-ui-md font-medium text-text-primary outline-none focus-visible:underline focus-visible:underline-offset-2"
 						>
 							{row.environmentName}
 						</button>
-						<div className="truncate font-mono text-[10px] text-text-tertiary">
+						<div className="truncate font-mono text-ui-2xs text-text-tertiary">
 							{row.region}
 						</div>
 					</div>
@@ -183,7 +183,7 @@ function EnvRow({
 						status={row.stage}
 						tier={stageTier(row.stage)}
 						label={stageShort(row.stage)}
-						className="shrink-0 text-[8.5px] tracking-wider"
+						className="shrink-0 text-ui-3xs tracking-wider"
 					/>
 				</div>
 			</TableCell>
@@ -202,7 +202,7 @@ function EnvRow({
 			<TableCell className={CELL}>
 				<div
 					className={cn(
-						"flex items-center justify-end gap-1.5 font-mono text-[11px]",
+						"flex items-center justify-end gap-1.5 font-mono text-ui-xs",
 						stale ? "text-text-tertiary" : "text-text-disabled",
 					)}
 				>
@@ -269,7 +269,7 @@ export function EvidenceTable({
 							<TableCell colSpan={COLUMNS} className="px-4 pb-2 pt-3.5">
 								<div className="flex items-center gap-2.5">
 									<RowProvider provider={g.provider} size={17} />
-									<span className="font-display text-[13.5px] font-semibold tracking-tight text-text-primary">
+									<span className="font-display text-ui-md font-semibold tracking-tight text-text-primary">
 										{g.label}
 									</span>
 								</div>

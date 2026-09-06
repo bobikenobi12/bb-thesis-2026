@@ -161,7 +161,7 @@ function FilterMenu({
           >
             <Filter className="size-4" />
             {badge > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-background bg-foreground px-1 font-mono text-[9px] font-semibold text-background">
+              <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-background bg-foreground px-1 font-mono text-ui-3xs font-semibold text-background">
                 {badge}
               </span>
             )}
@@ -214,7 +214,7 @@ function FilterMenu({
                 <button
                   type="button"
                   onClick={() => onChange({ q: "", clouds: [], repos: [] })}
-                  className="font-mono text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+                  className="font-mono text-ui-2xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   Reset · {resetCount}
                 </button>
@@ -281,7 +281,7 @@ function FilterMenu({
 /** A mono uppercase section marker inside the filter popover. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1.5 pb-1 pt-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+    <div className="px-1.5 pb-1 pt-1 font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
       {children}
     </div>
   );
@@ -306,12 +306,12 @@ function FacetRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-8 items-center gap-2 rounded-sm px-1.5 text-[13px] text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+      className="flex h-8 items-center gap-2 rounded-sm px-1.5 text-ui-md text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
     >
       <span className="text-muted-foreground">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
       {count > 0 && (
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-ui-2xs text-muted-foreground">
           {count}
         </span>
       )}
@@ -337,7 +337,7 @@ function SortRow({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="flex h-8 items-center gap-2 rounded-sm px-1.5 text-[13px] text-foreground transition-colors hover:bg-muted"
+      className="flex h-8 items-center gap-2 rounded-sm px-1.5 text-ui-md text-foreground transition-colors hover:bg-muted"
     >
       <span className="text-muted-foreground">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
@@ -369,7 +369,7 @@ function FacetPanel({
       <button
         type="button"
         onClick={onBack}
-        className="mb-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="mb-1 flex h-7 items-center gap-1.5 rounded-sm px-1 text-ui-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
         {title}
@@ -383,7 +383,7 @@ function FacetPanel({
       />
       <div className="max-h-56 overflow-y-auto">
         {empty ? (
-          <p className="px-1.5 py-4 text-center text-[12px] text-muted-foreground">
+          <p className="px-1.5 py-4 text-center text-ui-sm text-muted-foreground">
             No matches.
           </p>
         ) : (
@@ -414,19 +414,19 @@ function FacetOption({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
+      className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1.5 text-left text-ui-md text-foreground transition-colors hover:bg-muted"
     >
       <span className="grid size-4 shrink-0 place-items-center">{leading}</span>
       <span
         className={cn(
           "min-w-0 flex-1 truncate",
-          mono && "font-mono text-[12px]",
+          mono && "font-mono text-ui-sm",
         )}
       >
         {label}
       </span>
       {hint && (
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-ui-2xs text-muted-foreground">
           {hint}
         </span>
       )}
@@ -469,7 +469,7 @@ function CreateMenu({ orgSlug }: { orgSlug: string }) {
           }
         />
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          <DropdownMenuLabel className="font-mono text-ui-3xs uppercase tracking-wider text-muted-foreground">
             Create
           </DropdownMenuLabel>
           <DropdownMenuItem

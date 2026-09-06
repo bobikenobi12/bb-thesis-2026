@@ -3,6 +3,7 @@
 
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
+import { ORG_PATH_HEADER } from "@/lib/authz/org-path";
 
 // Routes that require a session. The post-signup onboarding flow (/onboarding) is
 // gated too so unauthenticated hits bounce to /login instead of erroring server-side.
@@ -48,7 +49,19 @@ export async function proxy(request: NextRequest) {
 	// redirect lives in the /login page instead, gated on a *validated* session
 	// (getOwner()).
 
-	return NextResponse.next();
+	// Publish the request path so server code can see the address it is answering (#4133).
+	//
+	// There is no supported way to read the pathname from a server action or an RSC — `next/headers`
+	// gives request headers and nothing about the route — and `currentActor()` needs it to take the
+	// tenant from the URL rather than from `session.active_organization_id`. See
+	// `lib/authz/org-scope.ts` for why the URL wins.
+	//
+	// `set` REPLACES any inbound value, which is the whole anti-forgery story: a client that sends
+	// its own `x-alethia-path` has it overwritten on every path this matcher covers, and the matcher
+	// covers everything but static assets.
+	const forwarded = new Headers(request.headers);
+	forwarded.set(ORG_PATH_HEADER, path);
+	return NextResponse.next({ request: { headers: forwarded } });
 }
 
 export const config = {

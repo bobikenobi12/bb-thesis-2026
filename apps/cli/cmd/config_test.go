@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 )
@@ -60,7 +61,7 @@ func TestRunConfigSetAndGet(t *testing.T) {
 	}
 
 	buf.Reset()
-	if err := runConfigGet(&buf, "web-origin"); err != nil {
+	if err := runConfigGet(&buf, ui.FormatTable, "web-origin"); err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	if !strings.Contains(buf.String(), "https://dev.alethialabs.io") {
@@ -68,14 +69,14 @@ func TestRunConfigSetAndGet(t *testing.T) {
 	}
 
 	buf.Reset()
-	if err := runConfigGet(&buf, ""); err != nil {
+	if err := runConfigGet(&buf, ui.FormatTable, ""); err != nil {
 		t.Fatalf("get all: %v", err)
 	}
 	if !strings.Contains(buf.String(), "web-origin:") {
 		t.Errorf("get all: %q", buf.String())
 	}
 
-	if err := runConfigGet(&buf, "bogus"); err == nil {
+	if err := runConfigGet(&buf, ui.FormatTable, "bogus"); err == nil {
 		t.Error("expected error for unknown get key")
 	}
 }
@@ -114,7 +115,7 @@ func TestPromptWebOriginNoInput(t *testing.T) {
 	noInputMode = true
 	defer func() { noInputMode = prev }()
 	// With --no-input, returns the resolved origin without prompting.
-	got, err := promptWebOrigin()
+	got, err := promptWebOrigin("")
 	if err != nil || got != types.DefaultWebOrigin {
 		t.Errorf("promptWebOrigin no-input = %q, %v; want default", got, err)
 	}

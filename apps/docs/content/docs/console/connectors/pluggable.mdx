@@ -66,9 +66,9 @@ A chart pulled from an OCI registry is scanned exactly like one in a Git reposit
 
 Pluggable connectors are an open-ended catalog. Adding a sixth provider takes four steps and **no** changes to routes, the runner core, or the form engine:
 
-1. Add a row to `packages/core/categories/catalog.json` (category, slug, auth_method, icon, credential + provider_config fields).
+1. Add a row to `packages/core/categories/catalog.json` (category, slug, auth_method, icon, credential + provider_config fields). Set `icon_url` to a path under `packages/assets/static` — the convention is `/icons/<slug>/<slug>-32x32.png` — after committing the file there, or to `null` if no mark ships for the provider. `null` renders a monogram tile and issues no request; a path with no file behind it is rejected in step 4.
 2. Add a `CategoryProvider` Go impl under `packages/core/categories/` (its `Tfvars`/`Validate` behavior).
 3. Add the OpenTofu module under `infra/templates/categories/<category>/<slug>/`. A chart-repo provider has no module — it implements `RepoCred` instead, and must also get a host rule in `apps/console/lib/connectors/helm-registry-hosts.ts` so the console resolves the same credential URL the Go provider seeds.
-4. Run `pnpm -F console gen:connectors` to regenerate the registry + catalog seed.
+4. Run `pnpm -F console gen:connectors` to regenerate the registry + catalog seed. It fails, naming the connector, if any `icon_url` does not resolve to a committed file under `packages/assets/static`.
 
 See [Connectors Architecture](/concepts/connectors) for the contract details.

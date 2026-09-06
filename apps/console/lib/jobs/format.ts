@@ -1,10 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Shared presentation helpers for provisioning jobs — the job-type catalog (label +
-// lucide icon + description) and a human duration formatter. Lives outside any component
-// so both the jobs data table (components/jobs/columns.tsx) and the overview's recent-jobs
-// card read one source of truth (promote, don't duplicate).
+// Shared presentation helpers for provisioning jobs — the job-type catalog (label + lucide icon +
+// description). Lives outside any component so both the jobs data table
+// (components/jobs/columns.tsx) and the overview's recent-jobs card read one source of truth.
+//
+// The duration formatter that used to live here is now `formatDuration` in `@repo/format`. It was
+// a THIRD implementation — the shared one, this one, and an inline copy in the job detail page —
+// and this copy was missing the non-finite guard, so a negative span rendered `-1s` here and `0s`
+// everywhere else. Promote, don't duplicate: that applies across packages too, not just across
+// components.
 
 import {
 	Activity,
@@ -97,12 +102,3 @@ export const JOB_TYPES: Record<
 		description: "Build & push service images in-cluster (kaniko → registry, keyless)",
 	},
 };
-
-/** Formats an elapsed millisecond span as `42s` or `1m 12s`. */
-export function formatDuration(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	return `${minutes}m ${remainingSeconds}s`;
-}

@@ -226,7 +226,7 @@ export function AzureConnection({ onComplete }: AzureConnectionProps) {
 							<b className="font-medium text-foreground">YOUR_SUBSCRIPTION_ID</b> with your
 							Azure subscription ID.
 						</p>
-						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-[11px] text-foreground">
+						<div className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-ui-xs text-foreground">
 							<span className="min-w-0 break-all">{cloudShellCmd}</span>
 							<CopyButton
 								text={cloudShellCmd}
@@ -250,7 +250,7 @@ export function AzureConnection({ onComplete }: AzureConnectionProps) {
 							Set your subscription ID (and, if self-hosting, your issuer URL) in the Terraform
 							variables and apply:
 						</p>
-						<div className="mt-1 space-y-1 overflow-x-auto rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-[11px] text-foreground">
+						<div className="mt-1 space-y-1 overflow-x-auto rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-ui-xs text-foreground">
 							<div>terraform init && terraform apply \</div>
 							<div className="pl-4">-var &quot;subscription_id=YOUR_SUBSCRIPTION_ID&quot;</div>
 						</div>
@@ -303,7 +303,7 @@ export function AzureConnection({ onComplete }: AzureConnectionProps) {
 				<Form {...form}>
 					<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
 						<div className="flex items-center justify-between gap-2">
-							<p className="text-[11px] text-muted-foreground">
+							<p className="text-ui-xs text-muted-foreground">
 								{pasteMissed
 									? "No IDs found on the clipboard — paste the script output, or fill the fields manually."
 									: "Paste all at once — we'll split them across the fields."}

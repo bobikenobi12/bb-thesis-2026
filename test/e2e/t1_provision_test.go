@@ -111,9 +111,19 @@ func TestT1RealRunnerKindProvisioning(t *testing.T) {
 	requireOrSkip(t, dbURL != "", "ALETHIA_DATABASE_URL is unset (the migrated control-plane DB)")
 
 	root := repoRoot(t)
-	// 20m: up to waitTimeout (8m) for the deploy plus ArgoAssertTimeout (8m) for the
-	// ArgoCD convergence assertion, with headroom for the runner build + kind boot.
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	// 24m30s: up to waitTimeout (8m) for the deploy plus ArgoAssertTimeout for the ArgoCD
+	// convergence assertion, with 4m of headroom for the runner build + kind boot.
+	//
+	// The argo term is 12m30s, not 8m. T1 is LEAN (ALETHIA_E2E_ALL_ADDONS unset), and #3580 stopped
+	// the lean tier deriving its budget from zero add-on charts while converging three. The ctx has
+	// to move with it: leaving it at 20m would have kept a 4m reserve on paper while really giving
+	// the argo wait 1m30s less than its own budget, and a cold `go build` of the runner plus a kind
+	// boot spends most of that reserve. The wait would then be cancelled short and the failure would
+	// report as an ArgoCD convergence timeout rather than as a ctx nobody resized — a misattribution
+	// that costs an investigation, not just a re-run.
+	//
+	// ci.yml's `-timeout 30m` on this test is the rung above and was raised in the same change.
+	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Minute+30*time.Second)
 	defer cancel()
 
 	// ── Build the REAL runner binary (this is what makes T1 more than T0). ──

@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/apps/cli/internal/version"
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -53,15 +55,95 @@ var (
 	loginPollTimeout = 10 * time.Minute
 	// loginRequestTimeout bounds a single exchange request.
 	loginRequestTimeout = 120 * time.Second
+	// loginStartTimeout bounds the one registration call. Short on purpose: registration
+	// is best-effort and the login continues without it, so a control plane that is slow
+	// to answer must not hold the user at a blank terminal before the URL is even printed.
+	loginStartTimeout = 15 * time.Second
 )
 
+// deviceAccessDenied is RFC 8628 §3.5's terminal error code for a request the user
+// refused. It is a WIRE value shared with the console — `DEVICE_ACCESS_DENIED` in
+// apps/console/lib/auth/cli-device-code.ts writes it and this compares against it.
+// Spelt differently on either side, the poll falls through to its generic
+// "authentication failed (HTTP 403)" arm and the user is told nothing about why.
+const deviceAccessDenied = "access_denied"
+
+// deviceClientName is what this client calls itself when registering a login request.
+// The console shows it on the consent screen as a CLAIM about who is asking, so it is a
+// plain product name rather than anything the reader could mistake for an assertion the
+// control plane is making.
+const deviceClientName = "alethia-cli"
+
+// deviceUserAgent describes this build to the control plane, which stores it and renders
+// it on the consent screen. The OS/arch pair is the part that does work: "the terminal on
+// this laptop" and "a device on another continent" look identical without it, and RFC
+// 8628's threat model is a phished link.
+func deviceUserAgent() string {
+	v := version.Version
+	if v == "" {
+		v = "dev"
+	}
+	return fmt.Sprintf("%s/%s (%s; %s)", deviceClientName, v, runtime.GOOS, runtime.GOARCH)
+}
+
+// registerDeviceRequest tells the control plane about this login BEFORE the browser opens.
+//
+// Two things did not exist until it did. The user_code was minted here, printed here and
+// put in the link, and the console only ever checked its SHAPE — so the code on the consent
+// screen carried no server-verified meaning and could not be compared against anything.
+// And nothing was known about the requester, so the screen could say no more than "A device
+// is asking to sign in to your account" while approval hands over an access token, a 90-day
+// refresh token and the raw OAuth token of the first linked git provider.
+//
+// The caller treats a failure as a WARNING, not a stop: a new CLI must still be able to log
+// in to a control plane that predates this route. What is lost when it fails is the detail
+// on the consent screen, not the ability to sign in — so the failure is reported and the
+// flow continues.
+func registerDeviceRequest(startURL, deviceCode, userCode string) error {
+	var errMsg struct {
+		Error string `json:"error"`
+	}
+	resp, err := req.C().SetTimeout(loginStartTimeout).R().
+		SetHeader("User-Agent", deviceUserAgent()).
+		SetBody(map[string]string{
+			"device_code":    deviceCode,
+			"user_code":      userCode,
+			"client_name":    deviceClientName,
+			"client_version": version.Version,
+		}).
+		SetErrorResult(&errMsg).
+		Post(startURL)
+	if err != nil {
+		return fmt.Errorf("could not reach the control plane: %w", err)
+	}
+	if resp.IsErrorState() {
+		return fmt.Errorf("control plane returned %d: %s", resp.StatusCode, errMsg.Error)
+	}
+	return nil
+}
+
 // resolveLogin handles the "not authenticated" branch of getAuthTokenInternal:
-// it errors fast when prompting is disabled, otherwise offers an interactive
-// "log in now?" prompt, runs the device flow, and returns the fresh token. This
-// is irreducible interactive glue, kept out of the unit-tested token-state logic.
+// it errors fast when prompting is disabled or when the confirm has no terminal to
+// draw on, otherwise offers an interactive "log in now?" prompt, runs the device
+// flow, and returns the fresh token. This is irreducible interactive glue, kept out
+// of the unit-tested token-state logic.
 func resolveLogin(credsPath string, promptLogin bool) (string, error) {
 	if !promptLogin {
 		return "", fmt.Errorf("authentication required. Please run `alethia login`")
+	}
+
+	// A confirm that cannot be SEEN cannot be answered. getAuthToken hardcodes
+	// promptLogin=true, so before this gate the "log in now?" form was the one huh widget
+	// in the CLI with no stream check at all: with stdin a terminal and the form's stream
+	// redirected — `alethia … 2> log` — the ANSI frames went into the log and the process
+	// then blocked on a keystroke against a terminal showing nothing. The user sees a hang.
+	//
+	// requireInteractiveForm is the refusing predicate the rest of the package already
+	// uses before opening a form, and its errors say WHICH condition failed (errNoInput
+	// for --no-input, errNoTTY for a redirected stream) — so wrap rather than replace,
+	// while saying the same thing the promptLogin=false arm above says.
+	if err := requireInteractiveForm(); err != nil {
+		return "", fmt.Errorf("authentication required. Please run `alethia login`: %w", err)
 	}
 
 	confirmLogin, err := authRequiredPrompt()
@@ -192,7 +274,8 @@ func pollForToken(deviceCode, exchangeURL string) tea.Cmd {
 		for {
 			var result types.ExchangeResponse
 			var errMsg struct {
-				Error string `json:"error"`
+				Error       string `json:"error"`
+				Description string `json:"error_description"`
 			}
 			resp, err := client.R().
 				SetBody(map[string]string{"device_code": deviceCode}).
@@ -206,6 +289,23 @@ func pollForToken(deviceCode, exchangeURL string) tea.Cmd {
 
 			if resp.IsSuccessState() {
 				return authSuccessMsg{response: &result}
+			}
+
+			// Terminal, and the ONLY arm that reports a decision a person made. The refusal
+			// used to reach nothing: "This isn't me" set browser-local state and the server
+			// was never told, so this loop kept polling to its own ten-minute timeout and
+			// the terminal — which in the phishing case is the ATTACKER's — learned nothing
+			// either way. Matched on the RFC 8628 error code and not on the 403 alone, so an
+			// unrelated forbidden still falls through to the generic arm below rather than
+			// being reported to the user as a refusal that never happened.
+			if resp.StatusCode == http.StatusForbidden && errMsg.Error == deviceAccessDenied {
+				detail := errMsg.Description
+				if detail == "" {
+					detail = "The sign-in was refused in the browser."
+				}
+				return authErrorMsg{err: fmt.Errorf(
+					"%s Nothing was shared and no token was issued (%s)",
+					detail, deviceAccessDenied)}
 			}
 
 			if resp.StatusCode == http.StatusGone {
@@ -301,6 +401,20 @@ func performLoginFlow() error {
 	origin := WebOrigin()
 	loginURL := fmt.Sprintf("%s/cli/login?device_code=%s&user_code=%s", origin, deviceCode, userCode)
 	exchangeURL := fmt.Sprintf("%s/api/auth/cli/exchange", origin)
+	startURL := fmt.Sprintf("%s/api/auth/cli/start", origin)
+
+	// Register BEFORE the URL is printed, so the consent screen the user is about to open
+	// already has something to name. Best-effort: a control plane that predates this route
+	// answers 404 and the login still works, it just shows less.
+	//
+	// The failure is REPORTED rather than swallowed. Silently degrading would leave the
+	// user comparing a code and reading a requester line with no way to know that neither
+	// was checked against anything.
+	if err := registerDeviceRequest(startURL, deviceCode, userCode); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"Warning: could not register this login with the control plane (%v).\n"+
+				"The browser will show fewer details about this request.\n\n", err)
+	}
 
 	fmt.Println(ui.CyanStyle.Render("Please open the following URL in your browser to log in:"))
 	fmt.Println(loginURL)
@@ -332,9 +446,24 @@ var (
 	loginWebOrigin string
 )
 
+// `alethia login` takes no interactive field, and that is a decision rather than
+// an omission.
+//
+// Every OTHER leaf in this group that needs a value asks for it. Login needs
+// none: it works with zero input, and the one value it CAN carry — the
+// control-plane URL — is a once-per-machine setting, not a per-login question.
+// Asking for it on every sign-in would put a form in front of the single most
+// frequent command in the product to collect an answer that almost never
+// changes. `alethia init` is the guided form for that value; `--web-origin`
+// below is the flag, so the contract stays complete either way.
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with the platform",
+	Long: `Authenticate with the Alethia control plane through the browser device-code flow.
+
+Needs no input: it prints a URL and a code, opens the browser, and waits. Use
+'alethia init' for the guided first-run setup that picks a control-plane URL
+first, or 'alethia token create' for a credential a pipeline can use.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 0. Persist a control-plane URL passed for this login (self-host/dev).
 		if loginWebOrigin != "" {

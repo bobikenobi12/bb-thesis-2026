@@ -33,7 +33,7 @@
 // cannot prove they are the four we asked for. Stated rather than papered over — the same reason
 // check-keyless-cells.mjs declines to verify the tofu IAM flag instead of hand-listing a marker per cell.
 //
-// Run from apps/console (`pnpm -F console check:tofu-lockfiles`).
+// Run from apps/console (`pnpm -C apps/console run check:tofu-lockfiles`).
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

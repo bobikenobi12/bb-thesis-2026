@@ -26,6 +26,7 @@ import { globalHref, orgHref } from "@/lib/routing";
 import { useActiveOrgSlug } from "@/lib/stores/use-workspace-store";
 import { useSetupGuideStore } from "@/lib/stores/use-setup-guide-store";
 import { Button } from "@repo/ui/button";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { cn } from "@repo/ui/utils";
 
 interface Step {
@@ -134,17 +135,19 @@ export function SetupGuideCard() {
 	if (!open || total === 0 || doneCount === total) return null;
 
 	return (
-		<div className="fixed right-4 bottom-4 z-40 max-w-[calc(100vw-2rem)]">
+		// `--z-sticky-bar` is the top of the in-flow ladder in packages/brand/src/tokens.css, which
+		// is exactly where the bare `z-40` sat: above any in-page sticky action bar this card can
+		// float over, and below the header, every overlay and the toasts that report on it.
+		<div className="fixed right-4 bottom-4 z-[var(--z-sticky-bar)] max-w-[calc(100vw-2rem)]">
 			<section className="w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
 				<div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
 					<div>
 						<p className="vx-eyebrow">Get started</p>
-						<h2 className="mt-1.5 font-grotesk text-[17px] font-semibold tracking-[-0.02em] text-text-primary">
-							Set up your organization
-						</h2>
-						<p className="mt-1 text-[12.5px] text-text-tertiary">
-							{doneCount} of {total} done — pick up where you left off.
-						</p>
+						<SectionHeading
+							className="mt-1.5"
+							title="Set up your organization"
+							description={`${doneCount} of ${total} done — pick up where you left off.`}
+						/>
 					</div>
 					<button
 						type="button"
@@ -183,13 +186,13 @@ export function SetupGuideCard() {
 								<div className="min-w-0 flex-1">
 									<div
 										className={cn(
-											"text-[13.5px] font-medium text-text-primary",
+											"text-ui-md font-medium text-text-primary",
 											s.done && "line-through",
 										)}
 									>
 										{s.title}
 									</div>
-									<div className="truncate text-[12px] text-text-tertiary">
+									<div className="truncate text-ui-sm text-text-tertiary">
 										{s.desc}
 									</div>
 								</div>
@@ -204,14 +207,14 @@ export function SetupGuideCard() {
 				<div className="flex items-center gap-4 border-t border-border px-5 py-3">
 					<Link
 						href="/docs"
-						className="inline-flex items-center gap-1.5 font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="inline-flex items-center gap-1.5 font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						<Terminal className="size-3.5" />
 						Install the alethia CLI
 					</Link>
 					<Link
 						href="/docs"
-						className="font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						Read the docs →
 					</Link>

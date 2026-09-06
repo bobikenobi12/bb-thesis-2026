@@ -8,38 +8,21 @@ Living status for **per-cloud runner health + cluster provisioning**: does each 
 (EKS / GKE / AKS / Talos) on that cloud from a connected keyless identity. Tracking epic: **#1050**.
 Run history: [`demos/proofs/runner-xcloud-e2e-log.md`](../../demos/proofs/runner-xcloud-e2e-log.md).
 
-**How to update:** every e2e run is recorded by `scripts/e2e/runner-e2e.sh <cloud> <register|cluster>`
-(appends the ledger + captures a scrubbed proof bundle + files a deduped issue on failure). Flip the
-matrix cell when a stage's verdict changes, and link the run/issue. **Failures are recorded, never hidden.**
+**How runs are recorded:** every e2e run goes through `scripts/e2e/runner-e2e.sh <cloud> <register|cluster>`,
+which appends the ledger, captures a scrubbed proof bundle and files a deduped issue on failure.
+**Failures are recorded, never hidden.** There is no matrix here to flip — verdicts are derived in
+`PROGRAMME.md`, and the legend that named their glyphs went with the table it described.
 
-Legend: ✅ done/green · ⏳ pending · 🚫 blocked (reason) · — n/a
+## Parity matrix
 
-## Parity matrix (feature × cloud)
-
-| Cloud | image arch ✓ | runner registers | connector wired | **cluster provision (T2)** | signed receipt | security-reviewed | known issues |
-|-------|:---:|:---:|:---:|:---:|:---:|:---:|:---|
-| **Hetzner** — Talos | ✅ (register) | ⏳ | ✅ token | ✅ (nightly) | ✅ | ✅ | — |
-| **AWS** — EKS (`alethialabs`) | ✅ (register) | ⏳ | ✅ keyless role | ⏳ (wired, gate off) | ✅ | ⏳ | — |
-| **GCP** — GKE (Alethia E2E) | ✅ (register) | ⏳ | ✅ keyless WIF | ⏳ (wired, gate off) | ✅ | ⏳ | — |
-| **Azure** — AKS (Alethia E2E sub) | ✅ (register) | ✅ (prod) | ✅ keyless UAMI | ⏳ (wired, gate off) | ✅ | ⏳ | AKS quota TBD |
-| Alibaba — ACK | ✅ (register) | ⏳ | ✅ keyless RAM | ⏳ (wired, gate off) | ✅ | ⏳ | — |
-
-- **image arch ✓** = the published `runner-<cloud>:latest` **amd64** image ships a genuine x86-64 runner
-  (the INCIDENT regression: an arm64 binary in the amd64 image crash-looped every x86 fleet VM). ✅ for
-  all five as of **2026-07-22** — `runner-e2e.sh <cloud> register` PASSed on each post-#1052 image
-  (`e_machine=0x3e`); see the ledger. A pre-merge CI guard (`runner-image-arch` in `ci.yml`) now asserts
-  the same on a freshly-built `runner-base`, so a regression can't reach prod again. Re-run: `runner-e2e.sh <cloud> register`.
-- **runner registers** = a fleet VM on that image boots + self-registers (heartbeat, `runners` row).
-  ✅ **azure** — a fleet VM registered live on the corrected image during the 2026-07-22 incident
-  recovery. The others stay ⏳: the `register` stage proves the image *arch*, not a live self-register
-  (that needs a booted VM — mild spend, folded into Stage 2). Gated on `image arch ✓`.
-- **cluster provision (T2)** = the real-apply harness `test/e2e/t2_provision_test.go`
-  (`TestT2RealCloudProvisioning`, `-tags=e2e_t2`) → `SUCCESS` job + Ready cluster + signed receipt + ArgoCD
-  Healthy/Synced. Wired for **all** clouds in `.github/workflows/e2e-nightly.yml`; **only Hetzner runs
-  today** — the others green-skip until each gate secret/var is set (`E2E_AWS_ROLE_ARN` /
-  `E2E_GCP_WIF_PROVIDER`+`_SA_EMAIL` / `E2E_AZURE_*`). Run: `runner-e2e.sh <cloud> cluster`.
-- **connector wired** = keyless connect scripted in `infra/connector/<cloud>/alethia-<cloud>-setup.sh`
-  (AWS role / GCP WIF / Azure UAMI / Alibaba RAM); Hetzner is a scoped API token.
+> **Status is not here.** It rots, and this table proved it: it called four of five clouds
+> "wired, gate off" for cluster provision after epic #1050 closed with all five wired, and it
+> contradicted `provisioning-e2e-parity.md` in the same directory while both passed CI.
+> `scripts/programme-rollup.mjs` names that pair as the reason it exists.
+>
+> The proof grid, the per-cell evidence and the open blockers are derived in **`PROGRAMME.md`**,
+> below its generated marker. Read it there. What stays below is the reasoning the ledger cannot
+> hold — decisions, post-mortems and measurements.
 
 ## What's left
 

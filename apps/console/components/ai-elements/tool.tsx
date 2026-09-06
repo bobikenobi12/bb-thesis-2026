@@ -17,7 +17,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement } from "react";
+import { isValidElement, useId } from "react";
 
 import { CodeBlock } from "./code-block";
 
@@ -119,16 +119,38 @@ export type ToolInputProps = ComponentProps<"div"> & {
   input: ToolPart["input"];
 };
 
-export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
-    <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-      Parameters
-    </h4>
-    <div className="rounded-md bg-muted/50">
-      <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+/**
+ * A tool call's arguments, under the console's eyebrow label.
+ *
+ * The label was a raw `<h4>`, which CLAUDE.md §6 routes to `PageHeader level={n}`. It is NOT one,
+ * for two reasons that point the same way. A transcript renders this part once per tool call, so a
+ * forty-turn conversation emitted forty `<h4>`s under no `<h3>` — a phantom rung per tool call,
+ * inside a `role="log"`; `@repo/ui/empty`'s `EmptyTitle` defaults to a `<div>` over exactly this
+ * hazard. And `PageHeader` fixes its type at `text-lg` on purpose ("the visual size does NOT change
+ * with the level"), which is a page title's size above an 11px JSON block in a chat bubble.
+ *
+ * So it becomes what the rest of the agent surface already calls this shape — the `vx-eyebrow`
+ * token, the same one `artifact-panel`'s `Section` and `build-pane`'s "Workloads" use — and the
+ * region it labels is tied to it by `aria-labelledby`, which the orphan heading never did.
+ */
+export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
+  const labelId = useId();
+  return (
+    <div
+      aria-labelledby={labelId}
+      className={cn("space-y-2 overflow-hidden", className)}
+      role="group"
+      {...props}
+    >
+      <div className="vx-eyebrow" id={labelId}>
+        Parameters
+      </div>
+      <div className="rounded-md bg-muted/50">
+        <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export type ToolOutputProps = ComponentProps<"div"> & {
   output: ToolPart["output"];
@@ -141,6 +163,9 @@ export const ToolOutput = ({
   errorText,
   ...props
 }: ToolOutputProps) => {
+  // Before the early return: a hook cannot sit behind one.
+  const labelId = useId();
+
   if (!(output || errorText)) {
     return null;
   }
@@ -165,10 +190,15 @@ export const ToolOutput = ({
   }
 
   return (
-    <div className={cn("space-y-2", className)} {...props}>
-      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+    <div
+      aria-labelledby={labelId}
+      className={cn("space-y-2", className)}
+      role="group"
+      {...props}
+    >
+      <div className="vx-eyebrow" id={labelId}>
         {errorText ? "Error" : "Result"}
-      </h4>
+      </div>
       <div
         className={cn(
           "overflow-x-auto rounded-md text-xs [&_table]:w-full",

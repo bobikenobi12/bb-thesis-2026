@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alethialabs-io/alethialabs/packages/core/format"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -31,7 +32,7 @@ func PrintConfiguration(config types.Configuration) {
 		return kv(key, valStr)
 	}
 	kvNum := func(key string, value *float64) string {
-		valStr := "N/A"
+		valStr := SymbolDash
 		if value != nil {
 			if *value == float64(int(*value)) {
 				valStr = fmt.Sprintf("%d", int(*value))
@@ -41,11 +42,16 @@ func PrintConfiguration(config types.Configuration) {
 		}
 		return kv(key, valStr)
 	}
+	// The layout literal was `2006-01-02 15:04:05` — one of five copies of it across the CLI, and
+	// a sixth date spelling against the console's. `format.Date(DateTime)` is the one absolute
+	// layout; UTC and not the host zone, so the same config does not print two different times on
+	// two machines. Seconds are dropped with it, which is the point: `alethia config show` is read,
+	// not diffed, and a second-precision stamp in a detail pane is noise.
 	kvTime := func(key string, value time.Time) string {
 		if value.IsZero() {
-			return kv(key, "N/A")
+			return kv(key, SymbolDash)
 		}
-		return kv(key, value.Format("2006-01-02 15:04:05"))
+		return kv(key, format.Date(value, format.DateTime, time.UTC))
 	}
 
 	doc.WriteString(AccentStyle.Render("  Configuration Details"))

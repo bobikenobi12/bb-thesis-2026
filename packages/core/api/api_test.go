@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -208,6 +209,171 @@ func TestGetClusters_Success(t *testing.T) {
 	}
 	if clusters[0].ProjectName != "my-app" {
 		t.Errorf("expected my-app, got %s", clusters[0].ProjectName)
+	}
+}
+
+// TestGetClusters_WalksEveryPage proves GetClusters is a WALK, not one request.
+//
+// The endpoint returned the whole collection until #3672 and now returns a page. A client that
+// read `clusters` and stopped would silently truncate at the server's default page size — a
+// plausible, short list with no error, which is the failure mode AllPages exists to remove. The
+// previous test above still passes against a paged server BECAUSE its response carries no `page`
+// object, so it proves back-compatibility and says nothing about paging.
+//
+// The cursor is asserted as SENT, not just as followed: a walk that re-requested page 1 forever
+// would be caught by AllPages' visited set as a re-issued cursor, but a walk that dropped the
+// cursor and got page 1 again from a server that ignores it would not.
+func TestGetClusters_WalksEveryPage(t *testing.T) {
+	var cursors []string
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertAuth(t, r)
+		if r.URL.Path != "/api/cli/clusters" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		cursor := r.URL.Query().Get("cursor")
+		cursors = append(cursors, cursor)
+		if cursor == "" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"clusters": []map[string]any{{"id": "c1", "cluster_name": "one"}},
+				"page": map[string]any{
+					"mode": "exact", "limit": 1, "total": 2, "next_cursor": "CURSOR-2",
+				},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"clusters": []map[string]any{{"id": "c2", "cluster_name": "two"}},
+			"page": map[string]any{
+				"mode": "exact", "limit": 1, "total": 2, "next_cursor": nil,
+			},
+		})
+	}))
+
+	clusters, err := client.GetClusters()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(clusters) != 2 {
+		t.Fatalf("expected both pages' rows, got %d: %+v", len(clusters), clusters)
+	}
+	if clusters[0].ID != "c1" || clusters[1].ID != "c2" {
+		t.Errorf("pages concatenated out of order: %+v", clusters)
+	}
+	// Two requests, and the second carried the cursor the first handed back.
+	if len(cursors) != 2 || cursors[0] != "" || cursors[1] != "CURSOR-2" {
+		t.Errorf("expected [\"\", \"CURSOR-2\"], got %q", cursors)
+	}
+}
+
+// TestGetClustersPage_AbsentPageBecomesAnExactSinglePage covers the state the WIRE cannot produce
+// but the DECODER can.
+//
+// `page` is a value, not a pointer, so a response from a control plane older than #3672 — which
+// sends no `page` object at all — decodes to the ZERO PageInfo. That is harmless to GetClusters
+// (NextCursor is "", so the walk stops after one request) and silently wrong to anything that
+// renders it: Total 0 beside a screenful of rows, and a Mode that is neither "exact" nor "capped".
+// The server's schema makes `mode` required precisely so a renderer never meets a third state;
+// without the fill-in the CLIENT reintroduces one.
+//
+// Driven through GetClustersPage rather than asserted on a PageInfo literal, because the method is
+// where the fill-in lives and the pager is the caller that reaches it.
+func TestGetClustersPage_AbsentPageBecomesAnExactSinglePage(t *testing.T) {
+	cases := []struct {
+		name string
+		rows []map[string]any
+		want PageInfo
+	}{
+		{
+			name: "the whole collection, as a pre-#3672 server sends it",
+			rows: []map[string]any{
+				{"id": "c1", "cluster_name": "one"},
+				{"id": "c2", "cluster_name": "two"},
+				{"id": "c3", "cluster_name": "three"},
+			},
+			want: PageInfo{Mode: PageModeExact, Limit: 3, Total: 3, NextCursor: ""},
+		},
+		{
+			// A whole-collection response with nothing in it. Limit 0 is not a page size the
+			// server served; it is the honest reading of "everything, and everything is none".
+			name: "an empty collection",
+			rows: []map[string]any{},
+			want: PageInfo{Mode: PageModeExact, Limit: 0, Total: 0, NextCursor: ""},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assertAuth(t, r)
+				if r.URL.Path != "/api/cli/clusters" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+				// No `page` key at all — the shape this test exists for.
+				json.NewEncoder(w).Encode(map[string]any{"clusters": tc.rows})
+			}))
+
+			page, err := client.GetClustersPage(PageOpts{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(page.Clusters) != len(tc.rows) {
+				t.Fatalf("expected %d clusters, got %d", len(tc.rows), len(page.Clusters))
+			}
+			if page.Page != tc.want {
+				t.Errorf("Page = %+v, want %+v", page.Page, tc.want)
+			}
+			// The two things a pager reads, stated as the properties rather than as the struct:
+			// Total must match the rows on screen, and there must be nothing to follow, because a
+			// legacy response IS the whole collection.
+			if page.Page.Total != len(page.Clusters) {
+				t.Errorf("Total %d disagrees with the %d rows returned", page.Page.Total, len(page.Clusters))
+			}
+			if page.Page.HasMore() {
+				t.Error("HasMore() on a whole-collection response: the walk would never end")
+			}
+			// Neither "exact" nor "capped" is the third state the vocabulary forbids, and it is
+			// what an un-filled zero PageInfo would leave here.
+			if page.Page.Mode != PageModeExact && page.Page.Mode != PageModeCapped {
+				t.Errorf("Mode %q is neither %q nor %q", page.Page.Mode, PageModeExact, PageModeCapped)
+			}
+		})
+	}
+}
+
+// TestGetClustersPage_RealPageIsNotRewritten is the NEGATIVE CONTROL for the test above, and the
+// reason the fill-in keys on Mode rather than on a zero-looking number.
+//
+// A capped page is the case that would hurt: Total is a FLOOR there — the server stopped counting
+// at its ceiling — so a discriminator of `Total == 0` or `Limit == 0`, or an unconditional
+// overwrite, turns "1000+" into the two rows in hand. That is a wrong answer that looks precise,
+// which is the exact failure PageModeCapped exists to prevent.
+func TestGetClustersPage_RealPageIsNotRewritten(t *testing.T) {
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertAuth(t, r)
+		json.NewEncoder(w).Encode(map[string]any{
+			"clusters": []map[string]any{
+				{"id": "c1", "cluster_name": "one"},
+				{"id": "c2", "cluster_name": "two"},
+			},
+			"page": map[string]any{
+				"mode": "capped", "limit": 2, "total": 1000, "next_cursor": "CURSOR-2",
+			},
+		})
+	}))
+
+	page, err := client.GetClustersPage(PageOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := PageInfo{Mode: PageModeCapped, Limit: 2, Total: 1000, NextCursor: "CURSOR-2"}
+	if page.Page != want {
+		t.Errorf("Page = %+v, want %+v", page.Page, want)
+	}
+	// Said as the property too: the floor survives, and it is NOT the row count.
+	if page.Page.Total == len(page.Clusters) {
+		t.Errorf("the capped floor was overwritten with the %d rows in hand", len(page.Clusters))
+	}
+	if !page.Page.IsCapped() {
+		t.Error("IsCapped() false on a page the server marked capped")
 	}
 }
 
@@ -1053,6 +1219,86 @@ func TestGetProjectStagedChanges_Success(t *testing.T) {
 	}
 	if view.Environment != "production" || len(view.Changes) != 1 || view.Changes[0].Op != "create" {
 		t.Errorf("unexpected staged changes: %+v", view)
+	}
+}
+
+// TestProjectPagedRoutes_FollowCursor covers the shared cursor loop and each project list route's
+// query construction. The first response deliberately advertises another page so the client must
+// issue a second request with the returned cursor.
+func TestProjectPagedRoutes_FollowCursor(t *testing.T) {
+	seen := make(map[string]int)
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		seen[path]++
+		if seen[path] == 2 && r.URL.Query().Get("cursor") != "next" {
+			t.Errorf("expected cursor=next on second request for %s, got %q", path, r.URL.Query().Get("cursor"))
+		}
+		if seen[path] > 2 {
+			t.Fatalf("unexpected third request for %s", path)
+		}
+		last := seen[path] == 2
+		page := map[string]any{"page": map[string]any{"next_cursor": func() string {
+			if last {
+				return ""
+			}
+			return "next"
+		}()}}
+		switch path {
+		case "/api/cli/projects/p/environments":
+			page["environments"] = []map[string]any{{"id": "env" + fmt.Sprint(seen[path])}}
+		case "/api/cli/projects/p/addons":
+			page["environment"] = "production"
+			page["addons"] = []map[string]any{{"addon_id": "a" + fmt.Sprint(seen[path])}}
+		case "/api/cli/projects/p/byo-charts":
+			page["environment"] = "production"
+			page["charts"] = []map[string]any{{"id": "c" + fmt.Sprint(seen[path])}}
+		case "/api/cli/projects/p/promotions":
+			page["promotions"] = []map[string]any{{"id": "pr" + fmt.Sprint(seen[path])}}
+		case "/api/cli/projects/p/staged":
+			page["environment"] = "production"
+			page["changes"] = []map[string]any{{"op": "create"}}
+		default:
+			t.Fatalf("unexpected path: %s", path)
+		}
+		_ = json.NewEncoder(w).Encode(page)
+	}))
+
+	if got, err := client.ListEnvironments("p"); err != nil || len(got) != 2 {
+		t.Fatalf("environments: got %d rows, err %v", len(got), err)
+	}
+	if got, err := client.GetProjectAddons("p", "prod"); err != nil || len(got.Addons) != 2 {
+		t.Fatalf("addons: got %+v, err %v", got, err)
+	}
+	if got, err := client.GetProjectByoCharts("p", "prod"); err != nil || len(got.Charts) != 2 {
+		t.Fatalf("charts: got %+v, err %v", got, err)
+	}
+	if got, err := client.GetProjectPromotions("p", "prod"); err != nil || len(got) != 2 {
+		t.Fatalf("promotions: got %d rows, err %v", len(got), err)
+	}
+	if got, err := client.GetProjectStagedChanges("p", "prod"); err != nil || len(got.Changes) != 2 {
+		t.Fatalf("staged: got %+v, err %v", got, err)
+	}
+}
+
+// TestProjectPagedRoutes_Empty covers the valid empty-universe result for aggregating routes.
+func TestProjectPagedRoutes_Empty(t *testing.T) {
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"environment": "production",
+			"addons":      []any{},
+			"charts":      []any{},
+			"changes":     []any{},
+			"page":        map[string]any{},
+		})
+	}))
+	if got, err := client.GetProjectAddons("p", ""); err != nil || got == nil {
+		t.Fatalf("empty addons: got %+v, err %v", got, err)
+	}
+	if got, err := client.GetProjectByoCharts("p", ""); err != nil || got == nil {
+		t.Fatalf("empty charts: got %+v, err %v", got, err)
+	}
+	if got, err := client.GetProjectStagedChanges("p", ""); err != nil || got == nil {
+		t.Fatalf("empty staged: got %+v, err %v", got, err)
 	}
 }
 

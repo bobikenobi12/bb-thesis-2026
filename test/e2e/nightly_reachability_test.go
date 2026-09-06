@@ -59,18 +59,19 @@ func stripLineComments(src string) string {
 // not something that happens by forgetting. Adding a scenario means either wiring it into the
 // nightly or writing down here why it can never run there.
 var nightlyExemptEnv = map[string]string{
-	"ALETHIA_E2E_T1_REQUIRE":          "T1 is hermetic (kind) and runs from ci.yml, not the nightly",
-	"ALETHIA_E2E_T1_RUNNER_LOG":       "T1 only",
-	"ALETHIA_E2E_T1_WAIT":             "T1 only",
-	"ALETHIA_E2E_T2_WAIT":             "per-provider default resolved from the provider row; overridden only for local debugging",
-	"ALETHIA_E2E_T2_TEARDOWN":         "per-provider default resolved from the provider row; overridden only for local debugging. Deliberately NOT a repo variable: ResolveT2Budget RESERVES this window in the go-timeout, so a value set on one side only would put the reservation and the destroy's own ceiling back out of step — which is the #2729 bug it was added to fix",
-	"ALETHIA_E2E_ARGO_TIMEOUT":        "tuning knob with a sane default; overridden only for local debugging",
-	"ALETHIA_E2E_B6_REQUIRE":          "the B6 promotion gate is its own build tag and its own workflow",
-	"ALETHIA_E2E_A05_ENFORCE":         "A0.5 fidelity ramp: warn-only until the maintainer flips it, deliberately not wired yet",
-	"ALETHIA_E2E_A05_REAL_SNAPSHOT":   "A0.5 real-snapshot mode, enabled by hand during fidelity work",
-	"ALETHIA_E2E_HCLOUD_REGION":       "legacy alias for ALETHIA_E2E_REGION, kept for back-compat only",
-	"ALETHIA_E2E_DAY2_ACCESS_TIMEOUT": "tuning knob for the day-2 layer; the layer's own enable var is wired",
-	"ALETHIA_E2E_DAY2_OFFER_TIMEOUT":  "tuning knob bounding each day-2 plan; the layer's own enable var (ALETHIA_E2E_DAY2_OFFER) is wired",
+	"ALETHIA_E2E_T1_REQUIRE":              "T1 is hermetic (kind) and runs from ci.yml, not the nightly",
+	"ALETHIA_E2E_T1_RUNNER_LOG":           "T1 only",
+	"ALETHIA_E2E_T1_WAIT":                 "T1 only",
+	"ALETHIA_E2E_T2_WAIT":                 "per-provider default resolved from the provider row; overridden only for local debugging",
+	"ALETHIA_E2E_T2_TEARDOWN":             "per-provider default resolved from the provider row; overridden only for local debugging. Deliberately NOT a repo variable: ResolveT2Budget RESERVES this window in the go-timeout, so a value set on one side only would put the reservation and the destroy's own ceiling back out of step — which is the #2729 bug it was added to fix",
+	"ALETHIA_E2E_ARGO_TIMEOUT":            "tuning knob with a sane default; overridden only for local debugging",
+	"ALETHIA_E2E_B6_REQUIRE":              "the B6 promotion gate is its own build tag and its own workflow",
+	"ALETHIA_E2E_A05_ENFORCE":             "A0.5 fidelity ramp: warn-only until the maintainer flips it, deliberately not wired yet",
+	"ALETHIA_E2E_CLI_DEMO_ISSUER_TRUSTED": "the cli-demo connector beat needs an e2e console whose OIDC issuer the clouds actually trust; this one is started with NEXT_PUBLIC_APP_URL=http://localhost:3000 and no signing key, so the beat cannot COMPLETE in the nightly at any price. Deliberately NOT a repo variable: wiring it would make a paid connector dispatch reachable from CI before the identity it depends on exists. Set it by hand for a local run; wire it here when that console has a trusted issuer",
+	"ALETHIA_E2E_A05_REAL_SNAPSHOT":       "A0.5 real-snapshot mode, enabled by hand during fidelity work",
+	"ALETHIA_E2E_HCLOUD_REGION":           "legacy alias for ALETHIA_E2E_REGION, kept for back-compat only",
+	"ALETHIA_E2E_DAY2_ACCESS_TIMEOUT":     "tuning knob for the day-2 layer; the layer's own enable var is wired",
+	"ALETHIA_E2E_DAY2_OFFER_TIMEOUT":      "tuning knob bounding each day-2 plan; the layer's own enable var (ALETHIA_E2E_DAY2_OFFER) is wired",
 	// Deliberately NOT wired, unlike every other keyless variable. The dwell must exceed the cloud
 	// token's lifetime or the rotation assertion passes against a proxy that never rotates anything —
 	// so its default (16m, past the 15m RDS-IAM TTL) IS the proof. Exposing it as a repo variable

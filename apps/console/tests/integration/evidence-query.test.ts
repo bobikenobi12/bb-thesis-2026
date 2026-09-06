@@ -124,6 +124,7 @@ describeIfDb("queryOrgEvidence (org evidence roll-up)", () => {
 				name: "prod",
 				stage: "production",
 				region: ENV1_REGION,
+				is_default: true,
 			},
 			{
 				id: ENV2_ID,
@@ -131,6 +132,7 @@ describeIfDb("queryOrgEvidence (org evidence roll-up)", () => {
 				user_id: USER_ID,
 				name: "dev",
 				stage: "development",
+				is_default: false,
 				// region null → inherits the project's region
 			},
 		]);

@@ -8,7 +8,9 @@
 //   • Entitlement gating: a community (Hobby) org has no spend-control hard-cap toggle and no
 //     Stripe manage-billing / transactions surfaces (canManage is false without a customer).
 //
-// `member` (reduced-perms) negatives are pending — the persona isn't provisioned yet (see qa.ts).
+// `member` (reduced-perms) billing negatives are still unwritten. The persona itself EXISTS as of
+// #3633 (e2e/global-setup.ts builds it via the real invite → accept flow); what is missing here is
+// the spec, not the fixture — so this is a coverage gap to fill, not a blocked one.
 
 import { expect, test } from "../fixtures/qa";
 

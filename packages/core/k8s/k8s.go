@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	alethiaaws "github.com/alethialabs-io/alethialabs/packages/core/cloud/aws"
+	"github.com/alethialabs-io/alethialabs/packages/core/names"
 	"github.com/alethialabs-io/alethialabs/packages/core/utils"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"gopkg.in/yaml.v3"
@@ -19,8 +19,11 @@ import (
 
 // k8sNameRe is the RFC-1123 DNS-label charset kubernetes enforces on namespaces. Apply
 // interpolates the namespace into a `bash -c` command string, so we fail closed on anything
-// that isn't a valid label rather than let it reach the shell (mirrors argocd.k8sNameRe).
-var k8sNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+// that isn't a valid label rather than let it reach the shell.
+//
+// One grammar, generated from apps/console/lib/validations/names.ts (#3665) — argocd.k8sNameRe is
+// now the SAME value rather than a second spelling of it.
+var k8sNameRe = names.NamespacePattern
 
 var executeCommand = utils.ExecuteCommand
 

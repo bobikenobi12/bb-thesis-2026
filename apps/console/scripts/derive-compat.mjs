@@ -33,7 +33,7 @@
 //   --dry-run             print what would be written/filed without side effects (pairs with --write / CI).
 //
 // Pure Node (global fetch, Node 20+) + the `yaml` dep (already a console dependency). Run from the console
-// package so `yaml` resolves: `pnpm -F console derive:compat [-- <flags>]`.
+// package so `yaml` resolves: `pnpm -C apps/console run derive:compat [-- <flags>]`.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -579,7 +579,7 @@ function renderIssue(rep) {
 		"### Remediation",
 		"Regenerate the windows, review the diff, and open a PR into `dev`:",
 		"```",
-		"pnpm -F console derive:compat -- --write",
+		"pnpm -C apps/console run derive:compat -- --write",
 		"```",
 		"Windows are recorded honestly — a chart that declares no `kubeVersion` stays empty (`not_evaluable`).",
 		"",

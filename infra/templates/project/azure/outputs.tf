@@ -4,18 +4,18 @@
 
 output "aks_cluster_name" {
   description = "Name of the AKS cluster"
-  value       = var.provision_aks ? module.aks[0].cluster_name : null
+  value       = try(module.aks[0].cluster_name, null) != null ? module.aks[0].cluster_name : null
 }
 
 output "aks_cluster_endpoint" {
   description = "Endpoint of the AKS cluster"
-  value       = var.provision_aks ? module.aks[0].cluster_endpoint : null
+  value       = try(module.aks[0].cluster_endpoint, null) != null ? module.aks[0].cluster_endpoint : null
   sensitive   = true
 }
 
 output "aks_cluster_ca_certificate" {
   description = "Base64-encoded CA certificate of the AKS cluster (public; consumed by the runner to build a CLI-free kubeconfig)"
-  value       = var.provision_aks ? module.aks[0].cluster_ca_certificate : null
+  value       = try(module.aks[0].cluster_ca_certificate, null) != null ? module.aks[0].cluster_ca_certificate : null
   sensitive   = true
 }
 
@@ -34,7 +34,7 @@ output "resource_group_name" {
 
 output "azure_db_fqdn" {
   description = "Fully qualified domain name of the Azure Database flexible server"
-  value       = var.create_azure_db ? module.azure_db[0].server_fqdn : null
+  value       = try(module.azure_db[0].server_fqdn, null) != null ? module.azure_db[0].server_fqdn : null
 }
 
 # Keyless DB auth (#722, #1464): the app's Entra login identity + the UAMI client id the generated KSA
@@ -71,7 +71,7 @@ output "azure_db_admin_user" {
 
 output "azure_db_name" {
   description = "Name of the default Azure Database flexible server database (the keyless bootstrap Job's admin connection target, #722)"
-  value       = var.create_azure_db ? module.azure_db[0].database_name : null
+  value       = try(module.azure_db[0].database_name, null) != null ? module.azure_db[0].database_name : null
 }
 
 #########################################################################
@@ -86,8 +86,12 @@ output "acr_login_server" {
   # mere PRESENCE of a registry row, so selecting any connector left this indexing [0] of an empty
   # module and failed the WHOLE apply with "Invalid index" — a crash a mile from its cause.
   #
-  # length(module...) can't drift from the count the way a duplicated predicate did.
-  value = length(module.acr) > 0 ? module.acr[0].login_server : null
+  # Guarded by an instance PROBE rather than the `length(module.acr) > 0` this used to carry:
+  # `length()` reads the module as a WHOLE and closes dependency cycles elsewhere in these
+  # templates (#3509, measured in aws/rds.tf), so the probe is the one shape used everywhere —
+  # and neither can drift from the count the way a duplicated predicate did — the probe
+  # answers "does this instance have this output", which is the count's own answer.
+  value = try(module.acr[0].login_server, null) != null ? module.acr[0].login_server : null
 }
 
 #########################################################################
@@ -105,7 +109,7 @@ output "custom_secret_ids" {
 
 output "azure_cache_hostname" {
   description = "Hostname of the Azure Cache for Redis instance"
-  value       = var.create_azure_cache ? module.azure_cache[0].hostname : null
+  value       = try(module.azure_cache[0].hostname, null) != null ? module.azure_cache[0].hostname : null
 }
 
 #########################################################################
@@ -114,7 +118,7 @@ output "azure_cache_hostname" {
 
 output "azure_dns_name_servers" {
   description = "Name servers for the Azure DNS zone (empty when attaching to a zone you already own — its delegation is already in place)."
-  value       = var.azure_dns_enabled ? module.azure_dns[0].name_servers : []
+  value       = try(module.azure_dns[0].name_servers, null) != null ? module.azure_dns[0].name_servers : []
 }
 
 # The zone downstream bindings should use, resolved IDENTICALLY on both paths so a consumer never
@@ -123,7 +127,7 @@ output "azure_dns_name_servers" {
 # the template had just created (#1992).
 output "azure_dns_zone_name" {
   description = "The Azure DNS zone serving this project — created in-template when azure_dns_enabled, else the existing azure_dns_zone_name supplied by the caller."
-  value       = var.azure_dns_enabled ? module.azure_dns[0].zone_name : var.azure_dns_zone_name
+  value       = try(module.azure_dns[0].zone_name, null) != null ? module.azure_dns[0].zone_name : var.azure_dns_zone_name
 }
 
 #########################################################################
@@ -143,7 +147,7 @@ output "application_gateway_name" {
 # ExtractOutput turns into "", exactly the "there is nothing to attach" signal the decision wants.
 output "waf_policy_id" {
   description = "Resource id of the Azure WAF policy (null when azure_waf_enabled is off) — bound to the Application Gateway via firewall_policy_id"
-  value       = var.azure_waf_enabled ? module.azure_waf[0].policy_id : null
+  value       = try(module.azure_waf[0].policy_id, null) != null ? module.azure_waf[0].policy_id : null
 }
 
 #########################################################################
@@ -201,15 +205,15 @@ output "key_vault_uri" {
 # can assert them from the ROOT, which is the only place tofu's test harness runs.
 output "storage_container_access_types" {
   description = "Map of container name to the container_access_type it is planned with"
-  value       = var.create_storage_account ? module.storage_account[0].container_access_types : {}
+  value       = try(module.storage_account[0].container_access_types, null) != null ? module.storage_account[0].container_access_types : {}
 }
 
 output "storage_blob_versioning_enabled" {
   description = "Whether blob versioning is planned on the project's storage account"
-  value       = var.create_storage_account ? module.storage_account[0].blob_versioning_enabled : null
+  value       = try(module.storage_account[0].blob_versioning_enabled, null) != null ? module.storage_account[0].blob_versioning_enabled : null
 }
 
 output "storage_allow_nested_items_to_be_public" {
   description = "Whether the storage account permits public containers"
-  value       = var.create_storage_account ? module.storage_account[0].allow_nested_items_to_be_public : null
+  value       = try(module.storage_account[0].allow_nested_items_to_be_public, null) != null ? module.storage_account[0].allow_nested_items_to_be_public : null
 }

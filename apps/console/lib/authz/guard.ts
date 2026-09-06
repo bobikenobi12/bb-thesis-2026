@@ -6,6 +6,7 @@ import { getOwnerScope } from "@/lib/auth/owner";
 import { getActiveScope } from "@/lib/auth/scope";
 import { getPdp } from "@/lib/authz";
 import { getInjectedActor } from "@/lib/authz/actor-context";
+import { urlScopedOrgId } from "@/lib/authz/org-scope";
 import type { Action, Resource } from "@/lib/authz/registry";
 import { type Actor, ForbiddenError, type ResourceRef } from "@/lib/authz/types";
 import { verifyCliToken } from "@/lib/cli/auth";
@@ -23,7 +24,62 @@ export async function currentActor(): Promise<Actor> {
 	const injected = getInjectedActor();
 	if (injected) return injected;
 	const { userId, activeOrgId } = await getOwnerScope();
-	return getActiveScope(userId, activeOrgId);
+	// THE ADDRESS DECIDES THE TENANT (#4133). `active_organization_id` is a per-session default and
+	// was the only input here, so a session pointing at A while the URL named B rendered A's data
+	// under B's slug — silently, because nothing compared the two. Where the address names an org,
+	// that is the scope; the session is the fallback only where it names none (`/dashboard`,
+	// `/cli/login`, `/api/**`, the MCP token path). See `lib/authz/org-scope.ts` for why the URL
+	// wins rather than the mismatch throwing.
+	const urlOrgId = await urlScopedOrgId(userId);
+	if (urlOrgId === null) return getActiveScope(userId, activeOrgId);
+
+	// WHAT COUNTS AS THE RESOLVER AGREEING. `getActiveScope` treats its org argument as a
+	// PREFERENCE and substitutes on a miss — deliberately, so a stale session cannot lock anyone
+	// out — so the answer has to be checked rather than trusted. But the check is THREE-WAY here,
+	// not the two-way `resolveNamedOrgScope` applies to a CLI `--org` header, and the third arm is
+	// the difference between this working and the open-core build serving nothing at all:
+	const actor = await getActiveScope(userId, urlOrgId);
+
+	// 1. It landed on the org the address named. The multi-tenant answer.
+	if (actor.orgId === urlOrgId) return actor;
+
+	// 2. It collapsed to the PERSONAL scope — which is what a single-tenant edition means, not a
+	//    substitution. `lib/auth/scope.ts` ignores its org argument entirely when `getEnterprise()`
+	//    is null and always answers `orgId === userId`, while community still provisions real
+	//    organizations with real slugs and real `member` rows (`lib/auth/onboarding.ts`
+	//    provisionPrimaryOrg). So in community EVERY org slug resolves here, and refusing this arm
+	//    would 500 every `/{org}/…` page in the AGPL build. The membership join in
+	//    `org-scope.ts` has already proved the caller belongs to the named org; community simply
+	//    has one tenant to put them in.
+	//
+	//    ⚠ THIS ARM IS ONLY IN `currentActor()`. `resolveNamedOrgScope` below is still strictly
+	//    two-way, so in community it returns null for every real org id — which is why the CLI's
+	//    `X-Alethia-Org` path and `authorizeInOrg` refuse there. That is not a regression (both
+	//    behaved the same before this change) and `requireHostedBilling` bounds the billing case,
+	//    but it is an inconsistency, not a symmetry, and saying otherwise would be a comment
+	//    asserting a property the code does not have.
+	if (actor.orgId === userId) return actor;
+
+	// 3. A DIFFERENT named org. That is the substitution, and following it would answer a request
+	//    addressed to B from some third org's scope — #3863, on the CLI's `--org` header, reaching
+	//    the console by a second route.
+	//
+	//    A ForbiddenError, not a bare Error, on two counts: API and CLI routes classify on that
+	//    type to answer 403, and `[org]/layout.tsx` matches the bare string "Unauthorized" EXACTLY
+	//    to bounce to sign-in — which this is not. The session is fine; the address is not the
+	//    caller's to ask for.
+	//
+	//    ⚠ It does NOT become a 404 on a page render. `[org]/layout.tsx`'s try/catch wraps only
+	//    `resolveOrgScope`, which never calls this; a throw from a page's own reader escapes to
+	//    `app/error.tsx`. Reaching this at all means the layout's own membership check has already
+	//    passed and the RESOLVER then disagreed, which is a genuine internal inconsistency and not
+	//    a stale link — so a 500 is arguably the honest answer. Stated because the alternative is a
+	//    comment claiming a landing the tree does not provide.
+	throw new ForbiddenError(
+		"view",
+		{ type: "org", id: urlOrgId },
+		"the scope resolver landed on a different organization; the request was NOT served from it",
+	);
 }
 
 /**
@@ -65,7 +121,11 @@ function forbidden(): Response {
 }
 
 /** True if `userId` has a `member` row in `orgId` (the personal org — orgId === userId
- *  — is always the user's own, so it needs no membership row). */
+ *  — is always the user's own, so it needs no membership row).
+ *
+ *  Passing this is NOT the same as being scoped to `orgId`: the personal-org branch is true
+ *  for a value every caller can supply about themselves, and #3863 rode exactly that gap.
+ *  {@link resolveNamedOrgScope} is what turns a named org into the scope actually served. */
 async function isOrgMember(userId: string, orgId: string): Promise<boolean> {
 	if (orgId === userId) return true;
 	const [m] = await getServiceDb()
@@ -74,6 +134,69 @@ async function isOrgMember(userId: string, orgId: string): Promise<boolean> {
 		.where(and(eq(member.userId, userId), eq(member.organizationId, orgId)))
 		.limit(1);
 	return Boolean(m);
+}
+
+/**
+ * Resolves `userId`'s scope for an org THE REQUEST NAMED — a CLI `--org` header, a service token's
+ * org pin, or the console URL's `{org}` segment (#4133) — and returns null when resolution landed
+ * on any other org.
+ *
+ * The scope resolver treats its org argument as a PREFERENCE: it also serves the console session,
+ * whose stored `activeOrganizationId` can name an org the user has since left, and locking somebody
+ * out of the console over stale session state would be the wrong trade — so on a miss it falls back
+ * to an org they do belong to. A header is not a preference. It is an assertion about this one
+ * request, and following the fallback there answers the request from a scope the caller never named.
+ *
+ * That is #3863: a personal org's id IS the user's id, so `X-Alethia-Org: <own user id>` passed
+ * {@link isOrgMember}, found no `member` row, and came back scoped to a TEAM org — on a path
+ * `jobs cancel --latest` also walks. ee/src/scope.ts now resolves the personal org explicitly, and
+ * this refuses whatever else the resolver may substitute rather than serving it.
+ *
+ * `null` means exactly "resolution did not land on the org you named". A lookup that FAILS is never
+ * reported that way: getActiveScope's rejection propagates, so a database outage surfaces as an
+ * error, not as a denial and not as a different tenant's rows.
+ *
+ * The console URL joined this list in #4133. It belongs here for the same reason the CLI header
+ * does and the SESSION does not: `/{org}/…` is what the user is looking at while they act, so it
+ * is an assertion about this request. `active_organization_id` is a preference that survives
+ * between them, and reading tenancy from it is how a stale one served another org's rows under
+ * this org's address.
+ */
+async function resolveNamedOrgScope(userId: string, orgId: string): Promise<Actor | null> {
+	const actor = await getActiveScope(userId, orgId);
+	return actor.orgId === orgId ? actor : null;
+}
+
+/**
+ * Like {@link authorize}, but for an org the CALLER NAMED rather than the one the request is
+ * addressed to — and it enforces the permission in THAT org, not in the ambient scope.
+ *
+ * Exactly one flow needs this, and it is the flow #4133 broke: creating an organization opens a
+ * sheet on the CURRENT org's page (`components/org-switcher.tsx` renders `CreateOrgSheet` inside
+ * the shell), calls `setActiveOrganization(new)`, and then finishes the subscription against the
+ * NEW org from that same page. While the tenant came from the session that worked, because the
+ * write had already landed. Now the tenant comes from the address — which still names the old org,
+ * correctly, because that is the page the user is on — so `actor.orgId !== input.orgId` and the
+ * flow would refuse itself.
+ *
+ * The old guard was `authorize(verb)` in the ambient scope plus `actor.orgId === input.orgId`. That
+ * is not weaker in intent, only in expression: it asked for the verb wherever the session happened
+ * to be pointing and then checked that this was the org meant. Naming the org makes the same
+ * question order-independent, and `resolveNamedOrgScope` refuses a substituted org rather than
+ * enforcing the verb somewhere the caller never named (#3863).
+ */
+export async function authorizeInOrg(
+	action: Action,
+	resource: { type: Resource; id?: string },
+	orgId: string,
+): Promise<Actor> {
+	const { userId } = await getOwnerScope();
+	const actor = await resolveNamedOrgScope(userId, orgId);
+	if (!actor) {
+		throw new ForbiddenError(action, { type: resource.type, id: resource.id }, `not scoped to organization ${orgId}`);
+	}
+	await getPdp().enforce(actor, action, { type: resource.type, id: resource.id });
+	return actor;
 }
 
 /**
@@ -99,7 +222,9 @@ export async function ensureCliOrgAccess(
  *
  * An optional `X-Alethia-Org` header selects which org the call is scoped to (the CLI
  * `--org` flag). It is honoured only after verifying the caller is a member of that org
- * (else 403); absent, behaviour is identical to resolving the default active scope.
+ * (else 403) AND that the resolved scope is that same org — a resolver that falls back to
+ * some other org of theirs is a 403 here, never a silent substitution (#3863). Absent,
+ * behaviour is identical to resolving the default active scope.
  *
  * A SERVICE-ACCOUNT token overrides that entirely: its org is fixed at mint time, a conflicting
  * header is refused rather than ignored, and the minting profile's membership is re-checked on every
@@ -145,7 +270,10 @@ export async function authorizeCli(
 		if (!(await isOrgMember(userId, serviceOrg))) {
 			return { error: forbidden() };
 		}
-		const serviceActor = await getActiveScope(userId, serviceOrg);
+		// The pin is a named org like a header is, so it gets the same treatment: a scope that
+		// resolves to anything other than the pinned org is refused, never substituted.
+		const serviceActor = await resolveNamedOrgScope(userId, serviceOrg);
+		if (!serviceActor) return { error: forbidden() };
 		try {
 			await getPdp().enforce(serviceActor, action, { type: resource.type, id: resource.id });
 		} catch (e) {
@@ -158,9 +286,13 @@ export async function authorizeCli(
 	if (headerOrg && !(await isOrgMember(userId, headerOrg))) {
 		return { error: forbidden() };
 	}
+	// With a header the org is part of the REQUEST, so the resolved scope must BE it (see
+	// resolveNamedOrgScope). Without one there is nothing to compare against: resolving the
+	// caller's default scope is the whole intent, and that path is left alone.
 	const actor = headerOrg
-		? await getActiveScope(userId, headerOrg)
+		? await resolveNamedOrgScope(userId, headerOrg)
 		: await getActiveScope(userId);
+	if (!actor) return { error: forbidden() };
 	try {
 		await getPdp().enforce(actor, action, { type: resource.type, id: resource.id });
 	} catch (e) {

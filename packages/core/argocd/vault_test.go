@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/alethialabs-io/alethialabs/packages/core/categories"
+	"github.com/alethialabs-io/alethialabs/packages/core/manifests"
 	"github.com/alethialabs-io/alethialabs/packages/core/types"
 )
 
@@ -400,5 +401,86 @@ func TestTheVaultFactAndTheDerivedVaultAgree(t *testing.T) {
 	none := &types.ProjectConfig{Provider: "hetzner"}
 	if BuildFromOutputs(map[string]interface{}{}, none).HetznerInClusterVault {
 		t.Error("a project with no secret still sets HetznerInClusterVault — a store would be applied over an absent Vault")
+	}
+}
+
+// PerCloudSecretStoreName must agree with the RENDERED manifest, which is the copy that can drift.
+//
+// The first version of this test compared the accessor against clusterSecretStoreRenderSet — and the
+// same commit had just changed that map's keys to BE the accessor's output, so it was true by
+// construction and only the empty-string branch could ever fire. The copy that can still drift is
+// the hand-written literal in externalSecretsStoreTemplate: rename the template's store to
+// `secretstore-gcp-native` and update the render tests alongside it (the natural edit) and the
+// reaper would delete a store that no longer exists while orphaning the one that does, and the
+// max-config probe would name a store that can never be Ready — a 40m timeout every gcp run.
+//
+// So this renders the real manifest per cloud with that cloud's identity facts populated and reads
+// the name back out of it.
+func TestPerCloudSecretStoreNameMatchesTheRenderedManifest(t *testing.T) {
+	for _, tc := range []struct {
+		provider string
+		facts    *InfraFacts
+	}{
+		{"aws", &InfraFacts{Provider: "aws", Region: "us-east-1", IRSAExternalSecretsArn: "arn:aws:iam::1:role/eso"}},
+		{"gcp", &InfraFacts{Provider: "gcp", GCPExternalSecretsSA: "eso@p.iam.gserviceaccount.com", GCPProjectID: "proj-1"}},
+		{"azure", &InfraFacts{Provider: "azure", AzureExternalSecretsClient: "cid", AzureKeyVaultURI: "https://kv.vault.azure.net/"}},
+		{"alibaba", &InfraFacts{Provider: "alibaba", Region: "eu-central-1", AlibabaExternalSecretsRoleArn: "acs:ram::1:role/eso"}},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			m, err := externalSecretsStoreManifest(tc.facts)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			want := PerCloudSecretStoreName(tc.provider)
+			if want == "" {
+				t.Fatalf("PerCloudSecretStoreName(%q) is empty", tc.provider)
+			}
+			// The rendered document names the store on its own `name:` line. Anchored so a
+			// *-xacct store cannot satisfy it.
+			if !strings.Contains(m, "\n  name: "+want+"\n") {
+				t.Errorf("the rendered ClusterSecretStore does not carry name %q — the accessor, the reaper "+
+					"and the max-config probe would all be naming a store the template no longer renders.\n%s",
+					want, m)
+			}
+		})
+	}
+	// Hetzner's store is rendered by a different path (the in-cluster Vault), so it is pinned by
+	// TestHetznerSecretStoreNameIsNotInTheSaaSReapSet and the render set rather than here. What must
+	// hold is that the accessor still answers for it.
+	if PerCloudSecretStoreName("hetzner") != HetznerSecretStoreName {
+		t.Errorf("PerCloudSecretStoreName(\"hetzner\") = %q, want %q",
+			PerCloudSecretStoreName("hetzner"), HetznerSecretStoreName)
+	}
+	// A provider the platform does not run must return EMPTY rather than a plausible-looking name:
+	// "secretstore-openstack" would read as real, and a probe naming it could never be Ready.
+	if got := PerCloudSecretStoreName("openstack"); got != "" {
+		t.Errorf("PerCloudSecretStoreName(\"openstack\") = %q, want \"\" — inventing a name for a cloud the "+
+			"platform does not run produces a store that cannot exist", got)
+	}
+}
+
+// The names have a SECOND exported accessor, and the two deliberately disagree on hetzner.
+//
+// manifests.StoreNameFor is what gets written into every workload's
+// ExternalSecret.spec.secretStoreRef.name. It returns "" for hetzner where this one returns
+// secretstore-hetzner, and both encode "empty means no per-cloud store" as load-bearing — so the two
+// look interchangeable and give opposite answers on the one cloud where it matters. Consolidating
+// onto the wrong one would emit ExternalSecrets against the Vault store for binding facets it cannot
+// resolve, turning a loud "unsatisfiable, reported" into a silently never-syncing ExternalSecret.
+//
+// This pins both halves: they agree on the four managed clouds, and the hetzner divergence is
+// intentional rather than drift.
+func TestPerCloudSecretStoreNameAgreesWithManifestsStoreNameFor(t *testing.T) {
+	for _, provider := range []string{"aws", "gcp", "azure", "alibaba"} {
+		if got, want := manifests.StoreNameFor(provider), PerCloudSecretStoreName(provider); got != want {
+			t.Errorf("manifests.StoreNameFor(%q) = %q but PerCloudSecretStoreName(%q) = %q — a workload's "+
+				"secretStoreRef would name a store nothing renders", provider, got, provider, want)
+		}
+	}
+	if manifests.StoreNameFor("hetzner") != "" {
+		t.Errorf("manifests.StoreNameFor(\"hetzner\") = %q, want \"\" — hetzner's store is the in-cluster "+
+			"Vault, which cannot resolve the cloud-secret-manager facets an ExternalSecret would ask it for; "+
+			"if this is now intended, the divergence documented on PerCloudSecretStoreName must change too",
+			manifests.StoreNameFor("hetzner"))
 	}
 }

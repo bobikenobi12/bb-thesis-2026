@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
@@ -30,7 +29,7 @@ var runnerListCmd = &cobra.Command{
 		apiClient := api.NewClient(token)
 		var runners []api.Runner
 
-		ui.RunSpinner("Fetching runners...", func() {
+		runSpinner("Fetching runners...", func() {
 			runners, err = apiClient.GetRunners()
 		})
 
@@ -48,7 +47,7 @@ var runnerListCmd = &cobra.Command{
 			for i, title := range runnerListColumns {
 				columns[i] = table.Column{Title: title, Width: widths[i]}
 			}
-			plain := runnerRows(runners)
+			plain := runnerRows(runners, ui.FormatTable)
 			rows := make([]table.Row, len(plain))
 			for i, r := range plain {
 				rows[i] = table.Row(r)
@@ -66,40 +65,38 @@ var runnerListCmd = &cobra.Command{
 	},
 }
 
-// runnerRows projects each runner into a plain table row.
-func runnerRows(runners []api.Runner) [][]string {
+// runnerRows projects each runner into a plain table row for the given output format.
+//
+// Five of the six cells were humanised unconditionally and Render writes these rows verbatim into
+// its CSV branch, so a script reading `runner list -o csv` received a `◆` for the default runner, a
+// `● active` status welded to its glyph, `3 minutes ago` where a timestamp belongs, and — the one
+// that loses data outright — `self·hetzner`, which is api.Runner's Operator and Provisioning fields
+// joined by U+00B7. The Operator column's machine form is the Operator field; a script that wants
+// the provisioner reads `-o json`, where it has never stopped being its own key.
+func runnerRows(runners []api.Runner, outFmt string) [][]string {
 	rows := make([][]string, len(runners))
 	for i, w := range runners {
-		defaultLabel := ""
-		if w.IsDefault {
-			defaultLabel = ui.SymbolDefault
-		}
-		heartbeat := formatCreatedAt(w.LastHeartbeat)
-		version := w.Version
-		if version == "" {
-			version = ui.SymbolDash
-		}
 		rows[i] = []string{
 			w.Name,
-			runnerOperatorLabel(w),
-			fmt.Sprintf("%s %s", ui.PlainStatusDot(w.Status), strings.ToLower(w.Status)),
-			version,
-			defaultLabel,
-			heartbeat,
+			ui.Cell(outFmt, w.Operator, runnerOperatorLabel(w)),
+			ui.Cell(outFmt, w.Status, ui.StatusCell(w.Status)),
+			ui.Cell(outFmt, w.Version, ui.OrDash(w.Version)),
+			ui.Cell(outFmt, ui.WireBool(w.IsDefault), ui.DefaultCell(w.IsDefault)),
+			ui.Cell(outFmt, w.LastHeartbeat, ui.RelativeTime(w.LastHeartbeat)),
 		}
 	}
 	return rows
 }
 
 // renderRunners writes the runner list to out in the requested format.
-func renderRunners(out io.Writer, format string, runners []api.Runner) error {
-	if len(runners) == 0 && format == ui.FormatTable {
+func renderRunners(out io.Writer, outFmt string, runners []api.Runner) error {
+	if len(runners) == 0 && outFmt == ui.FormatTable {
 		fmt.Fprintln(out, ui.MutedStyle.Render("No runners found. Deploy one with `alethia runner deploy`."))
 		return nil
 	}
-	return ui.Render(out, format, ui.TableSpec{
+	return ui.Render(out, outFmt, ui.TableSpec{
 		Columns: runnerListColumns,
-		Rows:    runnerRows(runners),
+		Rows:    runnerRows(runners, outFmt),
 	}, runners)
 }
 

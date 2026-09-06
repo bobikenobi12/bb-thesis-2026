@@ -1,6 +1,13 @@
 "use client";
 
 import { Button } from "@repo/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@repo/ui/empty";
 import { cn } from "@repo/ui/utils";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
@@ -40,6 +47,20 @@ export type ConversationEmptyStateProps = ComponentProps<"div"> & {
   icon?: React.ReactNode;
 };
 
+/**
+ * The chat family's "nothing here" state, rendered through `@repo/ui/empty`.
+ *
+ * It used to hand-roll the shape — a centred column, an icon, a bold title, a line of muted copy
+ * — which is `EmptyState` with the words changed, so the agent transcript and a support case
+ * thread were two answers to the same question. The PARTS are composed rather than the one-call
+ * `EmptyState` because a caller may replace the whole body with `children`, and because the icon
+ * here is passed bare rather than dropped into a muted tile.
+ *
+ * `level={3}` on the title keeps the `<h3>` this always rendered: it heads the conversation
+ * region, which is what `EmptyTitle`'s `level` is for — the component defaults to a `<div>` so an
+ * empty state inside a card cannot inject a phantom rung, and that default would have silently
+ * demoted this one.
+ */
 export const ConversationEmptyState = ({
   className,
   title = "No messages yet",
@@ -48,25 +69,19 @@ export const ConversationEmptyState = ({
   children,
   ...props
 }: ConversationEmptyStateProps) => (
-  <div
-    className={cn(
-      "flex size-full flex-col items-center justify-center gap-3 p-8 text-center",
-      className
-    )}
-    {...props}
-  >
+  <Empty className={cn("size-full gap-3 p-8 md:p-8", className)} {...props}>
     {children ?? (
-      <>
-        {icon && <div className="text-muted-foreground">{icon}</div>}
-        <div className="space-y-1">
-          <h3 className="font-medium text-sm">{title}</h3>
-          {description && (
-            <p className="text-muted-foreground text-sm">{description}</p>
-          )}
-        </div>
-      </>
+      <EmptyHeader className="gap-1">
+        {icon && <EmptyMedia className="mb-0">{icon}</EmptyMedia>}
+        <EmptyTitle className="font-medium text-sm" level={3}>
+          {title}
+        </EmptyTitle>
+        {description && (
+          <EmptyDescription className="text-sm">{description}</EmptyDescription>
+        )}
+      </EmptyHeader>
     )}
-  </div>
+  </Empty>
 );
 
 export type ConversationScrollButtonProps = ComponentProps<typeof Button>;

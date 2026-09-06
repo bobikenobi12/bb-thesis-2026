@@ -100,7 +100,11 @@ jobs:
       ALETHIA_AI_ANTHROPIC_RETENTION: "Per the Anthropic Commercial Terms — inputs and outputs retained only for the period stated there"
       ALETHIA_AI_ANTHROPIC_NO_TRAINING: "Anthropic Commercial Terms exclude training on inputs and outputs"
     steps:
-      - uses: actions/checkout@v7
+      # `id:` so the upload at the bottom can ask whether there is a workspace — the `services:`
+      # block above starts in `Initialize containers`, BEFORE this step, and its failure skips this
+      # one while leaving `cancelled()` false (#4084).
+      - id: checkout
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || 'dev' }}
       - uses: pnpm/action-setup@v6
@@ -112,9 +116,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Migrate the test database
-        run: pnpm -F console db:migrate
+        run: pnpm -C apps/console run db:migrate
       - name: Build the console
-        run: pnpm -F console build
+        run: pnpm -C apps/console run build
       - name: Install Playwright (Chromium + OS deps)
         run: pnpm -F console exec playwright install --with-deps chromium
       - name: Guard — elench-live project must match at least one test
@@ -125,9 +129,11 @@ jobs:
       - name: Run the real-model journeys
         run: pnpm -F console exec playwright test --project=elench-live
       - name: Behavior eval (tool traces, not prose)
-        run: pnpm -F console test:ai-eval
+        run: pnpm -C apps/console run test:ai-eval
+      # Gated on the checkout, not on `!cancelled()` alone: a service container that fails to pull
+      # skips every step here, and this one would then report SUCCESS having uploaded nothing (#4084).
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-elench-live

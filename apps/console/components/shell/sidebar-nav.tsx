@@ -37,8 +37,8 @@ export function SidebarNav({
 					className="flex h-9 w-full items-center gap-2.5 rounded-md border bg-muted/30 px-2.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 				>
 					<Search className="h-[15px] w-[15px] shrink-0" />
-					<span className="flex-1 text-left text-[13px]">Find…</span>
-					<span className="shrink-0 rounded border px-1.5 font-mono text-[10px]">F</span>
+					<span className="flex-1 text-left text-ui-md">Find…</span>
+					<span className="shrink-0 rounded border px-1.5 font-mono text-ui-2xs">F</span>
 				</button>
 			</div>
 

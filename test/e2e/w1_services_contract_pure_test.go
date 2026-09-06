@@ -38,7 +38,7 @@ func w1LoadServices(t *testing.T) ([]types.ProjectServiceConfig, []map[string]js
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("fixtures", "w1_services.json"))
 	if err != nil {
-		t.Fatalf("read w1_services.json (regenerate: UPDATE_FIXTURES=1 pnpm -F console test w1-services-contract): %v", err)
+		t.Fatalf("read w1_services.json (regenerate: UPDATE_FIXTURES=1 pnpm -C apps/console run test w1-services-contract): %v", err)
 	}
 	var bare []types.ProjectServiceConfig
 	if err := json.Unmarshal(raw, &bare); err != nil {

@@ -25,20 +25,30 @@ func TestRenderMark(t *testing.T) {
 	}
 }
 
-func TestPlainStatusDot(t *testing.T) {
+// TestPlainGlyph covers the unstyled half. Three rows differ from what PlainStatusDot returned
+// and each is a defect it closed: DRAINING (the contested case, decided the console's way),
+// DESTROYED (was the em dash it shared with "we could not fill this cell"), and the two
+// lower-case rows, which used to miss every arm of an unfolded switch.
+//
+// DESTROYED is `◌` and not `·`: the middot is ui.SymbolBullet, the separator inside a picker
+// label, and the label starts with this glyph. See TestStatusGlyphsAreDisjointFromSymbols.
+func TestPlainGlyph(t *testing.T) {
 	cases := map[string]string{
 		"ONLINE":       SymbolOnline,
 		"ACTIVE":       SymbolOnline,
-		"DRAINING":     SymbolPending,
+		"DRAINING":     SymbolOffline,
 		"PROVISIONING": SymbolPending,
 		"QUEUED":       SymbolPending,
 		"FAILED":       SymbolError,
-		"DESTROYED":    SymbolDash,
+		"DESTROYED":    "◌",
 		"WHATEVER":     SymbolOffline,
+		"active":       SymbolOnline,
+		"AcTiVe":       SymbolOnline,
+		"":             SymbolOffline,
 	}
 	for status, want := range cases {
-		if got := PlainStatusDot(status); got != want {
-			t.Errorf("PlainStatusDot(%q) = %q, want %q", status, got, want)
+		if got := PlainGlyph(status); got != want {
+			t.Errorf("PlainGlyph(%q) = %q, want %q", status, got, want)
 		}
 	}
 }

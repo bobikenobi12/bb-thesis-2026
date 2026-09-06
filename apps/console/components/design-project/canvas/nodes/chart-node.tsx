@@ -119,7 +119,7 @@ export function ChartNode({ id, selected }: NodeProps<CanvasNode<"chart">>) {
 			<div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
 				<GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 				<span className="vx-eyebrow">Helm chart</span>
-				<span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+				<span className="ml-auto flex items-center gap-1.5 font-mono text-ui-2xs uppercase tracking-wide text-muted-foreground">
 					<span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", st.dot)} />
 					{st.label}
 				</span>
@@ -127,11 +127,11 @@ export function ChartNode({ id, selected }: NodeProps<CanvasNode<"chart">>) {
 
 			<div className="flex flex-col gap-2 px-3 py-2.5">
 				<div className="text-sm font-semibold text-foreground">{c.id}</div>
-				<div className="flex items-center gap-1.5 self-start border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
+				<div className="flex items-center gap-1.5 self-start border border-border px-2 py-1 font-mono text-ui-2xs text-muted-foreground">
 					<GitBranch className="h-3 w-3" />
 					{c.repoUrl.replace(/^https?:\/\/(www\.)?/, "").replace(/\.git$/, "")}
 				</div>
-				<div className="flex gap-3 font-mono text-[10px] text-muted-foreground">
+				<div className="flex gap-3 font-mono text-ui-2xs text-muted-foreground">
 					<span>
 						path <span className="text-foreground/80">/{c.chartPath.replace(/^\/+/, "")}</span>
 					</span>
@@ -144,13 +144,13 @@ export function ChartNode({ id, selected }: NodeProps<CanvasNode<"chart">>) {
 					type="button"
 					onClick={() => setSheetOpen(true)}
 					title="Chart safety scan"
-					className="flex items-center gap-1.5 self-start rounded-none border border-border px-2 py-1 font-mono text-[10px] transition-colors hover:bg-muted"
+					className="flex items-center gap-1.5 self-start rounded-none border border-border px-2 py-1 font-mono text-ui-2xs transition-colors hover:bg-muted"
 				>
 					<ChipIcon className={cn("h-3 w-3", chip.cls, chip.spin && "animate-spin")} />
 					<span className={chip.cls}>{chip.label}</span>
 				</button>
 				<div className="flex items-center gap-2 border-t border-border/60 pt-2">
-					<span className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+					<span className="flex items-center gap-1.5 font-mono text-ui-2xs text-muted-foreground">
 						<RefreshCw className="h-3 w-3" /> manual sync · ns {c.namespace}
 					</span>
 					{ctx && (

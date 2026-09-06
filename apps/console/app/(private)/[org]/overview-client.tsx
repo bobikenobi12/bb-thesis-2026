@@ -13,7 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useMemo, useTransition } from "react";
 import { Button } from "@repo/ui/button";
 import { EmptyState } from "@repo/ui/empty";
-import { PageHeader } from "@repo/ui/page-header";
+import { SectionHeading } from "@repo/ui/section-heading";
 import {
 	Table,
 	TableBody,
@@ -100,7 +100,7 @@ export function OverviewClient({
 		Boolean(state.q) || state.clouds.length > 0 || state.repos.length > 0;
 
 	return (
-		<div className="mx-auto w-full max-w-[1360px] space-y-5">
+		<div className="space-y-5">
 			<OverviewToolbar
 				orgSlug={orgSlug}
 				state={state}
@@ -118,9 +118,10 @@ export function OverviewClient({
 
 				{/* Right column — projects list. */}
 				<div>
-					{/* The count is the FILTERED result count, in the shared count pill beside the
-					    heading — where the console filter standard requires result counts to live. */}
-					<PageHeader
+					{/* "Projects" names a SECTION of the overview, not the route — the breadcrumb
+					    above says "Overview". The count is the FILTERED result count, in the shared
+					    count pill beside the heading, where the console filter standard puts it. */}
+					<SectionHeading
 						title="Projects"
 						count={ordered.length}
 						className="mb-3"

@@ -137,7 +137,13 @@ These are not per-cloud gates, but legs depend on them:
   azure, alibaba and hetzner are unpriced, so dispatch them one at a time and watch them.
 
 Region defaults per cloud when the `region` input is blank: hetzner `nbg1`, aws `us-east-1`,
-gcp `europe-west3`, azure `westeurope`, alibaba `eu-central-1`.
+gcp `europe-west3-a`, azure `westeurope`, alibaba `eu-central-1`.
+
+**gcp takes a ZONE, not a region.** A bare `europe-west3` makes the GKE cluster *regional*, and that
+changes two things at once: the capacity preflight is skipped (it asks a zonal question), and a node
+pool's `initial_node_count` and autoscaling min/max are applied **per zone** — so a floor configured
+for 1 node silently provisions one per zone and is billed accordingly. Overriding `region` with a
+bare region re-creates both.
 
 The matrix runs at most **3 real provisions concurrently** (`max-parallel: 3`), and a per-provider
 concurrency group serializes same-cloud runs.
@@ -290,9 +296,8 @@ before enabling a second cell on the same leg.
 ### Dispatch from `main`
 
 Real applies are main-gated, so a dispatch from `dev` provisions nothing. Run the workflow with the
-target `provider` from `main`, then record the bundle. The parity table in
-`docs/testing/provisioning-e2e-parity.md` flips **only** on a real-apply artifact in
-`demos/proofs/provisioning-e2e-log.md` — never on a green harness.
+target `provider` from `main`, then record the bundle. The proof grid derived in `PROGRAMME.md` moves
+**only** on a real-apply artifact in `demos/proofs/provisioning-e2e-log.md` — never on a green harness.
 
 ## Related
 

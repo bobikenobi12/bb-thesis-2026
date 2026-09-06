@@ -20,7 +20,7 @@ module "cluster" {
 
   # #1987: [] unless the project set a network allow-list, in which case modules/network created a
   # group for it. Brownfield has no such group, which checks_network.tf reports rather than drops.
-  security_group_ids = var.provision_network ? module.network[0].operator_allow_list_security_group_ids : []
+  security_group_ids = try(module.network[0].operator_allow_list_security_group_ids, null) != null ? module.network[0].operator_allow_list_security_group_ids : []
 
   instance_types    = var.ack_instance_types
   node_min_size     = var.ack_node_min_size

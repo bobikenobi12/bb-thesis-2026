@@ -1,0 +1,129 @@
+# SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# The route-state ratchet: RUBRIC.md predicates S1-S4 and T1-T4, scored over the private
+# console route set by `node scripts/check-route-states.mjs`.
+#
+# EVERY LINE HERE IS CHECKED IN BOTH DIRECTIONS, AS A SET. A route that appears is a
+# regression; a route that stops failing without this file changing in the SAME commit is
+# also a failure, because a stale baseline has stopped measuring the thing it names and the
+# next regression back into that line reports green. The members are recorded rather than
+# the counts because counts cancel: one fix and one new defect in the same predicate leave
+# the integer where it was. `na` carries its reason for the reason RUBRIC.md gives — a
+# predicate being escaped must not be able to happen quietly.
+#
+# `node scripts/check-route-states.mjs --print-baseline` prints what the tree scores today.
+# It prints; it never writes. Regenerating this file over a red run is how a ratchet becomes
+# a rubber stamp — read the diff and only accept lines your change actually moved.
+version: 1
+routes: 40
+redirectOnly: 4
+real: 36
+predicates:
+  S1:
+    fail: []
+    na:
+      - /[org]/[project]/settings: redirect-only
+      - /[org]/[project]: redirect-only
+      - /[org]/~/settings: redirect-only
+      - /dashboard/[[...rest]]: redirect-only
+  S2:
+    fail:
+      - /[org]/[project]/environments
+      - /[org]/~/alerts
+      # A RECORDED DECISION, and the only line in this file that is one. Everything else here is
+      # a defect waiting for the lane that owns it; this route is built this way on purpose and
+      # will keep failing S2 for as long as it is.
+      #
+      # The job view is the console's one HYBRID page. Its log is a monospaced stream whose line
+      # lengths are decided by whatever the runner printed, and it is SCANNED for a token, not
+      # read; the rest of the page — the status line, the outcome, the job's facts, the two JSON
+      # payloads — is label/value pairs and sentences, which at 1200px is a line the eye loses its
+      # place in. So the log runs edge to edge and everything else sits in a narrower column of its
+      # own (`max-w-4xl`, in `detail-column.ts`). "Edge to edge" is bounded and the module says so:
+      # the page's negative margins cancel AppShell's PADDING, not its 1200px cap, so the log is
+      # ~1280px and not the viewport. Escaping the cap is a shell change (the exception ProjectShell
+      # already has, in `app-shell.tsx`) and is outside this route's scope.
+      #
+      # That is what S2 is reporting, correctly: two widths govern this page. What it cannot say
+      # is that the second one governs a COLUMN and not the content — this route's S2 is scoped
+      # to its detail column. It is recorded as a FAIL rather than escaped as an N/A on purpose:
+      # RUBRIC.md's rule 2 says an N/A must be derivable from the route RECORD, and "this page has
+      # a good reason" is derivable from nothing. An N/A would shrink S2's denominator and raise
+      # the console's score for a page that genuinely carries two widths.
+      #
+      # The pair to watch is S3: the skeleton must be the same width, so `loading.tsx` imports the
+      # SAME constant rather than repeating it. Change the column in `detail-column.ts` and both
+      # move together; hard-code it in either and S3 goes quiet while the skeleton stops matching.
+      - /[org]/~/jobs/[id]
+      - /[org]/~/new
+    na:
+      - /[org]/[project]/settings: redirect-only
+      - /[org]/[project]: redirect-only
+      - /[org]/~/settings: redirect-only
+      - /dashboard/[[...rest]]: redirect-only
+  S3:
+    fail: []
+    na:
+      - /[org]/[project]/settings: redirect-only
+      - /[org]/[project]: redirect-only
+      - /[org]/~/settings: redirect-only
+      - /dashboard/[[...rest]]: redirect-only
+  S4:
+    fail:
+      - /[org]/~/alerts
+    na:
+      - /[org]/[project]/settings: redirect-only
+      - /[org]/[project]: redirect-only
+      - /[org]/~/settings: redirect-only
+      - /dashboard/[[...rest]]: redirect-only
+  T1:
+    fail: []
+    na:
+      - /[org]/[project]/settings: redirect-only
+      - /[org]/[project]: redirect-only
+      - /[org]/~/settings: redirect-only
+      - /dashboard/[[...rest]]: redirect-only
+  T2:
+    fail: []
+    na: []
+  T3:
+    fail: []
+    na:
+      - /[org]/[project]/settings: does-not-call-not-found
+      - /[org]/[project]: does-not-call-not-found
+      - /[org]/~/alerts: does-not-call-not-found
+      - /[org]/~/clusters: does-not-call-not-found
+      - /[org]/~/connectors: does-not-call-not-found
+      - /[org]/~/evidence: does-not-call-not-found
+      - /[org]/~/jobs/[id]: does-not-call-not-found
+      - /[org]/~/jobs: does-not-call-not-found
+      - /[org]/~/new: does-not-call-not-found
+      - /[org]/~/runners: does-not-call-not-found
+      - /[org]/~/settings/access: does-not-call-not-found
+      - /[org]/~/settings/activity: does-not-call-not-found
+      - /[org]/~/settings/billing/invoices: does-not-call-not-found
+      - /[org]/~/settings/billing: does-not-call-not-found
+      - /[org]/~/settings/classification: does-not-call-not-found
+      - /[org]/~/settings/general: does-not-call-not-found
+      - /[org]/~/settings/members: does-not-call-not-found
+      - /[org]/~/settings/roles: does-not-call-not-found
+      - /[org]/~/settings/sso: does-not-call-not-found
+      - /[org]/~/settings/teams: does-not-call-not-found
+      - /[org]/~/settings: does-not-call-not-found
+      - /[org]/~/support/abuse: does-not-call-not-found
+      - /[org]/~/support/ask: does-not-call-not-found
+      - /[org]/~/support/my-cases: does-not-call-not-found
+      - /[org]/~/support/submit: does-not-call-not-found
+      - /[org]/~/support: does-not-call-not-found
+      - /[org]/~/usage: does-not-call-not-found
+      - /[org]: does-not-call-not-found
+      - /cli/login: does-not-call-not-found
+      - /dashboard/[[...rest]]: does-not-call-not-found
+  T4:
+    fail:
+      - /[org]/[project]
+      - /[org]/[project]/settings
+      - /[org]/~/settings
+      - /dashboard/[[...rest]]
+    na: []

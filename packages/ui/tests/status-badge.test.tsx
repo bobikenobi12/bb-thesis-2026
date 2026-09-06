@@ -23,11 +23,18 @@ describe("statusTier resolver", () => {
 		["online", "active"],
 		["success", "active"],
 		["succeeded", "active"],
+		// The promotion vocabulary. Six values of promotion_status and approval_status had no word
+		// here and fell to the idle fallback, so an approved promotion and a blocked one rendered
+		// as the badge for "present and doing nothing" — and, being unmapped, each also tripped the
+		// dev-mode warning below. #4117.
+		["approved", "active"],
 		["ready", "active"],
 		["connected", "active"],
 		["running", "active"],
 		["queued", "pending"],
 		["pending", "pending"],
+		["pending_plan", "pending"],
+		["pending_approval", "pending"],
 		["processing", "pending"],
 		["claimed", "pending"],
 		["provisioning", "pending"],
@@ -44,6 +51,8 @@ describe("statusTier resolver", () => {
 		["failed", "failed"],
 		["error", "failed"],
 		["errored", "failed"],
+		["rejected", "failed"],
+		["blocked", "failed"],
 		["disabled", "disabled"],
 		["destroyed", "disabled"],
 		["skipped", "disabled"],
@@ -55,6 +64,20 @@ describe("statusTier resolver", () => {
 		expect(statusTier("ACTIVE")).toBe("active");
 		expect(statusTier("Processing")).toBe("pending");
 		expect(statusTier("FaIlEd")).toBe("failed");
+		// promotion_status SHOUTS on the wire and approval_status whispers; the two spellings of
+		// `approved` are one word, which is the whole reason the Go mirror folds case too.
+		expect(statusTier("PENDING_APPROVAL")).toBe("pending");
+		expect(statusTier("APPROVED")).toBe("active");
+		expect(statusTier("BLOCKED")).toBe("failed");
+	});
+
+	it("does not put opposite promotion outcomes on one tier", () => {
+		// The property the six words were added FOR: an operator scanning the approvals table for
+		// the row holding a promotion up got the same glyph on every line. Asserted as a
+		// disagreement rather than as three tier names, because that is the thing that was wrong.
+		expect(statusTier("approved")).not.toBe(statusTier("rejected"));
+		expect(statusTier("APPROVED")).not.toBe(statusTier("BLOCKED"));
+		expect(statusTier("APPROVED")).not.toBe(statusTier("PENDING_APPROVAL"));
 	});
 
 	it("falls back to idle for unknown statuses", () => {

@@ -619,7 +619,7 @@ function CanvasInner({
 								className="flex items-center justify-between text-sm"
 							>
 								<span className="text-muted-foreground">{s.label}</span>
-								<kbd className="border border-border px-1.5 py-0.5 font-mono text-[11px]">
+								<kbd className="border border-border px-1.5 py-0.5 font-mono text-ui-xs">
 									{s.keys}
 								</kbd>
 							</div>

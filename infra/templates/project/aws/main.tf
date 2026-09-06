@@ -52,19 +52,24 @@ provider "aws" {
 # added, authenticate with `data.aws_eks_cluster_auth` (a token, no CLI) rather than exec.
 #
 # A provider block cannot take a `count`, so the cluster gate has to live in the expression
-# (#1772). These two were the LAST unguarded `module.eks[0]` sites in the template, and they
+# (#1772). These two were the last unguarded `module.eks[0]` sites #1772 found, and they
 # survived `provision_eks = false` only by accident: with zero `kubernetes_*`/`helm_*` resources
 # or data sources in the root, tofu prunes an unused provider config and never evaluates its
 # body. Add ONE such resource — even at `count = 0`, and `scripts/check-templates-plan-safe.sh`
 # explicitly permits an offline `data "helm_template"` — and the "Invalid index … module.eks is
 # empty tuple" plan crash comes straight back, in the one file with no test able to see it.
 #
-# An explicit ternary, NOT `try()`: `try()` swallows every evaluation error, not just the
-# empty-tuple one, so a future rename of `eks_cluster_endpoint` would silently point the provider
-# at the fallback instead of failing loudly. Same reasoning as `rds.tf`'s node-security-group
-# guard. `azure/main.tf` already uses this exact form in a provider block, so it is proven — a
-# provider block cannot take a `count`, but it takes an expression fine. `""` rather than `null`:
-# the kubernetes provider rejects a null host as a type error, and azure passes with `""`.
+# The condition PROBES THE MODULE INSTANCE and is not a copy of `var.provision_eks`, which is what
+# these lines carried until #3509. Both forms fix #1772; only the probe fixes #3351, where the
+# variable is TRUE and the instance is absent from state, so a copied predicate walks straight into
+# the empty tuple under `tofu plan -refresh-only`.
+#
+# A PROBE, not a bare `try()`: try() swallows every evaluation error, not just the empty-tuple one,
+# so a future rename of `eks_cluster_endpoint` would silently point the provider at the fallback
+# instead of failing loudly. Repeating the traversal outside the try() keeps a rename a validation
+# error. Same reasoning, and the same shape, as `rds.tf`'s node-security-group guard, where the
+# whole rule is argued. A provider block cannot take a `count`, but it takes an expression fine.
+# `""` rather than `null`: the kubernetes provider rejects a null host as a type error.
 #
 # NOTE ON COVERAGE — these two lines are the one part of #1772 no test can see. Because the root
 # declares zero `kubernetes_*`/`helm_*` resources, tofu prunes the unused provider config and
@@ -77,14 +82,14 @@ provider "aws" {
 # a mock replaces the configuration wholesale so the body is never evaluated, which HIDES this
 # bug class rather than catching it.
 provider "kubernetes" {
-  host                   = var.provision_eks ? module.eks[0].eks_cluster_endpoint : ""
-  cluster_ca_certificate = var.provision_eks ? base64decode(module.eks[0].eks_cluster_certificate_authority_data) : ""
+  host                   = try(module.eks[0].eks_cluster_endpoint, null) != null ? module.eks[0].eks_cluster_endpoint : ""
+  cluster_ca_certificate = try(module.eks[0].eks_cluster_certificate_authority_data, null) != null ? base64decode(module.eks[0].eks_cluster_certificate_authority_data) : ""
 }
 
 provider "helm" {
   kubernetes {
-    host                   = var.provision_eks ? module.eks[0].eks_cluster_endpoint : ""
-    cluster_ca_certificate = var.provision_eks ? base64decode(module.eks[0].eks_cluster_certificate_authority_data) : ""
+    host                   = try(module.eks[0].eks_cluster_endpoint, null) != null ? module.eks[0].eks_cluster_endpoint : ""
+    cluster_ca_certificate = try(module.eks[0].eks_cluster_certificate_authority_data, null) != null ? base64decode(module.eks[0].eks_cluster_certificate_authority_data) : ""
   }
 }
 

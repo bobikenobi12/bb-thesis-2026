@@ -20,6 +20,8 @@ import {
 	AlertDialogTitle,
 } from "@repo/ui/alert-dialog";
 import { Button } from "@repo/ui/button";
+import { EmptyState } from "@repo/ui/empty";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { Skeleton } from "@repo/ui/skeleton";
 import { TooltipProvider } from "@repo/ui/tooltip";
 import { useQueryClient } from "@tanstack/react-query";
@@ -52,19 +54,10 @@ import {
 import { Spinner } from "./classification-ui";
 import { DimensionDetail } from "./dimension-detail";
 import { DimensionEditorSheet } from "./dimension-editor-sheet";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { DimensionRail } from "./dimension-rail";
 import { ValueDrillDrawer } from "./value-drill-drawer";
 import { ValueEditor } from "./value-editor";
-
-/** Lowercases + hyphenates a label into a slug candidate. */
-function slugify(input: string): string {
-	return input
-		.toLowerCase()
-		.trim()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 64);
-}
 
 type Sheet =
 	| { mode: "create"; templateKey?: string }
@@ -145,7 +138,7 @@ export function ClassificationManager() {
 	const onAddValue = async (dim: DimensionDTO, label: string) => {
 		try {
 			await createValue(dim.id, {
-				value: slugify(label),
+				value: slugifyOrEmpty(label),
 				label,
 				position: dim.values.length,
 			});
@@ -206,7 +199,7 @@ export function ClassificationManager() {
 						<Spinner size={13} />
 					</span>
 				) : (
-					<span className="font-mono text-[11px] text-text-tertiary">
+					<span className="font-mono text-ui-xs text-text-tertiary">
 						{searching
 							? `${dims.length} match${dims.length === 1 ? "" : "es"}`
 							: `${dims.length} dimension${dims.length === 1 ? "" : "s"}`}
@@ -241,15 +234,19 @@ export function ClassificationManager() {
 					<Skeleton className="h-80 w-full rounded-lg" />
 				</div>
 			) : dims.length === 0 && !searching ? (
-				<EmptyState
+				<TaxonomyBlankSlate
 					canEdit={canEdit}
 					onTemplate={(t) => setSheet({ mode: "create", templateKey: t.key })}
 					onCreate={() => setSheet({ mode: "create" })}
 				/>
 			) : dims.length === 0 ? (
-				<div className="rounded-lg border border-dashed p-12 text-center font-mono text-[12px] text-text-tertiary">
-					No dimensions or values match “{search}”.
-				</div>
+				// `p-12`, not `py-12`, so the empty-state matcher never saw this one — it is the same
+				// hand-rolled centred nothing either way.
+				<EmptyState
+					className="border"
+					title="No matches"
+					description={`No dimensions or values match “${search}”.`}
+				/>
 			) : (
 				<div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[296px_1fr]">
 					<DimensionRail
@@ -356,8 +353,14 @@ export function ClassificationManager() {
 	);
 }
 
-/** The blank-slate: starter templates (open the editor pre-filled) + create-from-scratch. */
-function EmptyState({
+/**
+ * The blank-slate: starter templates (open the editor pre-filled) + create-from-scratch.
+ *
+ * NOT `EmptyState` from `@repo/ui/empty`, and no longer named as though it were: a grid of
+ * pickable starter templates is more than that component expresses, and one file cannot hold two
+ * things called `EmptyState`. The no-search-matches state above IS the shared one.
+ */
+function TaxonomyBlankSlate({
 	canEdit,
 	onTemplate,
 	onCreate,
@@ -369,10 +372,11 @@ function EmptyState({
 	return (
 		<div className="rounded-md border border-dashed border-border-strong bg-surface px-[30px] py-[34px]">
 			<div className="max-w-[60ch]">
-				<h2 className="m-0 mb-[7px] font-display text-[19px] font-semibold tracking-tight">
-					Start your taxonomy
-				</h2>
-				<p className="m-0 mb-[22px] text-[13px] leading-relaxed text-text-secondary">
+				{/* 19px was this file's own answer to a rung the console typesets at 15px
+				    everywhere else. The shared component owns the size now; the block below keeps
+				    the spacing the heading used to carry. */}
+				<SectionHeading className="mb-[7px]" level={2} title="Start your taxonomy" />
+				<p className="m-0 mb-[22px] text-ui-md leading-relaxed text-text-secondary">
 					A classification is a set of named axes (dimensions) and their allowed
 					values. Begin from a common template — you can adjust everything before
 					creating — or author one from scratch.
@@ -387,18 +391,18 @@ function EmptyState({
 								className="flex flex-col gap-2.5 rounded-[4px] border bg-surface-sunken px-4 py-[15px]"
 							>
 								<div className="flex items-baseline justify-between gap-2.5">
-									<span className="text-[13.5px] font-semibold text-text-primary">
+									<span className="text-ui-md font-semibold text-text-primary">
 										{t.label}
 									</span>
-									<span className="rounded-full border border-border-strong px-[7px] py-0.5 font-mono text-[9px] uppercase tracking-wide text-text-tertiary">
+									<span className="rounded-full border border-border-strong px-[7px] py-0.5 font-mono text-ui-3xs uppercase tracking-wide text-text-tertiary">
 										{t.multi ? "multi" : "single"}
 									</span>
 								</div>
-								<div className="min-h-[34px] text-[11.5px] leading-relaxed text-text-tertiary">
+								<div className="min-h-[34px] text-ui-xs leading-relaxed text-text-tertiary">
 									{t.description}
 								</div>
 								<div className="flex items-center justify-between gap-2.5">
-									<span className="font-mono text-[10.5px] text-text-tertiary">
+									<span className="font-mono text-ui-2xs text-text-tertiary">
 										{t.values.map((v) => v.label).join(" · ")}
 									</span>
 									<Button size="sm" variant="outline" onClick={() => onTemplate(t)}>

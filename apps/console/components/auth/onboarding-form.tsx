@@ -36,7 +36,8 @@ import { StripeElementsProvider } from "@/components/billing/stripe-elements";
 import { CurrencyToggle } from "@/components/billing/currency-toggle";
 import { safeNext } from "@/lib/auth/safe-next";
 import type { PrimaryOrg } from "@/lib/auth/onboarding";
-import { orgHost, slugify } from "@/lib/org-url";
+import { orgHost } from "@/lib/org-url";
+import { slugifyOrEmpty } from "@/lib/utils/slugify";
 import { type SupportedCurrency, planMeta } from "@repo/plan-catalog";
 import { useLivePlanPrice } from "@/lib/billing/use-live-plan-price";
 import { Button } from "@repo/ui/button";
@@ -114,6 +115,11 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 			// Pro, trial used → reveal the shared checkout form (primary org already exists).
 			track("upgrade_started", { plan: "team", context: "onboarding" });
 			const intent = await createSubscriptionIntent("team");
+			if ("error" in intent) {
+				toast.error(intent.error);
+				setBusy(false);
+				return;
+			}
 			setClientSecret(intent.clientSecret);
 			setCurrency(intent.currency);
 			setBusy(false);
@@ -149,6 +155,10 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 		setSwitchingCurrency(true);
 		try {
 			const intent = await createSubscriptionIntent("team", { currency: next });
+			if ("error" in intent) {
+				toast.error(intent.error);
+				return;
+			}
 			setClientSecret(intent.clientSecret);
 			setCurrency(intent.currency);
 		} catch (e) {
@@ -164,15 +174,15 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 			<div className="mx-auto w-full max-w-[460px]">
 				<div className="mb-6 flex flex-col gap-1.5">
 					<p className="vx-eyebrow">{meta.name}</p>
-					<h1 className="font-grotesk text-[26px] font-semibold tracking-[-0.03em] text-text-primary">
+					<h1 className="font-grotesk text-display-xs font-semibold tracking-[-0.03em] text-text-primary">
 						Subscribe to {meta.name}
 					</h1>
-					<p className="text-[13px] text-text-secondary">
+					<p className="text-ui-md text-text-secondary">
 						Unlock collaboration and improved performance.
 					</p>
 				</div>
 				<div className="mb-4 flex items-center justify-between">
-					<span className="text-[12px] text-text-secondary">Billing currency</span>
+					<span className="text-ui-sm text-text-secondary">Billing currency</span>
 					<CurrencyToggle
 						value={currency}
 						onChange={changeCurrency}
@@ -192,7 +202,7 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 				<button
 					type="button"
 					onClick={() => setClientSecret(null)}
-					className="mt-4 w-full text-center font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+					className="mt-4 w-full text-center font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 				>
 					← Back
 				</button>
@@ -207,7 +217,7 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 				<h1 className="font-grotesk text-display-sm font-semibold leading-[1.04] tracking-display text-text-primary">
 					Create your organization
 				</h1>
-				<p className="text-[14.5px] leading-[1.55] text-text-secondary">
+				<p className="text-ui-lg leading-[1.55] text-text-secondary">
 					An organization holds your Projects and team. Pick how you’ll use
 					Alethia — you can change this anytime.
 				</p>
@@ -261,7 +271,7 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 			<div className="flex flex-col gap-2.5">
 				<label
 					htmlFor="org-name"
-					className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-text-tertiary"
+					className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-text-tertiary"
 				>
 					Organization name
 				</label>
@@ -270,11 +280,11 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 					value={name}
 					autoComplete="off"
 					placeholder="Acme Cloud"
-					className="h-[46px] border-border-strong bg-surface-sunken text-[15px]"
+					className="h-[46px] border-border-strong bg-surface-sunken text-ui-lg"
 					onChange={(e) => {
 						const v = e.target.value;
 						setName(v);
-						if (!slugTouched) setSlug(slugify(v));
+						if (!slugTouched) setSlug(slugifyOrEmpty(v));
 						setSlugError(null);
 					}}
 					onKeyDown={(e) => {
@@ -282,41 +292,41 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 					}}
 				/>
 				<div className="flex items-center justify-between">
-					<span className="font-mono text-[12px] text-text-tertiary">
+					<span className="font-mono text-ui-sm text-text-tertiary">
 						{orgHost()}/
 						<span className="text-text-secondary">{slug || "org"}</span>
 					</span>
 					<button
 						type="button"
 						onClick={() => setShowUrl((v) => !v)}
-						className="font-mono text-[11px] text-text-tertiary transition-colors hover:text-text-primary"
+						className="font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 					>
 						{showUrl ? "Done" : "Customize URL"}
 					</button>
 				</div>
 				{showUrl && (
 					<div className="flex h-[40px] items-center overflow-hidden border border-border-strong bg-surface-sunken">
-						<span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-[12px] text-text-tertiary">
+						<span className="whitespace-nowrap pl-3 pr-0.5 font-mono text-ui-sm text-text-tertiary">
 							{orgHost()}/
 						</span>
 						<input
-							className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-[12px] text-text-primary outline-none"
+							className="h-full min-w-0 flex-1 border-0 bg-transparent pl-0.5 pr-3 font-mono text-ui-sm text-text-primary outline-none"
 							value={slug}
 							autoComplete="off"
 							onChange={(e) => {
 								setSlugTouched(true);
-								setSlug(slugify(e.target.value));
+								setSlug(slugifyOrEmpty(e.target.value));
 								setSlugError(null);
 							}}
 						/>
 					</div>
 				)}
-				{slugError && <p className="text-[11px] text-destructive">{slugError}</p>}
+				{slugError && <p className="text-ui-xs text-destructive">{slugError}</p>}
 			</div>
 
 			{/* Logo (optional) */}
 			<div className="mt-6 flex flex-col gap-2.5">
-				<span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-text-tertiary">
+				<span className="font-mono text-ui-2xs uppercase tracking-[0.14em] text-text-tertiary">
 					Logo <span className="text-text-disabled">· optional</span>
 				</span>
 				<OrgLogoUpload name={name} logo={logo} onChange={setLogo} size={48} />
@@ -342,7 +352,7 @@ export function OnboardingForm({ org, offer, proAvailable }: OnboardingFormProps
 					<ArrowRight className="size-4 transition-transform group-hover:translate-x-[3px]" />
 				)}
 			</Button>
-			<p className="mt-3 text-center font-mono text-[10.5px] text-text-tertiary">
+			<p className="mt-3 text-center font-mono text-ui-2xs text-text-tertiary">
 				{plan === "team"
 					? trialAvailable
 						? `${trialDays}-day Pro trial · no card required · cancel anytime`
@@ -404,15 +414,15 @@ function PlanTile({
 				</span>
 			</div>
 			<div className="mt-1">
-				<div className="text-[14px] font-medium text-text-primary">{useCase}</div>
+				<div className="text-ui-lg font-medium text-text-primary">{useCase}</div>
 				<div className="mt-0.5 flex items-baseline gap-1.5">
-					<span className="font-grotesk text-[13px] font-semibold text-text-secondary">
+					<span className="font-grotesk text-ui-md font-semibold text-text-secondary">
 						{planName}
 					</span>
-					<span className="font-mono text-[10.5px] text-text-tertiary">· {price}</span>
+					<span className="font-mono text-ui-2xs text-text-tertiary">· {price}</span>
 				</div>
 			</div>
-			<p className="text-[11.5px] leading-snug text-text-tertiary">{blurb}</p>
+			<p className="text-ui-xs leading-snug text-text-tertiary">{blurb}</p>
 		</button>
 	);
 }

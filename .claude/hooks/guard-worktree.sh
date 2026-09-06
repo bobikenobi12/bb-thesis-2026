@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse guard: keep parallel Claude instances out of each other's trees.
 #
-# Two rules, in order:
+# Three rules, in order:
 #   R-LEASE  don't write inside a worktree another LIVE instance is working in.
+#   R-STASH  don't mutate the repository-wide stash while another worktree is live.
 #   R-MAIN   don't `git commit` / `git add -A` / `git rebase` in the shared main checkout.
 #
 # R-LEASE exists because R-MAIN wasn't enough. On 2026-07-26 a second instance ran
@@ -47,6 +48,7 @@ if [ "${1:-}" = "--self-test" ]; then
 		git add f
 		git -c commit.gpgsign=false commit -qm init
 		git worktree add -q "$tmp/wt-mine" -b feat/mine
+		git worktree add -q "$tmp/wt-other" -b feat/other
 	) >/dev/null 2>&1 || {
 		echo "self-test: could not build the git fixture" >&2
 		exit 1
@@ -67,6 +69,26 @@ if [ "${1:-}" = "--self-test" ]; then
 		else
 			fail=$((fail + 1))
 			printf '  FAIL - %s (want=%s got=%s)\n    %s\n' "$2" "$1" "$got" "$out" >&2
+		fi
+	}
+	# Like t(), but runs the hook under EXTRA environment (trailing VAR=VAL arguments). The fixture
+	# lease is stamped with the self-test shell's `$$`, which is never the hook child's CLAUDE_PID,
+	# so every lease it writes is FOREIGN by construction — the identity and escape-hatch branches
+	# are unreachable without this, which is exactly how they shipped broken.
+	t_as() { # <block|allow> <label> <command> [VAR=VAL …]
+		local want="$1" label="$2" c="$3" got rc out
+		shift 3
+		out="$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' \
+			"$(printf '%s' "$c" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')" |
+			env CLAUDE_PROJECT_DIR="$main" ALETHIA_ALLOW_MAIN_COMMIT= "$@" bash "$self" 2>&1)"
+		rc=$?
+		[ "$rc" = 2 ] && got=block || got=allow
+		if [ "$got" = "$want" ]; then
+			pass=$((pass + 1))
+			printf '  ok   - %s\n' "$label"
+		else
+			fail=$((fail + 1))
+			printf '  FAIL - %s (want=%s got=%s)\n    %s\n' "$label" "$want" "$got" "$out" >&2
 		fi
 	}
 	# Asserts on the MESSAGE, not just the verdict — a refusal that names the wrong cause is the
@@ -111,6 +133,78 @@ if [ "${1:-}" = "--self-test" ]; then
 	# Unwinding a rebase is never blocked, or you could get stuck mid-rebase.
 	t allow  'rebase --continue'                             'git rebase --continue'
 	t allow  'rebase --abort'                                'git rebase --abort'
+
+	# ── R-STASH: the stack is repository-wide, not worktree-local ──
+	t allow  'stash is allowed with no other live lease'     "git -C $tmp/wt-mine stash push"
+	other_admin="$(git -C "$tmp/wt-other" rev-parse --absolute-git-dir)/alethia-lease"
+	mkdir -p "$other_admin"
+	{
+		echo "pid: $$"
+		echo "procStart: $(ps -o lstart= -p $$ | tr -s '[:space:]' ' ' | sed 's/^ //; s/ *$//')"
+		echo "host: $(hostname -s 2>/dev/null || hostname)"
+		echo "session: self-test-other"
+		echo "branch: feat/other"
+		echo "acquiredAt: $(date +%s)"
+	} >"$other_admin/owner"
+	t block  'stash push is refused with another live lease' "git -C $tmp/wt-mine stash push"
+	t block  'stash pop is refused with another live lease'  "git -C $tmp/wt-mine stash pop"
+	t block  'cd into a worktree resolves the stash target'  "cd $tmp/wt-mine && git stash push"
+	t allow  'stash list remains read-only'                  "git -C $tmp/wt-mine stash list"
+	t allow  'stash show remains read-only'                  "git -C $tmp/wt-mine stash show -p"
+	t allow  'stash create remains ref-free'                 "git -C $tmp/wt-mine stash create"
+	says 'shared repository stack' 'the refusal names the shared-stack race' \
+		"git -C $tmp/wt-mine stash push"
+
+	# ── #3739: the five ways this rule was wrong on the day it landed ──
+	# `grep -o` is NON-OVERLAPPING, so an allowed invocation swallowed the separator that put the
+	# next one in command position. "check the stack, then pop it" is the shape it let through.
+	t block  'a chained pop is judged on its own segment'    "git -C $tmp/wt-mine stash list;git -C $tmp/wt-mine stash pop"
+	t block  '…and with a space before the separator too'    "git -C $tmp/wt-mine stash list ; git -C $tmp/wt-mine stash drop"
+	t block  'sh -c smuggling reaches R-STASH as well'       "sh -c \"git -C $tmp/wt-mine stash pop\""
+	# …but a backslash-escaped separator is a grep pattern, not a pipeline.
+	t allow  'a grep pattern naming stash is not a pipeline' 'grep -n "git stash pop\|git stash drop" f.sh'
+
+	# Unresolvable must fail CLOSED, the direction R-MAIN already takes.
+	t block  'an unexpanded stash target refuses'            'git -C "$W" stash pop'
+	says 'unexpanded shell variable' 'the refusal names WHY the tree is unknown' 'git -C "$W" stash pop'
+
+	# A segment does not have to START with the command it runs. The sweep that eats another lane's
+	# entry — `for w in ../wt-*; do git -C "$w" stash pop; done` — splits on `;` into ` do git …`,
+	# and an anchored match stopped dead at the leading `do`. Both forms below must block: this is a
+	# COMMAND-POSITION bug, not a variable-resolution one, so the literal-path loop (which resolves
+	# perfectly well) escaped exactly the same way. See `stash_kw`, and read its scope note — the
+	# prefixes it steps over are a token list, not a shell parser.
+	t block  'the for-loop sweep over sibling worktrees'     'for w in ../wt-*; do git -C "$w" stash pop; done'
+	t block  '…and its literal, fully resolvable form'       "for w in $tmp/wt-*; do git -C $tmp/wt-mine stash pop; done"
+	t block  'a then-branch is command position too'         "if true; then git -C $tmp/wt-mine stash pop; fi"
+	t block  '…so is a brace group'                          "{ git -C $tmp/wt-mine stash drop; }"
+	t block  '…and a VAR=val prefix'                         "GIT_TRACE=1 git -C $tmp/wt-mine stash pop"
+	# The read-only carve-out has to survive that widening, or the guard starts eating `stash list`.
+	t allow  'a read-only stash in a loop stays allowed'     "for w in $tmp/wt-*; do git -C \$w stash list; done"
+
+	# The MAIN CHECKOUT is not a separate stack; it is the same one, and it is the shared tree.
+	t block  'stash drop in the main checkout is refused'    "git -C $main stash drop"
+
+	# R-LEASE hands you leases you never asked for (it acquires one for every target root it
+	# resolves), so a lease carrying MY identity must not refuse MY stash. The fixture owner above
+	# is stamped with this shell's pid, so naming it as CLAUDE_PID makes that lease mine.
+	# wt-mine's own lease is cleared first: when the self-test runs INSIDE a Claude session the
+	# preceding cases took one under the ambient CLAUDE_PID, and R-LEASE would then block this
+	# case before R-STASH is ever consulted — the wrong rule answering, and a silent false FAIL.
+	wt_mine_ld="$(git -C "$tmp/wt-mine" rev-parse --absolute-git-dir)/alethia-lease"
+	rm -rf "$wt_mine_ld"
+	t_as allow 'a lease carrying my OWN identity does not block me' \
+		"git -C $tmp/wt-mine stash push" "CLAUDE_PID=$$"
+	rm -rf "$wt_mine_ld"
+
+	# R-LEASE's documented hatch must open R-STASH too: `wt_lease_live` treats another HOST's lease
+	# as permanently live, so without it one stale cross-host lease wedges stash in the whole repo.
+	t_as allow 'ALETHIA_ALLOW_FOREIGN_WT=1 opens R-STASH' \
+		"git -C $tmp/wt-mine stash pop" ALETHIA_ALLOW_FOREIGN_WT=1
+	says 'ALETHIA_ALLOW_FOREIGN_WT' 'the refusal advertises the escape hatch' \
+		"git -C $tmp/wt-mine stash pop"
+	# The hatch case acquired a real lease on wt-mine too; drop it so later cases see a clean tree.
+	rm -rf "$wt_mine_ld"
 
 	# ── #3192: prose is not a command ──
 	# Each of these blocked before, and none of them was going to write anything.
@@ -217,6 +311,12 @@ done
 # ── R-LEASE, Bash ───────────────────────────────────────────────────────────────────────────────
 cmd="$(payload_field command)"
 
+# Git's global options sit between `git` and its subcommand. These fragments are shared by
+# R-STASH and R-MAIN so both rules recognise the same command shapes.
+git_pre='([[:space:]]+(-C[[:space:]]+[^[:space:];&|]+|-c[[:space:]]+[^[:space:];&|]+|--git-dir=[^[:space:];&|]+|--work-tree=[^[:space:];&|]+|--no-pager|--no-replace-objects|--literal-pathspecs))*'
+tok='([[:space:]]|"|\\|$)'
+cmd_pos='(^|^[;&|][[:space:]]*|[^\\][;&|][[:space:]]*|(^|[[:space:]])(sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]*["'"'"']?)'
+
 # Does this ONE segment reference <root>? Re-runs the same path extraction the target loop uses, so
 # a segment can never be judged by a different notion of "which paths does this touch".
 seg_touches_root() { # <segment> <base> <root>
@@ -307,6 +407,167 @@ $targets
 EOF
 fi
 
+# ── R-STASH, repository-wide ref ───────────────────────────────────────────────────────────────
+# A linked worktree has its own index and HEAD, but EVERY tree in the repository — the main
+# checkout included — shares one refs/stash. Therefore a top-of-stack `pop`, `drop`, or even a
+# plain `push` can consume/reorder another live lane's stash. Read-only `list`/`show` and ref-free
+# `create` remain safe. Refuse mutations only when ANOTHER worktree carries a live FOREIGN lease;
+# a blanket stash ban would train operators to bypass the guard.
+deny_shared_stash() { # <current-root> <other-root>
+	{
+		echo "BLOCKED: git stash uses a shared repository stack, and another live worktree is active."
+		echo "  current  $1"
+		echo "  other    $2 · pid ${WT_L_PID:-?} on ${WT_L_HOST:-?} · branch ${WT_L_BRANCH:-?}"
+		echo ""
+		echo "A push/pop/drop here can race with that lane through the repository-wide refs/stash."
+		echo "For a baseline, use a detached throwaway worktree; for a ref-free snapshot, use"
+		echo "\`git stash create\`. The same shared-state caution applies to tags, notes, and bisect."
+		echo "  who holds what:       pnpm wt:who"
+		echo "  they are really gone: pnpm wt:steal <name>"
+		echo "  deliberate override:  ALETHIA_ALLOW_FOREIGN_WT=1 (maintainer only — instances must not)"
+	} >&2
+	exit 2
+}
+
+# The target could not be resolved AND another lane is live. R-MAIN fails closed on exactly this
+# shape and so does this rule. The sweep that eats another lane's entry —
+# `for w in ../wt-*; do git -C "$w" stash pop; done` — arrives here when it is written with a
+# variable; written with a literal path it resolves and takes deny_shared_stash instead. Either way
+# the segment matcher has to see past the loop's leading `do` first, which is `stash_kw` below —
+# this branch alone never covered that shape.
+deny_stash_unresolved() { # <raw-target> <other-root>
+	{
+		echo "BLOCKED: this \`git stash\` mutates a shared repository stack, another live worktree is"
+		echo "active, and the tree the command would run in could not be resolved."
+		echo "  target   $1 — an unexpanded shell variable; this hook runs BEFORE the shell expands it"
+		echo "  other    $2 · pid ${WT_L_PID:-?} on ${WT_L_HOST:-?} · branch ${WT_L_BRANCH:-?}"
+		echo ""
+		echo "Refusing is deliberate — guessing at unexpanded shell would be worse — and this is NOT"
+		echo "a claim about which tree you meant. Write the path literally:"
+		echo "  git -C /abs/path/to/wt-<name> stash …"
+		echo "  who holds what:       pnpm wt:who"
+		echo "  deliberate override:  ALETHIA_ALLOW_FOREIGN_WT=1 (maintainer only — instances must not)"
+	} >&2
+	exit 2
+}
+
+# The first OTHER tree carrying a live, FOREIGN lease. Sets STASH_OTHER and leaves WT_L_* describing
+# the holder, so it must NOT be called in a command substitution.
+#
+# `! wt_lease_is_mine` is load-bearing, and its absence wedged every stash in the repo: R-LEASE
+# ACQUIRES a lease on every target root it resolves, so merely READING a sibling worktree
+# (`git -C ../wt-x log`) stamps that tree with MY OWN identity — and a liveness-only test then
+# refuses my next `git stash` in my own worktree, naming my own pid as the foreign holder. Every
+# other rule in this file goes through `wt_lease_acquire`, which returns 0 for a lease that is mine.
+stash_live_other() { # <exclude-root|"">
+	local r ld
+	STASH_OTHER=""
+	while IFS= read -r r; do
+		[ -n "$r" ] || continue
+		[ -n "$1" ] && [ "$r" = "$1" ] && continue
+		ld="$(wt_lease_dir "$r" 2>/dev/null || true)"
+		[ -n "$ld" ] || continue
+		if wt_lease_read "$ld" 2>/dev/null && ! wt_lease_is_mine && wt_lease_live; then
+			STASH_OTHER="$r"
+			return 0
+		fi
+	done <<EOF
+$(wt_roots)
+EOF
+	return 1
+}
+
+# The same deliberate override R-LEASE honours. Without it this rule has NO escape hatch at all,
+# and `wt_lease_live` treats a lease stamped by another HOST as permanently live — so one lease left
+# behind by a session on the sandbox box, or by a rename of this laptop, would refuse `git stash` in
+# every tree of the repository forever, with no way past it.
+if [ -n "$cmd" ] && [ "${ALETHIA_ALLOW_FOREIGN_WT:-}" != "1" ]; then
+	base="$(payload_cwd)"
+	[ -n "$base" ] || base="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+	# Command position is decided SEGMENT-WISE, not by one `grep -oE` over the whole command.
+	# `grep -o` yields DISJOINT matches and cmd_pos's separator alternative consumes the character
+	# BEFORE the `;`, so an allowed invocation swallowed the separator that would have put the next
+	# one in command position: `git stash list;git stash drop` — no space — was allowed outright,
+	# and "check the stack, then pop it" is the single most natural shape of the command this rule
+	# exists to stop. Splitting first and anchoring each segment at its own start judges every
+	# invocation on its own.
+	#
+	# A BACKSLASH-ESCAPED separator is not a separator: `grep -n "git stash pop\|git stash drop" f`
+	# is one grep pattern, exactly as cmd_pos's `[^\\]` means elsewhere in this file. Protect those
+	# before splitting, restore them after, so a search for this rule is not blocked by it.
+	stash_split="${cmd//\\;/$'\001'}"
+	stash_split="${stash_split//\\&/$'\002'}"
+	stash_split="${stash_split//\\|/$'\003'}"
+	# A segment does not have to START with the command it runs, and the shape this whole rule
+	# exists for is the one that proves it: `for w in ../wt-*; do git -C "$w" stash pop; done`
+	# splits on `;` into ` do git -C "$w" stash pop`, where an anchored match stopped dead at the
+	# leading `do` — so the sweep that eats another lane's entry was allowed outright. It is a
+	# COMMAND-POSITION hole, not an unexpanded-variable one: the same loop written with a literal
+	# path escaped identically. So step over the words that can precede a command in a compound
+	# statement, and over a `VAR=val` prefix.
+	#
+	# SCOPE — this is a TOKEN LIST, not a shell parser, and the difference is worth stating because
+	# a reader grepping for their own shape has to be able to tell whether it is covered. Only the
+	# prefixes below are stepped over. A wrapper that is not one of them — `env`, `command`, `exec`,
+	# `nohup`, `xargs git …` — and a command substitution (`x=$(git … stash pop)`, whose `$(` the
+	# `VAR=` alternative deliberately will not swallow) still walk straight past R-STASH. Widening
+	# the list costs only false BLOCKS, which are recoverable and have a documented hatch; a real
+	# parser here would not be, so the trade runs this way on purpose.
+	#
+	# A shell's `-c` opens a command context inside the quotes, which is what keeps
+	# `sh -c "git stash pop"` caught — the same carve-out cmd_pos makes for R-MAIN.
+	stash_kw="(((do|then|else|elif|if|while|until|time|!)|[{])[[:space:]]+|[(][[:space:]]*"
+	stash_kw="${stash_kw}|[A-Za-z_][A-Za-z0-9_]*=[^[:space:];&|\"'\$\`]*[[:space:]]+)*"
+	stash_re="^[[:space:]]*${stash_kw}((sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]*[\"']?[[:space:]]*)?"
+	stash_re="${stash_re}git${git_pre}[[:space:]]+stash([[:space:]]+[^[:space:];&|\"']+)?"
+
+	stash_cd=""
+	while IFS= read -r seg; do
+		seg="${seg//$'\001'/\\;}"
+		seg="${seg//$'\002'/\\&}"
+		seg="${seg//$'\003'/\\|}"
+		[ -n "$seg" ] || continue
+		seg_scan="$(printf '%s' "$seg" | tr -d '\42\47\134')" # drop  "  '  \
+
+		# A `cd` sets git's cwd for every LATER segment of the chain, so walk them in order.
+		stash_cd_hit="$(printf '%s' "$seg_scan" |
+			grep -oE '(^|[^a-zA-Z0-9_])cd[[:space:]]+[^[:space:];&|]+' |
+			tail -1 | sed -E 's/.*cd[[:space:]]+//' || true)"
+		[ -n "$stash_cd_hit" ] && stash_cd="$stash_cd_hit"
+
+		# The first token after `stash` is enough to distinguish the three safe forms; every
+		# option/default/other verb is conservatively mutating.
+		hit="$(printf '%s' "$seg" | grep -oE "$stash_re" | head -1 || true)"
+		[ -n "$hit" ] || continue
+		stash_arg="$(printf '%s' "$hit" | sed -E "s/.*[[:space:]]stash([[:space:]]+([^[:space:];&|\"']+))?\$/\\2/")"
+		case "$stash_arg" in list | show | create | -h | --help) continue ;; esac
+
+		target="$(printf '%s' "$seg_scan" |
+			grep -oE "git[[:space:]]+-C[[:space:]]+[^[:space:];&|]+${git_pre}[[:space:]]+stash" |
+			tail -1 | sed -E 's/^git[[:space:]]+-C[[:space:]]+//' | sed -E 's/[[:space:]].*$//' || true)"
+		[ -n "$target" ] || target="$stash_cd"
+		[ -n "$target" ] || target="$base"
+		case "$target" in
+		*'$'* | *'`'*)
+			stash_live_other "" && deny_stash_unresolved "$target" "$STASH_OTHER"
+			continue
+			;;
+		esac
+
+		current_root="$(wt_root_of "$(wt_abs "$target" "$base")")"
+		# Empty ⇒ outside every tree of THIS repository — a different repo has its own refs/stash and
+		# is not this rule's business. The MAIN CHECKOUT is deliberately NOT excluded: it is not a
+		# separate stack, it is the SAME one, it is the tree every session and the maintainer share,
+		# and it is where an operator most often reaches for `git stash` to get a clean base. It
+		# simply has no lease of its own to skip, which `stash_live_other` handles by lease dir.
+		[ -n "$current_root" ] || continue
+		stash_live_other "$current_root" && deny_shared_stash "$current_root" "$STASH_OTHER"
+	done <<EOF
+$(printf '%s' "$stash_split" | tr ';&|' '\n\n\n')
+EOF
+fi
+
 # ── R-MAIN: the original main-checkout rule ─────────────────────────────────────────────────────
 # Only care about a commit / stage-everything / rebase invocation — bail fast on anything else.
 #
@@ -348,9 +609,6 @@ cmd_scan="$(printf '%s' "$cmd_text" |
 # fact UNPARSED and allowed — the right answer for a worktree, by accident, and the wrong one for
 # the main checkout. Anything that now matches but cannot be resolved falls through to the block,
 # which is the fail-closed direction.
-git_pre='([[:space:]]+(-C[[:space:]]+[^[:space:];&|]+|-c[[:space:]]+[^[:space:];&|]+|--git-dir=[^[:space:];&|]+|--work-tree=[^[:space:];&|]+|--no-pager|--no-replace-objects|--literal-pathspecs))*'
-# End-of-token: whitespace, a quote, a backslash (JSON escaping), or end of string.
-tok='([[:space:]]|"|\\|$)'
 # COMMAND POSITION, and it is what stops this guard firing on prose (#3192).
 #
 # Quote-stripping above is deliberate and must stay: `sh -c "git commit"` has to be caught, and it
@@ -383,7 +641,6 @@ tok='([[:space:]]|"|\\|$)'
 # `\|` is one literal alternation character to grep and looks exactly like a shell pipe here.
 # That single case was the last false positive left, and it is the one that blocked me from
 # searching this very file while fixing it.
-cmd_pos='(^|^[;&|][[:space:]]*|[^\\][;&|][[:space:]]*|(^|[[:space:]])(sh|bash|zsh|dash)[[:space:]]+-[a-z]*c[[:space:]]*["'"'"']?)'
 trigger="${cmd_pos}git${git_pre}[[:space:]]+commit${tok}"
 trigger="${trigger}|${cmd_pos}git${git_pre}[[:space:]]+add[[:space:]]+(-A|--all|\.)${tok}"
 trigger="${trigger}|${cmd_pos}git${git_pre}[[:space:]]+rebase${tok}"

@@ -16,7 +16,7 @@ export default function InvoicesPage() {
 		<div>
 			<Link
 				href="../"
-				className="mb-4 inline-flex items-center font-mono text-[11.5px] text-text-tertiary transition-colors hover:text-text-primary"
+				className="mb-4 inline-flex items-center font-mono text-ui-xs text-text-tertiary transition-colors hover:text-text-primary"
 			>
 				← Billing
 			</Link>

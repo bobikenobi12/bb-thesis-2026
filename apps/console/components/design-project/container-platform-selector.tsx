@@ -60,7 +60,7 @@ export function ContainerPlatformSelector({
 						{platform.recommended && (
 							<Badge
 								variant="secondary"
-								className="absolute top-2 right-2 text-[10px]"
+								className="absolute top-2 right-2 text-ui-2xs"
 							>
 								Recommended
 							</Badge>
@@ -75,7 +75,7 @@ export function ContainerPlatformSelector({
 							</span>
 						</div>
 
-						<p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+						<p className="text-ui-xs text-muted-foreground mb-3 leading-relaxed">
 							{platform.description}
 						</p>
 
@@ -83,7 +83,7 @@ export function ContainerPlatformSelector({
 							{platform.features.map((feature) => (
 								<li
 									key={feature}
-									className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+									className="flex items-center gap-1.5 text-ui-xs text-muted-foreground"
 								>
 									<CheckCircle2 className={`w-3 h-3 shrink-0 ${isSelected ? "text-foreground" : "text-muted-foreground/40"}`} />
 									{feature}

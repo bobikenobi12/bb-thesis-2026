@@ -6,7 +6,7 @@
 // registers `saasSecretStore` (credential-based ESO ClusterSecretStore) or `keylessSecretStore`
 // (cross-account, the cluster's own workload identity). Registering one IS the definition; there is
 // no separate declaration to keep in sync.
-// Run `pnpm -F console gen:secrets-runtime-read` to regenerate.
+// Run `pnpm -C apps/console run gen:secrets-runtime-read` to regenerate.
 
 /** Whether a cluster can resolve secrets from this store, keyed by connector slug.
  *

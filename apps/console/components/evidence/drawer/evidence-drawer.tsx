@@ -47,7 +47,7 @@ export function EvidenceDrawer({
 				{row && (
 					<>
 						<div className="shrink-0 border-b px-5 pb-3.5 pt-5">
-							<div className="mb-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-text-disabled">
+							<div className="mb-1.5 font-mono text-ui-3xs uppercase tracking-[0.16em] text-text-disabled">
 								Evidence detail
 							</div>
 							<div className="flex items-center gap-2.5">
@@ -65,14 +65,14 @@ export function EvidenceDrawer({
 								</span>
 								<span
 									className={cn(
-										"font-mono text-[9.5px] uppercase tracking-[0.12em]",
+										"font-mono text-ui-3xs uppercase tracking-[0.12em]",
 										stageTextClass(row.stage),
 									)}
 								>
 									{stageShort(row.stage)}
 								</span>
 							</div>
-							<div className="mt-1.5 font-mono text-[11px] text-text-tertiary">
+							<div className="mt-1.5 font-mono text-ui-xs text-text-tertiary">
 								{row.environmentName} · {row.region}
 								{row.verify && (
 									<>

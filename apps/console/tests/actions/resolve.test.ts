@@ -124,6 +124,41 @@ describe("resolveOrgScope", () => {
 		await expect(resolveOrgScope("ghost")).rejects.toThrow(/NEXT_HTTP_ERROR_FALLBACK/);
 		expect(setActiveOrganization).not.toHaveBeenCalled();
 	});
+
+	// #4089. `[org]/layout.tsx` calls this on every render of every `/{org}/…` route, so every
+	// one of those renders — INCLUDING the ones Next issues speculatively when it prefetches a
+	// link in the viewport — can move the session's tenant. The three cases above each cover one
+	// branch; this one states the property they add up to, in one place, so that a future reader
+	// weighing "is a wrong href really a security problem?" does not have to reassemble it: BOTH
+	// branches write, and a request the user never made is enough to trigger either.
+	//
+	// This cannot assert "a prefetch does not write". The distinguishing header is invisible to
+	// application code in Next 16.3.3 (`next-router-prefetch` is a FLIGHT_HEADER, sealed out of
+	// `headers()` and deleted before `proxy.ts` runs), so no gate can be written here and no test
+	// can drive one. What holds the defect shut is one layer up: every prefetchable href names
+	// the org the address bar already names, so a speculative resolve re-asserts the org the user
+	// is already in. `tests/hooks/use-active-org-slug.test.tsx` is that half. This test is why
+	// that half matters — delete the guarantee there and these writes fire on a phantom GET.
+	it("writes the session's active org on BOTH branches — a GET here is a tenant mutation", async () => {
+		// Real-slug branch: the URL's org is written into the session.
+		vi.mocked(getOwnerScope).mockResolvedValue({
+			userId: "user-1",
+			activeOrgId: "user-1",
+		} as never);
+		mockServiceDb([{ id: "org-1" }]);
+		await resolveOrgScope("acme");
+		expect(setActiveOrganization).toHaveBeenCalledWith("org-1");
+
+		// `~` branch: an org that WAS active is cleared back to the personal scope. Patching only
+		// the branch named in the bug report would leave this one standing.
+		vi.mocked(setActiveOrganization).mockClear();
+		vi.mocked(getOwnerScope).mockResolvedValue({
+			userId: "user-1",
+			activeOrgId: "org-1",
+		} as never);
+		await resolveOrgScope("~");
+		expect(setActiveOrganization).toHaveBeenCalledWith("user-1");
+	});
 });
 
 describe("resolveProjectId", () => {

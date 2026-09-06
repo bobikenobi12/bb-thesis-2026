@@ -18,6 +18,11 @@ export type PlanId = "community" | "team" | "enterprise";
 /** Currencies we present + charge in. USD is the default; EU customers are billed in EUR. */
 export type SupportedCurrency = "usd" | "eur";
 
+/** Narrows an external currency code to the currencies the product currently sells. */
+export function asSupportedCurrency(code: string): SupportedCurrency | null {
+	return code === "usd" || code === "eur" ? code : null;
+}
+
 /** A titled group of features for the "What's included" slice. */
 export interface PlanFeatureGroup {
 	label: string;
@@ -393,8 +398,31 @@ export function shortInterval(interval: string | undefined | null): string {
 	return interval ?? "mo";
 }
 
-/** "$29" — whole amounts drop the cents, fractional amounts keep two decimals. */
-export function formatMoney(unitAmountCents: number, currency: string): string {
+/**
+ * "$29" — whole amounts drop the cents, fractional amounts keep two decimals.
+ *
+ * NOT `@repo/format`'s `formatMoney`, and not a duplicate of it either: this is a compact price
+ * LABEL that deliberately drops `.00`, where that one is a billing-table amount that deliberately
+ * never does. Two registers, same name, and the name is the confusing part.
+ *
+ * IT CARRIES #3581's DIVISOR DEFECT, UNFIXED. The `/ 100` below is unconditional, and `currency` is
+ * a `string` fed straight from a live Stripe `Price` — `apps/console/lib/billing/pricing.ts:69`,
+ * `apps/marketing/lib/billing/pricing-display.ts:57` and `use-live-plan-price.ts` all pass
+ * `price.currency` through — so a zero-decimal price would render at 1/100 of its value here, the
+ * same way a zero-decimal invoice did in `@repo/format` before #3581. `unitAmountUsd` in that same
+ * `pricing.ts` divides by 100 a second time, on the numeric path. Tracked as #4096.
+ *
+ * It is unreachable for the same reason and by a shorter path: `apps/console/scripts/stripe-setup.ts`
+ * creates USD and EUR prices only, and `SupportedCurrency` above is `"usd" | "eur"`.
+ *
+ * IT IS NOT FIXED HERE because the fix is `stripeChargeDivisor` from `@repo/format`, and sharing it
+ * needs `@repo/plan-catalog` to gain a dependency this package has never had — it has no runtime
+ * deps at all — which rewrites `pnpm-lock.yaml` and adds a workspace edge into `apps/marketing`,
+ * which does not carry `@repo/format` today. Transcribing Stripe's table a second time HERE is the
+ * failure mode `packages/format/src/minor-units.ts` exists to prevent, so the choice is a dependency
+ * change or nothing, and a dependency change does not belong in a formatter bug fix.
+ */
+export function formatMoney(unitAmountCents: number, currency: SupportedCurrency): string {
 	const symbol = CURRENCY_SYMBOL[currency] ?? `${currency.toUpperCase()} `;
 	const amount = unitAmountCents / 100;
 	const value = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
@@ -404,7 +432,7 @@ export function formatMoney(unitAmountCents: number, currency: string): string {
 /** Format a Stripe price into a per-seat label like "$29 / seat / mo". */
 export function formatSeatPrice(
 	unitAmountCents: number,
-	currency: string,
+	currency: SupportedCurrency,
 	interval: string | undefined | null,
 ): string {
 	return `${formatMoney(unitAmountCents, currency)} / seat / ${shortInterval(interval)}`;

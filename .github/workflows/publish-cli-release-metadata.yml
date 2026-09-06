@@ -1,0 +1,92 @@
+name: Publish CLI release metadata
+
+# The tag-triggered release workflow cannot assume the main-bound AWS role. It dispatches this
+# workflow instead: repository_dispatch always loads the workflow from the default branch, so the
+# OIDC subject remains the already-trusted refs/heads/main subject. No tag wildcard and no copied
+# long-lived GitHub secret are needed.
+on:
+  repository_dispatch:
+    types: [cli-release-published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable CLI version to publish or repair (for example 0.6.1)"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ASM_REGION: eu-central-1
+      DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+      MANUAL_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Validate version and verify both release tags
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = "refs/heads/main" ] || {
+            echo "::error::release metadata must run from refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          }
+          VERSION="${DISPATCH_VERSION:-$MANUAL_VERSION}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::invalid stable CLI version '$VERSION'"
+            exit 1
+          }
+
+          gh api "repos/alethialabs-io/alethia-cli/releases/tags/v${VERSION}" > "$RUNNER_TEMP/release.json"
+          SOURCE_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/cli-v${VERSION}" --jq '.object.sha')"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::cli-v${VERSION} did not resolve to a source commit"
+            exit 1
+          }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (main-bound read-only vault role)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.DEPLOY_READER_ROLE_ARN }}
+          aws-region: ${{ env.ASM_REGION }}
+
+      - name: Publish canonical release metadata
+        env:
+          ALETHIA_URL: ${{ vars.PUBLIC_APP_URL }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          ALETHIA_URL="${ALETHIA_URL:-https://alethialabs.io}"
+          RELEASE_API_SECRET="$(aws secretsmanager get-secret-value \
+            --secret-id alethia/prod/env \
+            --region "$ASM_REGION" \
+            --query SecretString \
+            --output text | jq -r '.RELEASE_API_SECRET // ""')"
+          [ -n "$RELEASE_API_SECRET" ] || {
+            echo "::error::RELEASE_API_SECRET is absent from alethia/prod/env"
+            exit 1
+          }
+          echo "::add-mask::$RELEASE_API_SECRET"
+
+          jq -n \
+            --arg v "$VERSION" \
+            --arg n "$(jq -r '.body // ""' "$RUNNER_TEMP/release.json")" \
+            --arg d "$(jq -r '.published_at' "$RUNNER_TEMP/release.json")" \
+            --arg u "$(jq -r '.html_url' "$RUNNER_TEMP/release.json")" \
+            --arg s "$SOURCE_SHA" \
+            '{version: $v, release_notes: $n, released_at: $d, github_release_url: $u, commit_sha: $s}' \
+            > "$RUNNER_TEMP/release-payload.json"
+
+          curl -fsS -X POST "${ALETHIA_URL}/api/releases/cli" \
+            -H "Authorization: Bearer ${RELEASE_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$RUNNER_TEMP/release-payload.json"

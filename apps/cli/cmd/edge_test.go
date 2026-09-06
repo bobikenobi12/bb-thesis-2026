@@ -50,7 +50,7 @@ func TestRunOrgSwitchNoInputGuard(t *testing.T) {
 
 // projectRows fills the dash glyph for missing provider/region/status and a draft default.
 func TestProjectRowsMissingFields(t *testing.T) {
-	rows := projectRows([]types.ConfigurationSummary{{ProjectName: "bare"}})
+	rows := projectRows([]types.ConfigurationSummary{{ProjectName: "bare"}}, ui.FormatTable)
 	if len(rows) != 1 {
 		t.Fatal("expected 1 row")
 	}
@@ -67,12 +67,12 @@ func TestProjectRowsMissingFields(t *testing.T) {
 // jobRowsPlain falls back to a truncated id, then the dash, for project/runner.
 func TestJobRowsPlainFallbacks(t *testing.T) {
 	// Only ids present → truncated id.
-	rows := jobRowsPlain([]api.ProvisionJob{{JobType: "PLAN", Status: "QUEUED", ProjectID: "0123456789", RunnerID: "abcdefghij"}})
+	rows := jobRowsPlain([]api.ProvisionJob{{JobType: "PLAN", Status: "QUEUED", ProjectID: "0123456789", RunnerID: "abcdefghij"}}, ui.FormatTable)
 	if rows[0][2] != "01234567…" || rows[0][3] != "abcdefgh…" {
 		t.Errorf("expected truncated ids: %v", rows[0])
 	}
 	// Nothing present → dash.
-	rows = jobRowsPlain([]api.ProvisionJob{{JobType: "X", Status: "Y"}})
+	rows = jobRowsPlain([]api.ProvisionJob{{JobType: "X", Status: "Y"}}, ui.FormatTable)
 	if rows[0][2] != ui.SymbolDash || rows[0][3] != ui.SymbolDash {
 		t.Errorf("expected dashes: %v", rows[0])
 	}

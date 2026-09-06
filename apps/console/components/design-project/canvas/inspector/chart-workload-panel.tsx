@@ -127,7 +127,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 						<span className="vx-eyebrow rounded-none border border-border px-1.5 py-0.5">
 							Chart workload
 						</span>
-						<span className="font-mono text-[10px] text-muted-foreground">
+						<span className="font-mono text-ui-2xs text-muted-foreground">
 							{config.kind} · {config.chartId}
 						</span>
 					</div>
@@ -148,7 +148,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 				{/* Read-only description — mirrors the chart, overwritten each scan. */}
 				<section className="space-y-2">
 					<span className="vx-eyebrow">Described from the chart</span>
-					<p className="text-[11px] leading-relaxed text-muted-foreground">
+					<p className="text-ui-xs leading-relaxed text-muted-foreground">
 						Read-only — extracted from <span className="font-mono">helm template</span> and
 						refreshed on every scan. The chart stays the deploy unit; these rows only describe
 						what it runs.
@@ -175,7 +175,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 						{r.resources && (
 							<>
 								<dt className="text-muted-foreground">Resources</dt>
-								<dd className="font-mono text-[11px]">
+								<dd className="font-mono text-ui-xs">
 									{r.resources.requests.cpu}/{r.resources.requests.memory} →{" "}
 									{r.resources.limits.cpu}/{r.resources.limits.memory}
 								</dd>
@@ -184,12 +184,12 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 					</dl>
 					{r.env_keys.length > 0 && (
 						<div className="space-y-1">
-							<span className="vx-eyebrow text-[9px]">Rendered env · keys only</span>
+							<span className="vx-eyebrow text-ui-3xs">Rendered env · keys only</span>
 							<div className="flex flex-wrap gap-1">
 								{r.env_keys.map((k) => (
 									<span
 										key={k}
-										className="border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+										className="border border-border px-1.5 py-0.5 font-mono text-ui-2xs text-muted-foreground"
 									>
 										{k}
 									</span>
@@ -212,7 +212,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 				<section className="space-y-2 border-t border-border/60 pt-4">
 					<span className="vx-eyebrow">Overrides</span>
 					<div className="space-y-1">
-						<span className="vx-eyebrow text-[9px]">Replicas</span>
+						<span className="vx-eyebrow text-ui-3xs">Replicas</span>
 						<Input
 							type="number"
 							min={0}
@@ -238,7 +238,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 				    these; this is the manual override affordance). */}
 				<section className="space-y-2 border-t border-border/60 pt-4">
 					<span className="vx-eyebrow">Value paths</span>
-					<p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+					<p className="font-mono text-ui-xs leading-relaxed text-muted-foreground">
 						Where a knob writes into the chart&rsquo;s values (e.g.{" "}
 						<span className="text-foreground">replicas → replicaCount</span>). Auto-inferred on
 						scan; override here when the chart&rsquo;s shape is non-standard.
@@ -250,7 +250,7 @@ export function ChartWorkloadPanel({ nodeId }: { nodeId: string }) {
 			{/* Commit bar — the overlay is out-of-band, so it never enters the Pending Changes diff; it's
 			    saved straight to the row. */}
 			<div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
-				<span className="text-[11px] text-muted-foreground">
+				<span className="text-ui-xs text-muted-foreground">
 					{ctx
 						? dirty
 							? "Unsaved overlay changes"
@@ -280,7 +280,7 @@ function EnvEditor({
 }) {
 	return (
 		<div className="space-y-1.5">
-			<span className="vx-eyebrow text-[9px]">Env</span>
+			<span className="vx-eyebrow text-ui-3xs">Env</span>
 			{value.map((row, i) => (
 				// Positional rows — the index is their identity.
 				<div key={i} className="flex items-center gap-1.5">

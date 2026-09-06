@@ -7,11 +7,22 @@
 // the surface stays visible (read-only). Shown when an Enterprise/Pro feature is locked.
 
 import { planMeta } from "@repo/plan-catalog";
+import { EmptyState } from "@repo/ui/empty";
 import { cn } from "@repo/ui/utils";
 import { FEATURE_UPSELLS, type GatedFeature } from "./feature-catalog";
 import { UpsellActions } from "./upsell-actions";
 
-/** A polished "available on {plan}" panel for a gated feature. */
+/**
+ * A polished "available on {plan}" panel for a gated feature.
+ *
+ * Composed from `EmptyState`, not hand-rolled, and the two are genuinely the same thing: this
+ * panel stands exactly where a locked feature's rows would have been, which is the definition
+ * §6 gives an empty state. Hand-rolling it meant a user who cannot use a feature yet met a
+ * different shape of "nothing here" from a user whose list is simply empty.
+ *
+ * `level={3}` keeps the heading rung this panel already occupied — `EmptyState` renders its
+ * title as a plain `<div>` by default, which would have quietly dropped it out of the outline.
+ */
 export function FeatureUpsell({
 	feature,
 	className,
@@ -24,23 +35,23 @@ export function FeatureUpsell({
 	const planName = planMeta(meta.requiredPlan).name;
 
 	return (
-		<div
-			className={cn(
-				"flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface-sunken px-6 py-14 text-center",
-				className,
-			)}
-		>
-			<div className="flex size-11 items-center justify-center rounded-full bg-surface-muted text-text-tertiary">
-				<Icon className="size-5" />
-			</div>
-			<h3 className="mt-4 text-sm font-semibold text-text-primary">{meta.title}</h3>
-			<p className="mt-1.5 max-w-sm text-sm text-text-tertiary">{meta.blurb}</p>
-			<p className="mt-2 text-[12px] font-medium text-text-secondary">
-				Available on the {planName} plan.
-			</p>
-			<div className="mt-5">
-				<UpsellActions feature={feature} />
-			</div>
-		</div>
+		<EmptyState
+			// `Empty` sets `border-dashed` but deliberately leaves the WIDTH to the caller, and
+			// Tailwind's preflight zeroes it — so the bare `border` here is what makes the dashed
+			// outline this panel has always had actually paint.
+			className={cn("border border-border bg-surface-sunken", className)}
+			level={3}
+			icon={<Icon />}
+			title={meta.title}
+			description={
+				<>
+					{meta.blurb}
+					<span className="mt-2 block text-ui-sm font-medium text-text-secondary">
+						Available on the {planName} plan.
+					</span>
+				</>
+			}
+			action={<UpsellActions feature={feature} />}
+		/>
 	);
 }

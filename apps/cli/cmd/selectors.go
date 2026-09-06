@@ -72,12 +72,12 @@ func runnerOperatorLabel(w api.Runner) string {
 // selectProject runs the interactive project picker shared by the project
 // plan/apply/destroy commands. Projects are listed flat (top-level projects).
 func selectProject(token string) (projectID string, err error) {
-	if err := requireInteractive(); err != nil {
+	if err := requireInteractiveForm(); err != nil {
 		return "", err
 	}
 	var configs []types.ConfigurationSummary
 
-	ui.RunSpinner("Fetching projects...", func() {
+	runSpinner("Fetching projects...", func() {
 		configs, err = api.NewClient(token).GetConfigurations()
 	})
 
@@ -117,14 +117,14 @@ var (
 )
 
 func selectRunner(token string, excludeID string) (runnerID string, err error) {
-	if err := requireInteractive(); err != nil {
+	if err := requireInteractiveForm(); err != nil {
 		return "", err
 	}
 	apiClient := api.NewClient(token)
 
 	var runners []api.Runner
 
-	ui.RunSpinner("Fetching runners...", func() {
+	runSpinner("Fetching runners...", func() {
 		runners, err = apiClient.GetRunners()
 	})
 
@@ -235,14 +235,14 @@ func pickCloudIdentity(
 	description string,
 	narrow func([]api.CloudIdentity) []api.CloudIdentity,
 ) (identityID string, err error) {
-	if err := requireInteractive(); err != nil {
+	if err := requireInteractiveForm(); err != nil {
 		return "", err
 	}
 	apiClient := api.NewClient(token)
 
 	var identities []api.CloudIdentity
 
-	ui.RunSpinner("Fetching cloud accounts...", func() {
+	runSpinner("Fetching cloud accounts...", func() {
 		identities, err = apiClient.GetCloudIdentities()
 	})
 

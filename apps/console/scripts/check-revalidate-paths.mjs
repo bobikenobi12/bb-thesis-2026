@@ -38,7 +38,7 @@ function walkOrDie(dir, out, pred) {
 		walk(dir, out, pred);
 	} catch (err) {
 		console.error(`check-revalidate-paths: cannot walk ${dir}/ from ${process.cwd()} — ${err.message}`);
-		console.error("Run this from apps/console (pnpm -F console check:revalidate-paths).");
+		console.error("Run this from apps/console (pnpm -C apps/console run check:revalidate-paths).");
 		process.exit(1);
 	}
 }

@@ -57,7 +57,7 @@ func canonicalFixture(t *testing.T, cloud string) map[string]any {
 	m, err := loadA05Fixture(repoRootForTest(t), cloud)
 	if err != nil {
 		t.Fatalf("load the committed %s fixture: %v\n"+
-			"regenerate with: UPDATE_FIXTURES=1 pnpm -F console test t2-config-snapshot", cloud, err)
+			"regenerate with: UPDATE_FIXTURES=1 pnpm -C apps/console run test t2-config-snapshot", cloud, err)
 	}
 	return m
 }
@@ -126,8 +126,8 @@ func TestA05SeedIsFaithfulToTheConsoleFixture(t *testing.T) {
 					"the seed derives from test/e2e/fixtures/addon_catalog.%s.json and the fixture from "+
 					"test/e2e/fixtures/t2_config_snapshot.%s.json — both are GENERATED, so regenerate "+
 					"whichever is stale:\n"+
-					"  pnpm -F console export:addon-catalog\n"+
-					"  UPDATE_FIXTURES=1 pnpm -F console test t2-config-snapshot", cloud, diffs, cloud, cloud)
+					"  pnpm -C apps/console run export:addon-catalog\n"+
+					"  UPDATE_FIXTURES=1 pnpm -C apps/console run test t2-config-snapshot", cloud, diffs, cloud, cloud)
 			}
 		})
 	}

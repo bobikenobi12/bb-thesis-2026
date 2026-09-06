@@ -117,10 +117,19 @@ var t2ProviderTable = map[string]t2Provider{
 	// would just move where the run dies — which is exactly what image.tf's own comment warned
 	// about ("if this ever starts biting at 15m, the deploy-wait is the number to revisit").
 	//
-	// This is a deadline change, not a fix. The durable fix is to stop rebuilding a byte-identical
-	// snapshot on every run (#3027): the image is a pure function of talos_version + architecture +
-	// location, and caching it removes both the 5–15m and the flake. That change touches the
-	// label-scoped sweeper in an account SHARED WITH PROD, so it is not folded in here.
+	// This is a deadline change, not a fix. The durable fix landed separately as #3027: image.tf now
+	// CACHES the snapshot per (talos_version × architecture × location × extension set), so a hit
+	// skips the build entirely and the common case is a Hetzner deploy with no image build in front
+	// of it at all.
+	//
+	// ── AND THIS NUMBER DOES NOT MOVE BECAUSE OF IT. ──
+	//
+	// The cache makes a build RARE; it does not make one FASTER. A miss — the first run on a new
+	// talos_version, a new region, a changed extension set, or a project whose cache was pruned —
+	// still pays the same 5–25m with the same flaky tail, and it is exactly the run that has no
+	// prior evidence to lean on. Shrinking the wait because misses are rarer would make each
+	// surviving miss likelier to die, on the one resource whose loss costs the whole run. So 40m
+	// stays coupled to image.tf's 25m `create`, unchanged, for the same reason it was raised.
 	"hetzner": {
 		name:                "hetzner",
 		defaultRegion:       "nbg1",

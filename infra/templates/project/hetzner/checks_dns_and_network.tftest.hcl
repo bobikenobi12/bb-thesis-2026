@@ -79,6 +79,9 @@ variables {
   project_name = "acme"
   environment  = "dev"
   region       = "fsn1"
+  # The mocked providers do not expose images. Keep these network-focused plans on the
+  # pre-cache path; cache behavior is covered by the dedicated shell self-test and static guard.
+  talos_image_cache = "disabled"
 }
 
 ################################################################################

@@ -12,7 +12,7 @@ import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@repo/ui/button";
-import { CountPill } from "@repo/ui/count-pill";
+import { SectionHeading } from "@repo/ui/section-heading";
 import { ErrorState } from "@/components/errors/error-state";
 import { DEFAULT_EVIDENCE_FILTERS } from "@/components/evidence/evidence-query";
 import { useFilterUrlSync } from "@/hooks/use-filter-url-sync";
@@ -113,12 +113,15 @@ export function EvidenceClient() {
 								: "transition-opacity"
 						}
 					>
-						<div className="mb-2.5 flex items-center gap-2.5">
-							<h2 className="font-display text-[15px] font-semibold tracking-tight text-text-primary">
-								Environments
-							</h2>
-							<CountPill count={result.resultCount} />
-						</div>
+						{/* The filter standard reference page finally takes the shared heading too:
+						    the count beside it is the FILTERED result count, which is the one number
+						    a filter bar exists to move. */}
+						<SectionHeading
+							className="mb-2.5"
+							level={2}
+							title="Environments"
+							count={result.resultCount}
+						/>
 
 						{result.resultCount === 0 && filtersActive ? (
 							<EvidenceNoMatch onClear={reset} />

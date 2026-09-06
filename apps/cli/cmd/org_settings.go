@@ -44,7 +44,7 @@ func runOrgSettings(c apiClient, out io.Writer, format string) error {
 	rows := [][]string{
 		{"name", s.Name},
 		{"slug", s.Slug},
-		{"description", orDash(s.Description)},
+		{"description", ui.OrDash(s.Description)},
 		{"region", s.Region},
 		{"default env", s.DefaultEnv},
 		{"terraform", s.TerraformVersion},

@@ -110,6 +110,39 @@ const (
 	ArgoPreflightUnversioned ArgoPreflightVerdict = "UNVERSIONED"
 	// ArgoPreflightUnreadable — the probe did not answer at all. WARN and PROCEED.
 	ArgoPreflightUnreadable ArgoPreflightVerdict = "UNREADABLE"
+	// ArgoPreflightSkipped — the operator set SkipVersionPreflightEnv, so NO probe was issued and
+	// nothing about the cluster was checked. PROCEED with the pin.
+	//
+	// It is a named verdict rather than a zero value because PreflightLiveArgoVersion now RETURNS
+	// its decision, and the caller reads InstallChartVersion and SkipChartInstall off it. An
+	// unnamed empty decision would carry the right two fields by accident; this one says why.
+	ArgoPreflightSkipped ArgoPreflightVerdict = "SKIPPED"
+	// ArgoPreflightDowngradeAvoided — the cluster runs an ArgoCD that is INSIDE the window and
+	// NEWER than Alethia's pin, and helm reports the release that installed it. PROCEED, loudly,
+	// installing the RUNNING chart version instead of the pin.
+	//
+	// This used to be a warning that proceeded with the pin, i.e. an in-place `helm upgrade
+	// --install --version <lower>` over a live newer ArgoCD. ArgoCD does not support downgrades —
+	// CRD schemas and the application controller's stored state move forward — so that is the same
+	// class of destructive act the OUT_OF_RANGE arm refuses, performed silently on a cluster with
+	// nothing wrong with it. The matrix declares NO ceiling (`app_version_max: ""`), so every
+	// customer who keeps their own ArgoCD current is in this case (#3521).
+	//
+	// Refusing instead would block exactly those customers, and the only override is a runner
+	// PROCESS environment variable a console-driven deploy cannot set — the un-overridable shape
+	// #3495 existed to remove. Installing the running chart keeps the values path intact (probes,
+	// ingress, redisSecretInit all ride on that one helm command) while moving no version.
+	ArgoPreflightDowngradeAvoided ArgoPreflightVerdict = "DOWNGRADE_AVOIDED"
+	// ArgoPreflightDowngradeUnmanaged — the same situation, except helm cannot name a release to
+	// install against: ArgoCD is present and newer, but it is not this release, or its chart version
+	// is unreadable, or helm did not answer. PROCEED without installing the chart at all.
+	//
+	// `helm upgrade --install` here would not be an upgrade. With no release it CREATES one that
+	// adopts objects it does not own, at the pinned — lower — version; with an unreadable chart
+	// version there is nothing to pass to `--version` but the pin, which is the downgrade. Both are
+	// worse than applying nothing, so the deploy continues and the message states exactly which
+	// values went unapplied rather than implying the install succeeded.
+	ArgoPreflightDowngradeUnmanaged ArgoPreflightVerdict = "DOWNGRADE_UNMANAGED"
 	// ArgoPreflightNoWindow — the matrix declares no window. WARN and PROCEED. Unreachable in a
 	// shipped binary (compat's drift test fails if the window disappears), so refusing here would
 	// only hurt somebody running a patched tree.
@@ -144,6 +177,20 @@ type ArgoPreflightDecision struct {
 	Verdict ArgoPreflightVerdict
 	Proceed bool
 	Message string
+	// InstallChartVersion is the chart version the caller must install INSTEAD of the resolved pin.
+	// Empty means "use the pin", which is every verdict but ArgoPreflightDowngradeAvoided.
+	//
+	// It is carried on the decision rather than resolved again by the caller because the reason for
+	// the override and the override itself must not be able to drift apart: the message the operator
+	// reads names this exact version.
+	InstallChartVersion string
+	// SkipChartInstall tells the caller to apply no chart at all while still proceeding with the
+	// rest of the deploy. Only ArgoPreflightDowngradeUnmanaged sets it.
+	//
+	// Distinct from Proceed=false: a refusal STOPS the deploy, this one continues it having
+	// deliberately applied nothing to ArgoCD. Collapsing the two would either abort deploys that are
+	// fine or silently install the downgrade this exists to prevent.
+	SkipChartInstall bool
 }
 
 // PreflightRefusal is the error a refusing decision returns.
@@ -170,7 +217,7 @@ func (e *PreflightRefusal) Error() string { return e.Decision.Message }
 //
 // A refusal is returned UNWRAPPED and the caller must keep it that way. Prefixing it with
 // "failed to install ArgoCD" is how a deliberate refusal gets read as a broken chart.
-func PreflightLiveArgoVersion(ctx context.Context, stdout io.Writer) error {
+func PreflightLiveArgoVersion(ctx context.Context, stdout io.Writer) (ArgoPreflightDecision, error) {
 	win, declared := compat.MustLoad().SupportedWindow(argoComponentID)
 
 	// `== "1" || == "true"`, not `!= ""`: the repo's convention (k8s/probe.go:287) and the only
@@ -181,15 +228,21 @@ func PreflightLiveArgoVersion(ctx context.Context, stdout io.Writer) error {
 			"NOT VERIFIED: whether this cluster already runs an ArgoCD outside Alethia's supported window (%s). "+
 			"No probe was issued, so a successful install here is NOT evidence that the running ArgoCD is supported.\n",
 			SkipVersionPreflightEnv, skip, describeArgoWindow(win, declared))
-		return nil
+		return ArgoPreflightDecision{Verdict: ArgoPreflightSkipped, Proceed: true}, nil
 	}
 
-	decision := decideArgoVersionPreflight(probeLiveArgoWorkloads(ctx), win, declared, pinnedArgoAppVersion())
+	// BOTH probes run before the decider, and the decider stays pure. The alternative — probing helm
+	// lazily inside the one arm that needs it — would move a cluster call into the function whose
+	// whole value is that a table-driven test can drive every arm of it exhaustively without one.
+	// The cost is one bounded `helm list` per deploy, on the same 30s ceiling the kubectl probe
+	// already carries.
+	decision := decideArgoVersionPreflight(
+		probeLiveArgoWorkloads(ctx), probeLiveArgoHelmRelease(ctx), win, declared, pinnedArgoAppVersion())
 	if !decision.Proceed {
-		return &PreflightRefusal{Decision: decision}
+		return decision, &PreflightRefusal{Decision: decision}
 	}
 	fmt.Fprintln(stdout, decision.Message)
-	return nil
+	return decision, nil
 }
 
 // probeLiveArgoWorkloads asks the cluster what ArgoCD it is running. The exec is separated from
@@ -422,7 +475,7 @@ var argoCompanionImageMarkers = []string{
 //  2. an empty list is ABSENT, whatever the window says — there is nothing to hold to it;
 //  3. an undeclared window cannot judge anything, so it warns rather than refusing;
 //  4. only then is what was READ compared against what was DECLARED.
-func decideArgoVersionPreflight(obs LiveArgoObservation, win compat.SupportedWindow, declared bool, pinned string) ArgoPreflightDecision {
+func decideArgoVersionPreflight(obs LiveArgoObservation, rel LiveArgoHelmRelease, win compat.SupportedWindow, declared bool, pinned string) ArgoPreflightDecision {
 	window := describeArgoWindow(win, declared)
 
 	if !obs.Answered {
@@ -563,24 +616,64 @@ func decideArgoVersionPreflight(obs LiveArgoObservation, win compat.SupportedWin
 		}
 	}
 
+	// THE DOWNGRADE CASE, decided rather than narrated (#3521).
+	//
+	// It was a warning that proceeded with the pin — an in-place `helm upgrade --install --version
+	// <lower>` over a live newer ArgoCD, which is the destructive act this check exists to prevent,
+	// performed in its name. The wording had already been fixed twice (it once ended "Stop the
+	// deploy now", advice nobody inside a runner job can take) without the behaviour changing.
+	//
+	// Neither of the other two options was taken, and both were considered. Refusing blocks every
+	// customer who keeps their own ArgoCD current — the matrix declares no ceiling, so that is the
+	// NORMAL state — and the only override is a runner process environment variable a console-driven
+	// deploy cannot set, which is the un-overridable shape #3495 removed. Reverse-looking the running
+	// APP version up to a chart version through the matrix cannot work either: matrix.json records
+	// three argocd charts and none is newer than the pin, so it has no row for this case.
+	//
+	// So the cluster is asked. `helm list` names the chart the running ArgoCD came from, and
+	// installing THAT applies every value this deploy carries — probes, ingress, redisSecretInit,
+	// which all ride on the single helm command in provisioner/deploy.go — while moving no version.
+	if down := argoDowngradedBy(pinned, obs.Versions); len(down) > 0 {
+		if rel.Answered && rel.Found && strings.TrimSpace(rel.ChartVersion) != "" {
+			return ArgoPreflightDecision{
+				Verdict:             ArgoPreflightDowngradeAvoided,
+				Proceed:             true,
+				InstallChartVersion: strings.TrimSpace(rel.ChartVersion),
+				Message: fmt.Sprintf(
+					"ArgoCD version preflight: the cluster already runs ArgoCD %s (namespace %s), inside Alethia's "+
+						"supported window %s and NEWER than the pinned %s. NOT DOWNGRADING: this deploy installs the "+
+						"chart the cluster already runs (%s, from helm release %q) instead of the pin, so its values "+
+						"are applied and its ArgoCD version does not move. Pin a chart at or above %s (%s) if you "+
+						"want this deploy to upgrade it.",
+					describeArgoVersions(obs), argoPreflightNamespace, window, describeArgoPin(pinned),
+					describeArgoHelmRelease(rel), argoHelmReleaseName, quoteJoin(down), ArgoChartVersionEnv),
+			}
+		}
+		// No release to install against. `helm upgrade --install` would either create a release that
+		// adopts objects it does not own, or pass the pin to --version — which IS the downgrade.
+		// Applying nothing is the only option left that does not move the version, and the message
+		// names what went unapplied so a green deploy is not read as a configured ArgoCD.
+		return ArgoPreflightDecision{
+			Verdict:          ArgoPreflightDowngradeUnmanaged,
+			Proceed:          true,
+			SkipChartInstall: true,
+			Message: fmt.Sprintf(
+				"ArgoCD version preflight: the cluster already runs ArgoCD %s (namespace %s), inside Alethia's "+
+					"supported window %s and NEWER than the pinned %s — but %s, so there is no chart version to "+
+					"install against. SKIPPING the ArgoCD chart install entirely; the rest of the deploy continues. "+
+					"NOT APPLIED: Alethia's ArgoCD values (health probes, any ingress this project configures, the "+
+					"pre-seeded redis secret). Installing the pin here would move the running %s DOWN, which ArgoCD "+
+					"does not support. Pin a chart at or above it (%s), or install ArgoCD from the %s Helm release so "+
+					"this deploy can apply its values without changing the version.",
+				describeArgoVersions(obs), argoPreflightNamespace, window, describeArgoPin(pinned),
+				describeArgoHelmRelease(rel), quoteJoin(down), ArgoChartVersionEnv, argoHelmReleaseName),
+		}
+	}
+
 	message := fmt.Sprintf(
 		"ArgoCD version preflight: the cluster already runs ArgoCD %s (namespace %s), inside Alethia's supported "+
 			"window %s. Proceeding; this deploy installs %s.",
 		describeArgoVersions(obs), argoPreflightNamespace, window, describeArgoPin(pinned))
-	if down := argoDowngradedBy(pinned, obs.Versions); len(down) > 0 {
-		// STATES what will happen; does not ask for an intervention nobody can make. This runs
-		// inside the runner, driven from the console: no one is watching stdout mid-job and there
-		// is no stop button, so "stop the deploy now" was advice that could not be taken (#3495).
-		// It stays a warning rather than a refusal deliberately — refusing here would block every
-		// customer whose own ArgoCD is newer than our pin, with the same un-overridable shape this
-		// change is fixing. #3521 tracks whether a downgrade should be skipped instead.
-		message += fmt.Sprintf(
-			"\n  ⚠ WARNING — THIS IS A DOWNGRADE. The pinned install (%s) is LOWER than the %s already running. This "+
-				"deploy is proceeding and will move the cluster's ArgoCD DOWN in place; ArgoCD does not support "+
-				"downgrades, so its CRD schemas and controller state may not survive it. Pin a chart at or above the "+
-				"running version (%s) if that is not what you intend.",
-			describeArgoPin(pinned), quoteJoin(down), ArgoChartVersionEnv)
-	}
 	if len(unjudgeable) > 0 {
 		message += fmt.Sprintf(
 			"\n  Note: %s could not be compared against the window; the verdict rests on the version(s) that could.",

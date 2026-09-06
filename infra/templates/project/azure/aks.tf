@@ -21,7 +21,7 @@ module "aks" {
   # cap on the e2e nightly and failed the apply mid-create (#1921).
   node_resource_group = local.azure_aks_node_resource_group
   resource_group_name = azurerm_resource_group.main.name
-  vnet_subnet_id      = var.provision_vnet ? module.vnet[0].private_subnet_id : data.azurerm_subnet.existing[0].id
+  vnet_subnet_id      = try(module.vnet[0].private_subnet_id, null) != null ? module.vnet[0].private_subnet_id : one(data.azurerm_subnet.existing[*].id)
 
   machine_types     = var.aks_instance_types
   node_min_size     = var.aks_node_min_size

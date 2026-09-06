@@ -1,34 +1,42 @@
 output "vpc_id" {
-  value = var.provision_vpc ? module.common_vpc[0].vpc_id : var.vpc_id
+  value = try(module.common_vpc[0].vpc_id, null) != null ? module.common_vpc[0].vpc_id : var.vpc_id
 }
 
-# Every cluster output below is guarded on the MODULE (`length(module.eks) > 0`), never on a copy of
-# its count predicate. The count is `var.provision_eks` today, and restating it here would be correct
-# today and silently wrong the day the predicate grows a second term — the exact drift that made
-# `provision_artifact_registry` diverge from its module on GCP (see gcp/outputs.tf). Until #1772 these
-# eight indexed [0] with NO guard at all, so `provision_eks = false` could not even PLAN:
+# Every cluster output below is guarded on the MODULE INSTANCE, never on a copy of its count
+# predicate. The count is `var.provision_eks` today, and restating it here would be correct today
+# and silently wrong the day the predicate grows a second term — the exact drift that made
+# `provision_artifact_registry` diverge from its module on GCP (see gcp/outputs.tf). Until #1772
+# these eight indexed [0] with NO guard at all, so `provision_eks = false` could not even PLAN:
 #   Invalid index … module.eks is empty tuple.
-# `length(module...)` cannot drift from the count the way a duplicated predicate can.
+#
+# The guard is `try(module.eks[0].<out>, null) != null ? …`, not the `length(module.eks) > 0` these
+# carried between #1772 and #3509. `length()` fixed the same crash but reads the module as a WHOLE,
+# and that coarser edge closes dependency cycles elsewhere in this template — aws/rds.tf measured
+# it, and its comment is where the whole rule is argued. Neither shape can drift from the count the
+# way a duplicated predicate can; only one of them is safe in every position, so only one is used.
+#
+# `-refresh-only` is the second reason and the one that closed #3351: the count predicate can be
+# TRUE while the module has no instance IN STATE, and no copy of the predicate can tell.
 output "eks_cluster_arn" {
-  value = length(module.eks) > 0 ? module.eks[0].eks_cluster_arn : null
+  value = try(module.eks[0].eks_cluster_arn, null) != null ? module.eks[0].eks_cluster_arn : null
 }
 
 output "eks_cluster_name" {
-  value = length(module.eks) > 0 ? module.eks[0].eks_cluster_id : null
+  value = try(module.eks[0].eks_cluster_id, null) != null ? module.eks[0].eks_cluster_id : null
 }
 
 output "eks_cluster_endpoint" {
-  value = length(module.eks) > 0 ? module.eks[0].eks_cluster_endpoint : null
+  value = try(module.eks[0].eks_cluster_endpoint, null) != null ? module.eks[0].eks_cluster_endpoint : null
 }
 
 output "route53_zone_id" {
   description = "The Route 53 hosted zone id (created in-template when cloud_dns_enabled, else the existing dns_hosted_zone)."
-  value       = var.cloud_dns_enabled ? module.route53[0].zone_id : var.dns_hosted_zone
+  value       = try(module.route53[0].zone_id, null) != null ? module.route53[0].zone_id : var.dns_hosted_zone
 }
 
 output "route53_name_servers" {
   description = "Authoritative name servers for the created zone (delegate these at the registrar); empty when using an existing zone."
-  value       = var.cloud_dns_enabled ? module.route53[0].name_servers : []
+  value       = try(module.route53[0].name_servers, null) != null ? module.route53[0].name_servers : []
 }
 
 #output "eks_cluster_version" {
@@ -36,20 +44,20 @@ output "route53_name_servers" {
 #}
 
 output "eks_irsa_external_dns_arn" {
-  value = length(module.eks) > 0 ? module.eks[0].eks_irsa_external_dns_arn : null
+  value = try(module.eks[0].eks_irsa_external_dns_arn, null) != null ? module.eks[0].eks_irsa_external_dns_arn : null
 }
 
 output "eks_irsa_alb_controller_arn" {
-  value = length(module.eks) > 0 ? module.eks[0].eks_irsa_alb_controller_arn : null
+  value = try(module.eks[0].eks_irsa_alb_controller_arn, null) != null ? module.eks[0].eks_irsa_alb_controller_arn : null
 }
 
 output "eks_irsa_external_secrets_arn" {
   description = "IRSA role ARN for the external-secrets operator (gates the AWS ClusterSecretStore render)"
-  value       = length(module.eks) > 0 ? module.eks[0].eks_irsa_external_secrets_arn : null
+  value       = try(module.eks[0].eks_irsa_external_secrets_arn, null) != null ? module.eks[0].eks_irsa_external_secrets_arn : null
 }
 
 output "rds_iam_auth_irsa_arn" {
-  value = length(module.rds_iam_auth) > 0 ? module.rds_iam_auth[0].iam_role_arn : null
+  value = try(module.rds_iam_auth[0].iam_role_arn, null) != null ? module.rds_iam_auth[0].iam_role_arn : null
 }
 
 # Keyless DB auth (#722): the region the RDS auth-token refresher signs tokens for.
@@ -59,11 +67,11 @@ output "aws_region" {
 }
 
 output "node_iam_role_name" {
-  value = length(module.eks) > 0 ? module.eks[0].node_iam_role_name : null
+  value = try(module.eks[0].node_iam_role_name, null) != null ? module.eks[0].node_iam_role_name : null
 }
 
 output "node_security_group" {
-  value = length(module.eks) > 0 ? module.eks[0].node_security_group_id : null
+  value = try(module.eks[0].node_security_group_id, null) != null ? module.eks[0].node_security_group_id : null
 }
 
 # AZ outputs are the greenfield subnet AZs (local.azs = region+a/b/c). On brownfield (provision_vpc
@@ -84,31 +92,31 @@ output "az3" {
 }
 
 output "subnet1" {
-  value = var.provision_vpc ? module.common_vpc[0].private_subnets[0] : try(var.vpc_private_subnet_ids[0], null)
+  value = try(module.common_vpc[0].private_subnets, null) != null ? module.common_vpc[0].private_subnets[0] : try(var.vpc_private_subnet_ids[0], null)
 }
 
 output "subnet2" {
-  value = var.provision_vpc ? module.common_vpc[0].private_subnets[1] : try(var.vpc_private_subnet_ids[1], null)
+  value = try(module.common_vpc[0].private_subnets, null) != null ? module.common_vpc[0].private_subnets[1] : try(var.vpc_private_subnet_ids[1], null)
 }
 
 output "subnet3" {
-  value = var.provision_vpc ? module.common_vpc[0].private_subnets[2] : try(var.vpc_private_subnet_ids[2], null)
+  value = try(module.common_vpc[0].private_subnets, null) != null ? module.common_vpc[0].private_subnets[2] : try(var.vpc_private_subnet_ids[2], null)
 }
 
 ## RDS
 output "rds_cluster_endpoint" {
   description = "RDS Cluster endpoint"
-  value       = var.create_rds ? module.rds_maindb[0].rds_cluster_endpoint : null
+  value       = try(module.rds_maindb[0].rds_cluster_endpoint, null) != null ? module.rds_maindb[0].rds_cluster_endpoint : null
 }
 
 output "rds_master_credentials_secret_arn" {
   description = "RDS Master Credentials Secret ARN"
-  value       = var.create_rds ? module.rds_maindb[0].rds_master_credentials_secret_arn : null
+  value       = try(module.rds_maindb[0].rds_master_credentials_secret_arn, null) != null ? module.rds_maindb[0].rds_master_credentials_secret_arn : null
 }
 
 output "rds_master_credentials_secret_name" {
   description = "RDS Master Credentials Secret Name"
-  value       = var.create_rds ? module.rds_maindb[0].rds_master_credentials_secret_name : null
+  value       = try(module.rds_maindb[0].rds_master_credentials_secret_name, null) != null ? module.rds_maindb[0].rds_master_credentials_secret_name : null
 }
 
 # Keyless bootstrap (#722 R5): the initial database name — the bootstrap Job's admin connection target
@@ -120,40 +128,40 @@ output "rds_database_name" {
 
 output "rds_extra_credentials_secret_arn" {
   description = "RDS Extra Credentials Secret ARN"
-  value       = var.create_rds ? module.rds_maindb[0].rds_extra_credentials_secret_arn : null
+  value       = try(module.rds_maindb[0].rds_extra_credentials_secret_arn, null) != null ? module.rds_maindb[0].rds_extra_credentials_secret_arn : null
 }
 
 output "rds_extra_credentials_secret_name" {
   description = "RDS Extra Credentials Secret Name"
-  value       = var.create_rds ? module.rds_maindb[0].rds_extra_credentials_secret_name : null
+  value       = try(module.rds_maindb[0].rds_extra_credentials_secret_name, null) != null ? module.rds_maindb[0].rds_extra_credentials_secret_name : null
 }
 
 output "rds_cluster_identifier" {
   description = "The RDS Cluster Identifier"
-  value       = var.create_rds ? module.rds_maindb[0].rds_cluster_identifier : null
+  value       = try(module.rds_maindb[0].rds_cluster_identifier, null) != null ? module.rds_maindb[0].rds_cluster_identifier : null
 }
 
 output "rds_cluster_arn" {
   description = "The RDS Cluster ARN"
-  value       = var.create_rds ? module.rds_maindb[0].rds_cluster_arn : null
+  value       = try(module.rds_maindb[0].rds_cluster_arn, null) != null ? module.rds_maindb[0].rds_cluster_arn : null
 }
 
 # Keyless RDS IAM auth (#1504): the cluster resource id (cluster-XXXX) that scopes the app's
 # rds-db:connect ARN to THIS cluster instead of the current dbuser:*/alethia_app wildcard (#1509).
 output "rds_cluster_resource_id" {
   description = "The RDS Cluster resource id (cluster-XXXX) — scopes the keyless rds-db:connect ARN"
-  value       = var.create_rds ? module.rds_maindb[0].rds_cluster_resource_id : null
+  value       = try(module.rds_maindb[0].rds_cluster_resource_id, null) != null ? module.rds_maindb[0].rds_cluster_resource_id : null
 }
 
 output "rds_credentials_kms_key_arn" {
   description = "RDS Credentials kms key arn"
-  value       = var.create_rds ? module.rds_maindb[0].rds_credentials_kms_key_arn : null
+  value       = try(module.rds_maindb[0].rds_credentials_kms_key_arn, null) != null ? module.rds_maindb[0].rds_credentials_kms_key_arn : null
 }
 
 # ACM
 output "acm_certificate_arn" {
   description = "Wildcard ACM certificate ARN for the configured domain"
-  value       = var.acm_certificate_enable ? module.acm[0].acm_certificate_arn : null
+  value       = try(module.acm[0].acm_certificate_arn, null) != null ? module.acm[0].acm_certificate_arn : null
 }
 
 # WAF
@@ -176,13 +184,18 @@ output "ecr_repository_urls_map" {
 }
 output "ecr_build_role_arn" {
   description = "IRSA role ARN the in-cluster build ServiceAccount assumes to push images (W2 kaniko builds)"
-  value       = length(module.irsa_ecr_build) > 0 ? module.irsa_ecr_build[0].iam_role_arn : null
+  value       = try(module.irsa_ecr_build[0].iam_role_arn, null) != null ? module.irsa_ecr_build[0].iam_role_arn : null
 }
 output "ecr_build_service_account" {
   description = "The namespace:serviceaccount the build IRSA role trusts — the kaniko Job renderer must schedule builds under exactly this identity"
   # Guarded on the ROLE, not on provision_ecr: the pair must resolve together. Naming an identity the
   # renderer would schedule builds under while ecr_build_role_arn is null hands it a ServiceAccount
   # that can push nothing (#1772 — the role now also requires provision_eks).
+  #
+  # `length()` and not the instance probe every other module reference in this file now uses (#3509):
+  # this value is a LOCAL, so there is no module output to probe. A pure existence test is the only
+  # shape that expresses "does the role exist", and the whole-module edge it costs cannot cycle from
+  # a root output, which is a graph leaf.
   value = length(module.irsa_ecr_build) > 0 ? "${local.ecr_build_namespace}:${local.ecr_build_service_account}" : null
 }
 
@@ -200,26 +213,26 @@ output "ecr_build_service_account" {
 output "redis_reader_endpoint_address" {
   description = "Read-only cache endpoint, when the provisioned engine exposes one"
   value = try(coalesce(
-    var.create_elasticache_redis ? module.elasticache[0].redis_reader_endpoint_address : null,
-    var.create_elasticache_valkey ? module.valey[0].valkey_reader_endpoint_address : null,
+    try(module.elasticache[0].redis_reader_endpoint_address, null) != null ? module.elasticache[0].redis_reader_endpoint_address : null,
+    try(module.valey[0].valkey_reader_endpoint_address, null) != null ? module.valey[0].valkey_reader_endpoint_address : null,
   ), null)
 }
 
 output "redis_primary_endpoint_address" {
   description = "Primary cache endpoint — Redis replication group or serverless Valkey, whichever was provisioned"
   value = try(coalesce(
-    var.create_elasticache_redis ? module.elasticache[0].redis_primary_endpoint_address : null,
-    var.create_elasticache_valkey ? module.valey[0].valkey_primary_endpoint_address : null,
+    try(module.elasticache[0].redis_primary_endpoint_address, null) != null ? module.elasticache[0].redis_primary_endpoint_address : null,
+    try(module.valey[0].valkey_primary_endpoint_address, null) != null ? module.valey[0].valkey_primary_endpoint_address : null,
   ), null)
 }
 output "irsa_rds_role_arn" {
   description = "ARN of the IAM Role for access to rds database"
-  value       = length(module.rds_iam_auth) > 0 ? module.rds_iam_auth[0].iam_role_arn : null
+  value       = try(module.rds_iam_auth[0].iam_role_arn, null) != null ? module.rds_iam_auth[0].iam_role_arn : null
 }
 
 output "karpenter_queue_name" {
   description = "Interruption queue name for karpenter"
-  value       = length(module.karpenter) > 0 ? module.karpenter[0].queue_name : null
+  value       = try(module.karpenter[0].queue_name, null) != null ? module.karpenter[0].queue_name : null
 }
 
 
@@ -231,7 +244,7 @@ output "karpenter_queue_name" {
 # installed when it is not. Both terms are required: the feature must be ON and the role must EXIST.
 output "karpenter_sa_role" {
   description = "IRSA role for karpenter SA"
-  value       = var.enable_karpenter && length(module.irsa_karpenter) > 0 ? module.irsa_karpenter[0].iam_role_arn : null
+  value       = var.enable_karpenter && try(module.irsa_karpenter[0].iam_role_arn, null) != null ? module.irsa_karpenter[0].iam_role_arn : null
 }
 
 # Label-at-source for Karpenter-launched EC2 (BYOC A1.2). Karpenter provisions instances/volumes
@@ -251,12 +264,15 @@ output "karpenter_node_tags" {
   # true, provision_eks = false` the raw-flag form emitted a live tag map for an EC2NodeClass that
   # will never be rendered — this output IS consumed (packages/core/provisioner/karpenter.go), so a
   # non-null there is a positive claim about a Karpenter that does not exist. Unchanged on greenfield.
+  #
+  # `length()` rather than the instance probe, for the same reason as ecr_build_service_account: the
+  # value is a LOCAL, so there is no output to probe, and a root output cannot cycle (#3509).
   value = length(module.karpenter) > 0 ? local.aws_default_tags : null
 }
 
 output "fluentbit_sa_role_arn" {
   description = "IAM Role ARN for Fluent Bit Service Account"
-  value       = length(module.irsa_fluentbit_cloudwatch) > 0 ? module.irsa_fluentbit_cloudwatch[0].iam_role_arn : null
+  value       = try(module.irsa_fluentbit_cloudwatch[0].iam_role_arn, null) != null ? module.irsa_fluentbit_cloudwatch[0].iam_role_arn : null
 }
 
 # Custom Secrets

@@ -34,10 +34,10 @@ export function PlanChecklist({
 							className="mt-0.5 shrink-0 text-text-tertiary"
 						/>
 						<div className="flex flex-col">
-							<span className="text-[13px] font-medium text-text-primary">
+							<span className="text-ui-md font-medium text-text-primary">
 								{f.title}
 							</span>
-							<span className="text-[11.5px] leading-snug text-text-tertiary">
+							<span className="text-ui-xs leading-snug text-text-tertiary">
 								{f.detail}
 							</span>
 						</div>
@@ -48,7 +48,7 @@ export function PlanChecklist({
 				href={pricingUrl}
 				target="_blank"
 				rel="noreferrer"
-				className="mt-5 inline-flex items-center gap-1.5 text-[12px] text-text-tertiary transition-colors hover:text-text-primary"
+				className="mt-5 inline-flex items-center gap-1.5 text-ui-sm text-text-tertiary transition-colors hover:text-text-primary"
 			>
 				Learn more about pricing
 				<ExternalLink size={12} />
