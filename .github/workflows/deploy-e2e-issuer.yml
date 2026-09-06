@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: 2026 Alethia Labs <legal@alethialabs.io>
+# SPDX-License-Identifier: AGPL-3.0-only
+
+name: Deploy E2E assertion issuer
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - apps/e2e-issuer/**
+      - .github/workflows/deploy-e2e-issuer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-e2e-issuer
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: e2e-issuer
+    outputs:
+      issuer-url: ${{ steps.issuer.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C apps/e2e-issuer run test
+      - name: Upload rotation-aware signing key set
+        working-directory: apps/e2e-issuer
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SIGNING_KEYS_JSON: ${{ secrets.SIGNING_KEYS_JSON }}
+        run: pnpm dlx wrangler@4.33.1 secret put SIGNING_KEYS_JSON <<< "$SIGNING_KEYS_JSON"
+      - name: Deploy Worker
+        working-directory: apps/e2e-issuer
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ISSUER_URL: ${{ vars.E2E_ISSUER_URL }}
+          GITHUB_TOKEN_AUDIENCE: ${{ vars.GITHUB_TOKEN_AUDIENCE }}
+          ALLOWED_REPOSITORIES: ${{ vars.ALLOWED_REPOSITORIES }}
+          ALLOWED_WORKFLOW_REFS: ${{ vars.ALLOWED_WORKFLOW_REFS }}
+          PROVIDER_AUDIENCES_JSON: ${{ vars.PROVIDER_AUDIENCES_JSON }}
+        run: >-
+          pnpm dlx wrangler@4.33.1 deploy
+          --var "ISSUER_URL:$ISSUER_URL"
+          --var "GITHUB_TOKEN_AUDIENCE:$GITHUB_TOKEN_AUDIENCE"
+          --var "ALLOWED_REPOSITORIES:$ALLOWED_REPOSITORIES"
+          --var "ALLOWED_WORKFLOW_REFS:$ALLOWED_WORKFLOW_REFS"
+          --var "PROVIDER_AUDIENCES_JSON:$PROVIDER_AUDIENCES_JSON"
+      - id: issuer
+        env:
+          ISSUER_URL: ${{ vars.E2E_ISSUER_URL }}
+        run: echo "url=$ISSUER_URL" >> "$GITHUB_OUTPUT"
