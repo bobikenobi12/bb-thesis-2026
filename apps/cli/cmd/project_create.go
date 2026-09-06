@@ -12,17 +12,89 @@ import (
 	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/utils/ui"
 	"github.com/alethialabs-io/alethialabs/packages/core/api"
 	"github.com/spf13/cobra"
+
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 )
 
-var (
-	projectCreateRegion     string
-	projectCreateIdentity   string
-	projectCreateAccount    string
-	projectCreateStage      string
-	projectCreateIacVersion string
-	projectCreatePlacement  string
-	projectCreateEnvs       []string
-)
+// projectCreateSpec is what `project create` takes from a person, declared ONCE and rendered four
+// ways: the flags below are generated from it, the form reads its titles and descriptions, the
+// manifest keys are its ManifestKey column, and the docs table on project.mdx is generated from it.
+//
+// This is the command the programme was started over, and the first consumer of the kit. Before it,
+// the seven flag usages were hand-typed here while the form's questions were hand-typed in the
+// prompt helpers below — two lists nothing compared.
+//
+// The literal is DATA ONLY, which is measured rather than stylistic: see the pkg/spec package doc.
+// docsProjectPage is the reference page `project create`'s field table lives on. It is the one big
+// command that had NO fieldspec marker at all — its flag table on project.mdx was hand-written and
+// outside every guard.
+const docsProjectPage = "apps/docs/content/docs/cli/commands/project.mdx"
+
+var projectCreateSpec = spec.Spec{
+	Command: "alethia project create",
+	Fields: []spec.Field{
+		{Command: "alethia project create", Key: "name", Title: "Project name",
+			Description: "What to call the project", Arg: "[name]", Required: true,
+			ManifestKey: "project", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "region", Title: "Region",
+			Description: "Cloud region to provision into (asked for on a terminal when omitted)",
+			Flag:        "region", Required: true, EnvVar: "ALETHIA_REGION",
+			ManifestKey: "cloud.region", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "account", Title: "Cloud account",
+			Description: "Cloud account to link, by its LABEL or its id (asked for on a terminal when omitted)",
+			Flag:        "cloud-account", Selector: "label", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "identity", Title: "Cloud account id",
+			Description: "Cloud account id to link (prefer --cloud-account, which also takes the label)",
+			Flag:        "cloud-identity-id", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "stage", Title: "Stage",
+			Description: "Initial environment stage", Flag: "stage",
+			Default: string(stageDevelopment), Options: "stages",
+			ManifestKey: "stage", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "iac-version", Title: "OpenTofu version",
+			Description: "OpenTofu version to pin (defaults server-side)", Flag: "iac-version",
+			ManifestKey: "iac.version", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "placement", Title: "Placement",
+			Description: "Placement of the default environment (default dedicated)",
+			Flag:        "placement-mode", Options: "placements",
+			ManifestKey: "placement", Page: docsProjectPage},
+		{Command: "alethia project create", Key: "env", Title: "Environments",
+			Description: "Environment as name:stage[:mode[:namespace]] (repeatable; the first is the default). " +
+				"Asked for on a terminal when omitted; without it the Production+Preview pair is created",
+			Flag: "env", Repeated: true, Page: docsProjectPage},
+	},
+	// Derived from the generated enums rather than listed, so a new stage or placement mode reaches
+	// the flag help, the refusal message and the docs table together.
+	Options: map[string][]string{
+		"stages":     environmentStages(),
+		"placements": placementModes(),
+	},
+}
+
+// projectCreateBinder holds the flag targets projectCreateSpec generated. Set in init().
+var projectCreateBinder *spec.Binder
+
+// projectCreatePrompt is the form adapter used by the shared resolver. It is a seam so command
+// tests can answer a field by key; huh owns the destination pointer inside askLine, so merely
+// stubbing the form runner can open an input but cannot supply its value.
+var projectCreatePrompt = defaultProjectCreatePrompt
+
+// defaultProjectCreatePrompt renders one unresolved project-create field through the existing
+// project forms. Optional fields return an empty answer and fall through to their defaults.
+func defaultProjectCreatePrompt(f spec.Field, token, accountRef string) (string, error) {
+	switch f.Key {
+	case "name":
+		return promptProjectName()
+	case "region":
+		return promptRegion()
+	case "identity":
+		if accountRef != "" {
+			return "", nil
+		}
+		id, _ := selectCloudIdentity(token)
+		return id, nil
+	}
+	return "", nil
+}
 
 // This is the command the programme was started over. The complaint, verbatim:
 //
@@ -63,69 +135,63 @@ A default environment is created with the project; add component resources after
 			fail(err)
 		}
 		client := api.NewClient(token)
-		ask := promptsEnabled()
-		asked := false
+		b := projectCreateBinder
 
-		name := ""
+		// The positional is seeded as if it were a flag, so the resolver cannot tell
+		// `project create boutique` and a `--name boutique` apart: both are the most explicit
+		// thing the person did and must win the same rung.
 		if len(args) == 1 {
-			name = strings.TrimSpace(args[0])
-		}
-		if name == "" {
-			if !ask {
-				failf("a project name is required (pass it as the argument)")
-			}
-			if name, err = promptProjectName(); err != nil {
-				fail(err)
-			}
-			asked = true
+			b.SetArg("name", strings.TrimSpace(args[0]))
 		}
 
-		// No `&& ask` guard: promptRegion short-circuits through requireInteractive, so a
-		// scripted run with no --region dies naming the flag instead of sending an empty
-		// region the server refuses with "Invalid request body". The region is REQUIRED and
-		// has no server-side default, which is what separates it from the cloud account below.
-		region := projectCreateRegion
-		if region == "" {
-			if region, err = promptRegion(); err != nil {
-				fail(err)
-			}
-			asked = true
-		}
-
-		// --cloud-account (a label or an id) and the older --cloud-identity-id (an id) both
-		// land here. The id flag is kept working rather than removed: scripts pass it today,
-		// and this lane's job is to stop REQUIRING an id, not to break the ones that have one.
-		identity := projectCreateIdentity
-		accountRef := projectCreateAccount
-		// Both flags name the SAME field, so passing both is refused rather than resolved by
-		// precedence — the same rule projectIDForJob applies to --project/--project-id, for a
-		// sharper reason here: preferring the id skips resolving the label (an unknown or
-		// ambiguous one would never be reported), and createReplayArgs then prints
-		// `--cloud-account <label>`, a line that links a DIFFERENT account than the run did.
-		if identity != "" && accountRef != "" {
+		// --cloud-account (a label or an id) and the older --cloud-identity-id (an id) both name
+		// the SAME field, so passing both is refused rather than resolved by precedence. This is
+		// a CROSS-FIELD rule and deliberately not something the kit models: preferring the id
+		// would skip resolving the label (an unknown or ambiguous one would never be reported),
+		// and createReplayArgs would then print `--cloud-account <label>`, a line that links a
+		// DIFFERENT account than the run did.
+		flagIdentity, _ := b.String("identity")
+		accountRef, _ := b.String("account")
+		if flagIdentity != "" && accountRef != "" {
 			failf("--cloud-account and --cloud-identity-id both name the cloud account: pass one (--cloud-account takes the label or the id)")
 		}
+
+		// The form is a source like any other, and the kit asks it only for what the flags, the
+		// environment and the manifest left unset — in the ruled order. `ask` is
+		// canPromptForm()'s answer through promptsEnabled(); a nil Prompt IS --no-input, so
+		// there is no second predicate here and the hygiene guard that forbids one stays happy.
+		src := spec.Sources{Env: os.LookupEnv}
+		if promptsEnabled() {
+			src.Prompt = func(f spec.Field) (string, error) {
+				return projectCreatePrompt(f, token, accountRef)
+			}
+		}
+
+		values, err := spec.Resolve(b, src)
+		if err != nil {
+			// A MissingError names EVERY unresolved required field rather than the first, which
+			// is what a scripted run needs: one round trip, not one per flag. The region is the
+			// field that makes this matter — it is required and has no server-side default, so
+			// before the kit a scripted run with no --region sent an empty region and the server
+			// answered "Invalid request body".
+			fail(err)
+		}
+
+		name := values.Get("name")
+		region := values.Get("region")
+		identity := values.Get("identity")
+		asked := values.Asked()
+
 		if identity == "" && accountRef != "" {
 			if identity, err = resolveCloudIdentityID(client, accountRef); err != nil {
 				fail(err)
 			}
 		}
-		if identity == "" && ask {
-			// Best-effort: a project may be created with no cloud account linked, so a
-			// dismissed picker is not fatal.
-			identity, _ = selectCloudIdentity(token)
-			asked = true
-		}
 
-		if err := validateOneOf("stage", projectCreateStage, environmentStages()); err != nil {
-			fail(err)
-		}
-		if err := validateOneOf("placement-mode", projectCreatePlacement, placementModes()); err != nil {
-			fail(err)
-		}
-
-		matrix := projectCreateEnvs
-		if len(matrix) == 0 && ask {
+		// --env is REPEATED, so it has no single value and no merge rule across sources; it is a
+		// flag or it is the form. Its colon tuple is #3662's to replace outright.
+		matrix, _ := b.Strings("env")
+		if len(matrix) == 0 && promptsEnabled() {
 			if matrix, err = promptEnvMatrix(); err != nil {
 				fail(err)
 			}
@@ -142,9 +208,9 @@ A default environment is created with the project; add component resources after
 			ProjectName:     name,
 			Region:          region,
 			CloudIdentityID: identity,
-			Stage:           projectCreateStage,
-			IacVersion:      projectCreateIacVersion,
-			Placement:       projectCreatePlacement,
+			Stage:           values.Get("stage"),
+			IacVersion:      values.Get("iac-version"),
+			Placement:       values.Get("placement"),
 			Environments:    environments,
 		}
 		if err := runProjectCreate(client, os.Stdout, outputFormat(cmd), params); err != nil {
@@ -363,12 +429,9 @@ func renderProjectCard(out io.Writer, format string, p *api.Project) error {
 }
 
 func init() {
-	projectCreateCmd.Flags().StringVar(&projectCreateRegion, "region", "", "Cloud region to provision into (asked for on a terminal when omitted)")
-	projectCreateCmd.Flags().StringVar(&projectCreateAccount, "cloud-account", "", "Cloud account to link, by its LABEL or its id (asked for on a terminal when omitted)")
-	projectCreateCmd.Flags().StringVar(&projectCreateIdentity, "cloud-identity-id", "", "Cloud account id to link (prefer --cloud-account, which also takes the label)")
-	projectCreateCmd.Flags().StringVar(&projectCreateStage, "stage", string(stageDevelopment), "Initial environment stage ("+oneOf(environmentStages())+")")
-	projectCreateCmd.Flags().StringVar(&projectCreateIacVersion, "iac-version", "", "OpenTofu version to pin (defaults server-side)")
-	projectCreateCmd.Flags().StringVar(&projectCreatePlacement, "placement-mode", "", "Placement of the default environment: "+oneOf(placementModes())+" (default dedicated)")
-	projectCreateCmd.Flags().StringArrayVar(&projectCreateEnvs, "env", nil, "Environment as name:stage[:mode[:namespace]] (repeatable; the first is the default). Asked for on a terminal when omitted; without it the Production+Preview pair is created")
+	// The seven hand-written registrations these replace each repeated a usage string the form also
+	// held, in a different file, with nothing comparing them. Generating them makes "anything a form
+	// can ask, a flag can set" true by construction rather than by assertion.
+	projectCreateBinder = spec.RegisterFlags(projectCreateCmd, projectCreateSpec)
 	projectCmd.AddCommand(projectCreateCmd)
 }

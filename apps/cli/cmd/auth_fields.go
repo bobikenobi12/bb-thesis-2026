@@ -4,8 +4,7 @@
 package cmd
 
 import (
-	"fmt"
-
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 	"github.com/spf13/cobra"
 )
 
@@ -28,33 +27,14 @@ import (
 //
 // It is deliberately small and deliberately local. The general field-spec kit is
 // #3661's; this is the auth group's five fields, described once.
-type authField struct {
-	// Command is the cobra command path the field belongs to, e.g.
-	// "alethia token create". It is what the guard resolves against the real tree.
-	Command string
-	// Key identifies the field inside its command. Never shown; it is how the form
-	// asks for its own spec.
-	Key string
-	// Title is the form's question AND the docs table's "Field" cell.
-	Title string
-	// Description is the form's helper line AND the docs table's "What it is" cell.
-	// One sentence, no trailing period — the form renders it beneath the title.
-	//
-	// ONE EXCEPTION, named here rather than left for a reader to find as a
-	// mismatch: `alethia config set`'s value field takes its helper line from the
-	// CHOSEN KEY's summary in configFields, because "the new value" tells a reader
-	// nothing the title did not. Its Description below is the docs cell only.
-	Description string
-	// Flag is the long flag that supplies this value without a form. Empty when the
-	// value is a positional argument, in which case Arg carries the placeholder.
-	// Exactly one of the two is set; the guard fails on both or neither.
-	Flag string
-	// Arg is the positional placeholder as it appears in the command's Use string.
-	Arg string
-	// Page is the docs file, relative to the repository root, whose fieldspec table
-	// carries this row.
-	Page string
-}
+// authField is spec.Field. The struct that used to be declared here was field-for-field identical
+// to the ones in byo_fields.go, governance_fields.go, ops_fields.go and org_fields.go — five copies
+// of one idea, each carrying a comment naming #3661 as where they converge. This is that
+// convergence; an ALIAS rather than a new type so every literal below and every call site elsewhere
+// reads unchanged.
+//
+// What the columns mean is documented once, on spec.Field.
+type authField = spec.Field
 
 // Field keys. Constants rather than literals so a typo is a compile error and a
 // rename reaches the form and the spec together.
@@ -139,12 +119,13 @@ var authFields = []authField{
 // an empty description and asks the user for something unnamed. The behavioural
 // tests drive every prompt, so an unresolvable key cannot ship.
 func mustAuthField(command, key string) authField {
-	for _, f := range authFields {
-		if f.Command == command && f.Key == key {
-			return f
-		}
-	}
-	panic(fmt.Sprintf("no authField %q on %q — see authFields in auth_fields.go", key, command))
+	return authGroup().Must(command, key)
+}
+
+// authGroup wraps this group's table in the shared kit, so the lookup, the flag registration and
+// the docs rendering are the ones every other group uses rather than five copies of each.
+func authGroup() spec.Group {
+	return spec.Group{Name: "auth", Source: "auth_fields.go", Fields: authFields}
 }
 
 // authGroupRoots are the top-level commands this noun group owns. Used to derive

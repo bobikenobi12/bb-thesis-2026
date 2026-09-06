@@ -4,10 +4,11 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 )
 
 // The field spec for the BYO-IaC noun group — chart, iac, repo, drift and staged.
@@ -33,32 +34,11 @@ import (
 // Deliberately local, the same as the auth group's `authFields`: the general field-spec kit is
 // #3661's. Two groups having written the same shape twice is the evidence that kit needs, not a
 // reason to invent it here.
-type byoField struct {
-	// Command is the cobra command path the field belongs to, e.g. "alethia chart attach". It is
-	// what the guard resolves against the real tree. A GROUP path (e.g. "alethia chart") is valid
-	// and is how the two selectors every leaf in a group shares are described once rather than
-	// once per leaf.
-	Command string
-	// Key identifies the field inside its command. Never shown; it is how a form asks for its own
-	// spec.
-	Key string
-	// Title is the form's question AND the docs table's "Field" cell.
-	Title string
-	// Description is the form's helper line AND the docs table's "What it is" cell. One sentence,
-	// no trailing period — the form renders it beneath the title.
-	Description string
-	// Flag is the long flag that supplies this value without a form. Empty when the value is a
-	// positional argument, in which case Arg carries the placeholder. Exactly one of the two is
-	// set; the guard fails on both or neither.
-	Flag string
-	// Arg is the positional placeholder as it appears in the command's Use string. It is written
-	// in SQUARE brackets throughout this group: a positional a form can ask for is by definition
-	// optional, and the guard asserts the command actually accepts being run without it.
-	Arg string
-	// Page is the docs file, relative to the repository root, whose fieldspec table carries this
-	// row.
-	Page string
-}
+// byoField is spec.Field. The struct declared here was one of five near-identical copies across the
+// noun groups, each carrying a comment naming #3661 as where they converge. This is that
+// convergence; an ALIAS rather than a new type so every literal in this file and every call site
+// elsewhere reads unchanged. What the columns mean is documented once, on spec.Field.
+type byoField = spec.Field
 
 // Field keys. Constants rather than literals so a typo is a compile error and a rename reaches the
 // form and the spec together.
@@ -287,12 +267,14 @@ var byoFields = []byoField{
 // with an empty title and asks the user for something unnamed. The behavioural tests drive every
 // prompt, so an unresolvable key cannot ship.
 func mustByoField(command, key string) byoField {
-	for _, f := range byoFields {
-		if f.Command == command && f.Key == key {
-			return f
-		}
-	}
-	panic(fmt.Sprintf("no byoField %q on %q — see byoFields in byo_fields.go", key, command))
+	return byoGroup().Must(command, key)
+}
+
+// byoGroup wraps the BYO-IaC group's table in the shared kit, so the lookup, the flag
+// registration and the docs rendering are the ones every other group uses rather than five copies
+// of each.
+func byoGroup() spec.Group {
+	return spec.Group{Name: "byo", Source: "byo_fields.go", Fields: byoFields}
 }
 
 // byoFlagUsage is a flag's help text, taken from the field spec.
