@@ -17,7 +17,11 @@ vi.mock("@/lib/runners/auth", () => ({
 	verifyRunnerToken: (req: Request) => verifyRunnerToken(req),
 }));
 
-vi.mock("@/lib/db", () => ({ getServiceDb: vi.fn() }));
+// Better Auth 1.7's Drizzle adapter inspects the database shape as soon as the auth module loads.
+// Keep the cold-import stub structurally valid; individual tests replace it with mockDb below.
+vi.mock("@/lib/db", () => ({
+	getServiceDb: vi.fn(() => ({ _: { schema: {}, fullSchema: {} } })),
+}));
 import { getServiceDb } from "@/lib/db";
 
 const emitAlertEventSafe = vi.fn();
