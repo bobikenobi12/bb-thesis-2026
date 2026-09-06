@@ -1382,7 +1382,7 @@
 		{
 			"route": "/[org]/~/connectors",
 			"redirectOnly": false,
-			"surfaceFiles": 210,
+			"surfaceFiles": 211,
 			"families": {
 				"S": {
 					"instrumented": 4,
@@ -1618,7 +1618,7 @@
 		{
 			"route": "/[org]/~/new",
 			"redirectOnly": false,
-			"surfaceFiles": 359,
+			"surfaceFiles": 360,
 			"families": {
 				"S": {
 					"instrumented": 4,
