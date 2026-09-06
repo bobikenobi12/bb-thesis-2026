@@ -138,6 +138,71 @@ func TestListComponents_Filtered(t *testing.T) {
 	}
 }
 
+func TestListComponents_WalksAllPagesWithFilters(t *testing.T) {
+	var requests int
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertAuth(t, r)
+		requests++
+		if r.URL.Path != "/api/cli/projects/api/components" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("kind") != "databases" || r.URL.Query().Get("env") != "production" {
+			t.Errorf("filters were not preserved on request %d: %q", requests, r.URL.RawQuery)
+		}
+		if requests == 1 {
+			if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+				t.Errorf("first request carried cursor %q", cursor)
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"components": []map[string]any{{"id": "c1", "kind": "databases", "name": "first", "status": "ACTIVE", "cloud_identity_id": nil, "config": map[string]any{}}},
+				"page":       map[string]any{"mode": "exact", "limit": 1, "total": 2, "next_cursor": "next-components"},
+			})
+			return
+		}
+		if cursor := r.URL.Query().Get("cursor"); cursor != "next-components" {
+			t.Errorf("second request carried cursor %q", cursor)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"components": []map[string]any{{"id": "c2", "kind": "databases", "name": "second", "status": "ACTIVE", "cloud_identity_id": nil, "config": map[string]any{}}},
+			"page":       map[string]any{"mode": "exact", "limit": 1, "total": 2, "next_cursor": nil},
+		})
+	}))
+
+	components, err := client.ListComponents("api", "databases", "production")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("expected two page requests, got %d", requests)
+	}
+	if len(components) != 2 || components[0].ID != "c1" || components[1].ID != "c2" {
+		t.Errorf("pages were not accumulated in order: %+v", components)
+	}
+}
+
+func TestListComponents_PageErrorReturnsNoPartialRows(t *testing.T) {
+	var requests int
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			json.NewEncoder(w).Encode(map[string]any{
+				"components": []map[string]any{{"id": "c1", "kind": "cluster", "name": "cluster", "status": "ACTIVE", "cloud_identity_id": nil, "config": map[string]any{}}},
+				"page":       map[string]any{"mode": "exact", "limit": 1, "total": 2, "next_cursor": "next-components"},
+			})
+			return
+		}
+		http.Error(w, "page failed", http.StatusInternalServerError)
+	}))
+
+	components, err := client.ListComponents("api", "", "")
+	if err == nil || !strings.Contains(err.Error(), "paging: page 2") || !strings.Contains(err.Error(), "failed to list components") {
+		t.Fatalf("expected named second-page error, got %v", err)
+	}
+	if components != nil {
+		t.Errorf("partial rows escaped with an error: %+v", components)
+	}
+}
+
 func TestAddComponent_Success(t *testing.T) {
 	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuth(t, r)

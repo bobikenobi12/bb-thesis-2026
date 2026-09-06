@@ -4,9 +4,9 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+
+	"github.com/alethialabs-io/alethialabs/apps/cli/pkg/spec"
 )
 
 // The field spec for the shell — the root command itself and the verbs hanging directly off it.
@@ -27,30 +27,11 @@ import (
 //
 // The flags are REGISTERED from this spec, so the string cobra prints in `--help` and the string
 // the guard looks for in the docs are the same string rather than two copies of it.
-type shellField struct {
-	// Command is the cobra command path the field belongs to: "alethia" for a global.
-	Command string
-	// Key identifies the field inside its command. Never shown.
-	Key string
-	// Flag is the long flag that supplies this value. Empty when the value is a positional, in
-	// which case Arg carries the placeholder. Exactly one of the two is set.
-	Flag string
-	// Shorthand is the one-letter form, or "" when the flag has none.
-	Shorthand string
-	// Arg is the positional placeholder as it appears in the command's Use string.
-	Arg string
-	// Default is the value used when nothing is supplied, spelled as the docs table spells it.
-	Default string
-	// Usage is what `--help` prints for this flag. Registered from here.
-	Usage string
-	// Docs is the sentence the docs table's Description cell carries, on EVERY page that carries a
-	// row for this field. One wording, so two pages cannot tell a reader different things.
-	Docs string
-	// Pages are the docs files, relative to the repository root, whose global-flag table must carry
-	// a row for this field. More than one because the CLI has two such tables; the guard holds them
-	// to the same rows rather than pretending there is one.
-	Pages []string
-}
+// shellField is spec.Field. The struct declared here was one of five near-identical copies across the
+// noun groups, each carrying a comment naming #3661 as where they converge. This is that
+// convergence; an ALIAS rather than a new type so every literal in this file and every call site
+// elsewhere reads unchanged. What the columns mean is documented once, on spec.Field.
+type shellField = spec.Field
 
 // Field keys. Constants rather than literals so a typo is a compile error.
 const (
@@ -172,12 +153,14 @@ func shellCommands(root *cobra.Command) []*cobra.Command {
 // so a miss is a programming error, and the alternative — a zero shellField — registers a flag with
 // an empty name.
 func mustShellField(command, key string) shellField {
-	for _, f := range shellFields {
-		if f.Command == command && f.Key == key {
-			return f
-		}
-	}
-	panic(fmt.Sprintf("no shellField %q on %q — see shellFields in shell_fields.go", key, command))
+	return shellGroup().Must(command, key)
+}
+
+// shellGroup wraps the shell group's table in the shared kit, so the lookup, the flag
+// registration and the docs rendering are the ones every other group uses rather than five copies
+// of each.
+func shellGroup() spec.Group {
+	return spec.Group{Name: "shell", Source: "shell_fields.go", Fields: shellFields}
 }
 
 // registerShellGlobalFlags registers the root's persistent flags FROM the spec.
