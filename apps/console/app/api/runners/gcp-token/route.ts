@@ -7,7 +7,10 @@
 // for a GCP access token — no AWS hop, no service-account key. The console holds the issuer signing key.
 
 import { GCP_TOKEN_AUDIENCE } from "@/lib/cloud-providers/session/gcp";
-import { mintWorkloadToken, oidcIssuerConfigured } from "@/lib/oidc/issuer";
+import {
+	assertionSourceForProvider,
+	workloadAssertionSourceConfigured,
+} from "@/lib/oidc/assertion-source";
 import { authorizeTokenMint } from "@/lib/runners/token-mint-auth";
 import { NextResponse } from "next/server";
 
@@ -16,7 +19,7 @@ export async function POST(req: Request) {
 	const { error: authError } = await authorizeTokenMint(req, "gcp");
 	if (authError) return authError;
 
-	if (!oidcIssuerConfigured()) {
+	if (!workloadAssertionSourceConfigured()) {
 		return NextResponse.json(
 			{ error: "The workload-identity issuer is not configured (ALETHIA_OIDC_SIGNING_KEY)." },
 			{ status: 501 },
@@ -24,10 +27,12 @@ export async function POST(req: Request) {
 	}
 
 	try {
-		const token = await mintWorkloadToken({ audience: GCP_TOKEN_AUDIENCE });
+		const token = await assertionSourceForProvider("gcp").getAssertion({
+			audience: GCP_TOKEN_AUDIENCE,
+		});
 		return NextResponse.json({ token });
-	} catch (err) {
-		console.error("GCP token mint error:", err);
+	} catch {
+		console.error("GCP token mint failed");
 		return NextResponse.json({ error: "Failed to mint GCP token" }, { status: 500 });
 	}
 }

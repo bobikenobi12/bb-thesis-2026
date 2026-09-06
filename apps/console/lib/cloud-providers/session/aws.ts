@@ -9,7 +9,10 @@
 // inventory sync, so a connection test needs no runner. Every managed cloud now federates the same way.
 
 import { STSClient, AssumeRoleWithWebIdentityCommand } from "@aws-sdk/client-sts";
-import { mintWorkloadToken, oidcIssuerConfigured } from "@/lib/oidc/issuer";
+import {
+	assertionSourceForProvider,
+	workloadAssertionSourceConfigured,
+} from "@/lib/oidc/assertion-source";
 import type { CloudIdentity } from "@/lib/db/schema";
 
 /** Short-lived AWS credentials + the region they were minted for. */
@@ -39,7 +42,7 @@ export const AWS_TOKEN_AUDIENCE = "sts.amazonaws.com";
 
 /** Whether this instance can federate to AWS at all (the workload-identity issuer is configured). */
 export function awsConfigured(): boolean {
-	return oidcIssuerConfigured();
+	return workloadAssertionSourceConfigured();
 }
 
 /** Extracts the 12-digit account id from a role ARN (arn:aws:iam::<account>:role/...). */
@@ -62,11 +65,13 @@ export async function assumeAwsRole(
 	const region = opts?.region ?? DEFAULT_AWS_REGION;
 	const roleArn = identity.credentials.role_arn ?? null;
 	if (!roleArn) throw new Error("This AWS connection has no role ARN.");
-	if (!oidcIssuerConfigured()) {
+	if (!workloadAssertionSourceConfigured()) {
 		throw new Error("The workload-identity issuer is not configured (ALETHIA_OIDC_SIGNING_KEY).");
 	}
 
-	const token = await mintWorkloadToken({ audience: AWS_TOKEN_AUDIENCE });
+	const token = await assertionSourceForProvider("aws").getAssertion({
+		audience: AWS_TOKEN_AUDIENCE,
+	});
 	const sts = new STSClient({
 		region,
 		requestHandler: { requestTimeout: TIMEOUT_MS },
